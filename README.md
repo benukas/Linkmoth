@@ -62,7 +62,7 @@ may work via mDNS; enable SSH in `raspi-config` if it is disabled.
 
 ```bash
 sudo apt install -y git      # only if git isn't installed yet
-git clone https://github.com/benukas/linkmoth.git
+git clone https://github.com/benukas/Linkmoth.git
 cd linkmoth
 ```
 
