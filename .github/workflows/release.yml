@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sigstore/cosign-installer@v3
+      - name: Run release tests
+        run: python -m unittest discover -s test -v
+      - name: Build deterministic release
+        run: bash scripts/build-release.sh "${GITHUB_REF_NAME}"
+      - name: Sign release assets
+        working-directory: dist-release
+        run: |
+          for file in linkmoth-*; do
+            cosign sign-blob --yes --bundle "$file.bundle" "$file"
+          done
+      - name: Verify release assets
+        working-directory: dist-release
+        run: |
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}"
+          for file in linkmoth-*; do
+            case "$file" in *.bundle) continue ;; esac
+            cosign verify-blob --bundle "$file.bundle" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
+          done
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist-release/* --title "Linkmoth ${GITHUB_REF_NAME}" --generate-notes

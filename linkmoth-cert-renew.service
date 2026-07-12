@@ -1,0 +1,24 @@
+[Unit]
+Description=Renew Linkmoth TLS server certificate
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/linkmoth/renew-cert.sh
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+ReadWritePaths=/etc/linkmoth/tls

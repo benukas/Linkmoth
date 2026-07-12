@@ -1,0 +1,17 @@
+{
+  "name": "Linkmoth",
+  "short_name": "Linkmoth",
+  "description": "Network fault diagnosis for your home LAN",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1c1c1a",
+  "theme_color": "#1c1c1a",
+  "icons": [
+    {
+      "src": "/linkmoth.svg",
+      "sizes": "500x500",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

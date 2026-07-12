@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13", "3.14"]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run tests
+        run: |
+          bash scripts/build-dist.sh
+          python -m unittest discover -s test -v
+
+      - name: Compile Python sources
+        if: matrix.python == '3.14'
+        run: >-
+          python -m py_compile
+          linkmoth.py linkmoth_auth.py linkmoth_devices.py linkmoth_discord.py
+          linkmoth_kuma_proxy.py linkmoth_notify.py linkmoth_outage.py linkmoth_push.py
+
+      - name: Check shell syntax
+        if: matrix.python == '3.14'
+        run: >-
+          bash -n install.sh uninstall.sh renew-cert.sh bootstrap.sh
+          scripts/build-dist.sh scripts/build-release.sh
+
+      - name: Verify distributable is reproducible
+        if: matrix.python == '3.14'
+        run: |
+          bash scripts/build-dist.sh
+          git diff --exit-code -- dist

@@ -1,0 +1,3493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Linkmoth">
+<title>Linkmoth</title>
+<link rel="icon" href="/linkmoth.svg" type="image/svg+xml">
+<link rel="icon" href="/linkmoth-white.ico" sizes="any">
+<link rel="manifest" href="/manifest.webmanifest">
+<style>
+:root {
+  --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
+  --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
+  --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
+  --warn-bg: #fcf0d7; --warn-text: #8a5a00;
+  --bad-bg: #fbe4e2; --bad-text: #a52a1e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
+    --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
+    --ok-bg: #1d3a24; --ok-text: #8fd39c;
+    --warn-bg: #40320f; --warn-text: #f0c46a;
+    --bad-bg: #46201c; --bad-text: #f2988d;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
+}
+body {
+  margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--text);
+  font: 20px/1.5 system-ui, sans-serif;
+}
+main { max-width: 760px; margin: 0 auto; }
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.site-logo { width: 56px; height: auto; flex-shrink: 0; }
+h1 { font-size: 26px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+#age { color: var(--muted); font-size: 16px; flex: 1; font-variant-numeric: tabular-nums; }
+header a { color: var(--muted); font-size: 16px; transition: color 150ms ease; }
+header a:hover { color: var(--text); }
+.host-health { display: flex; align-items: stretch; margin-left: auto; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; background: var(--card); font-variant-numeric: tabular-nums; }
+.host-metric { min-width: 62px; padding: 5px 8px 6px; border-left: 1px solid var(--border); }
+.host-metric:first-child { border-left: 0; }
+.host-metric .k { display: block; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; line-height: 1.1; }
+.host-metric .v { display: block; font-size: 15px; font-weight: 650; line-height: 1.3; white-space: nowrap; }
+.host-metric.warn .v { color: var(--warn-text); }
+.host-metric.bad .v { color: var(--bad-text); }
+nav { display: flex; gap: 8px; margin-bottom: 18px; }
+nav button {
+  flex: 1; padding: 13px 0; font-size: 19px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--card); color: var(--muted);
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 80ms ease;
+}
+nav button:hover { color: var(--text); border-color: var(--muted); }
+nav button:active { transform: scale(0.98); }
+nav button.active { color: var(--text); border-color: var(--text); }
+.nav-burger { display: none; }
+@media (max-width: 700px) {
+  .nav-burger {
+    display: block; width: 100%; padding: 13px 0; margin-bottom: 12px;
+    font-size: 19px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--card); color: var(--text); text-align: center;
+  }
+  nav { display: none; flex-direction: column; margin-bottom: 12px; }
+  nav.open { display: flex; }
+  nav button { flex: none; }
+  .host-health { order: 4; width: 100%; margin-left: 0; }
+  .host-metric { flex: 1; text-align: center; }
+}
+.hidden { display: none; }
+/* Small layout utilities (replace inline style= so the CSP can drop
+   style-src 'unsafe-inline'). */
+.mt0 { margin-top: 0; }
+.mt4 { margin: 4px 0 0; }
+.mt10 { margin-top: 10px; }
+.mt12 { margin-top: 12px; }
+.hint-block { display: block; margin-top: 2px; }
+.wlan-hint { margin: 4px 0 8px 44px; }
+.v-compact { font-size: 20px; }
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px; margin-bottom: 16px;
+}
+#verdict { border: none; }
+#verdict.ok   { background: var(--ok-bg);   color: var(--ok-text); }
+#verdict.warn { background: var(--warn-bg); color: var(--warn-text); }
+#verdict.bad  { background: var(--bad-bg);  color: var(--bad-text); }
+#verdict h2 { font-size: 30px; margin: 0 0 8px; line-height: 1.25; letter-spacing: -0.01em; text-wrap: balance; }
+#verdict p { margin: 6px 0 0; font-size: 19px; }
+#verdict .hint { font-weight: 600; }
+.action-btn {
+  font: inherit; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--card); color: var(--text);
+  padding: 12px 18px; font-size: 17px;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 80ms ease;
+}
+.action-btn:hover:not(:disabled) { border-color: var(--text); }
+.action-btn:active:not(:disabled) { transform: scale(0.99); }
+.action-btn:disabled { opacity: 0.55; cursor: wait; }
+.action-btn:focus-visible, nav button:focus-visible, .auth-box button:focus-visible,
+.auth-box input:focus-visible, .histbar-row input:focus-visible,
+.custom-select-trigger:focus-visible, .set-row input:focus-visible, .set-row select:focus-visible {
+  outline: 2px solid var(--line); outline-offset: 2px;
+}
+.action-bar {
+  display: flex; gap: 12px; margin: -8px 0 16px; flex-wrap: wrap;
+}
+.action-bar .action-btn { flex: 1; min-width: 140px; padding: 16px 18px; font-size: 18px; }
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+.stat .k { font-size: 15px; color: var(--muted); }
+.stat .v { font-size: 28px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 16px; color: var(--muted); font-weight: 400; }
+h3 { font-size: 18px; color: var(--muted); font-weight: 600; margin: 0 0 6px; }
+.spark-label { display: flex; justify-content: space-between; font-size: 16px; color: var(--muted); margin-top: 6px; }
+.spark-label b { color: var(--text); font-weight: 600; }
+.spark-wrap { margin-top: 10px; }
+svg.spark { width: 100%; height: 72px; display: block; cursor: crosshair; touch-action: pan-y; }
+svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; border-radius: 4px; }
+.spark-detail { min-height: 24px; margin: 4px 0 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.q-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.q-badge {
+  font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+}
+.q-badge.q-good { background: var(--ok-bg); color: var(--ok-text); }
+.q-badge.q-fair { background: var(--warn-bg); color: var(--warn-text); }
+.q-badge.q-poor { background: var(--bad-bg); color: var(--bad-text); }
+.q-badge.q-unknown { background: var(--border); color: var(--muted); }
+.q-stats { display: flex; gap: 22px; flex-wrap: wrap; }
+.q-stats span { display: flex; flex-direction: column; line-height: 1.2; }
+.q-stats b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.q-stats small { color: var(--muted); font-size: 13px; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: none; }
+.badge {
+  min-width: 44px; height: 44px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700;
+}
+.badge.ok   { background: var(--ok-bg);   color: var(--ok-text); }
+.badge.bad  { background: var(--bad-bg);  color: var(--bad-text); }
+.badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+.badge.na   { background: var(--bg);      color: var(--muted); }
+.row .label { font-weight: 600; }
+.row .detail { color: var(--muted); font-size: 16px; }
+.ladder-group {
+  margin-top: 14px; padding: 7px 0 3px; color: var(--muted);
+  font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+}
+.ladder-group:first-child { margin-top: 0; }
+.probe-summary {
+  display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-text); font-size: 13px; font-weight: 700;
+}
+.probe-evidence { margin: 5px 0 0 58px; color: var(--muted); font-size: 14px; }
+.probe-evidence summary { cursor: pointer; }
+.probe-evidence ul { margin: 5px 0 8px; padding-left: 20px; }
+.probe-evidence li { margin: 3px 0; }
+.row.micro-row { padding: 4px 0 4px 28px; border-top: none; }
+.row.micro-row .label { font-size: 15px; font-weight: 500; }
+.row.micro-row .detail { font-size: 14px; }
+.row.micro-row .badge { min-width: 32px; height: 32px; font-size: 16px; }
+.blame-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.blame-row .who { min-width: 150px; font-size: 18px; font-weight: 600; }
+.blame-row .bar { height: 26px; border-radius: 6px; background: var(--bad-bg); transition: width 250ms ease; }
+.blame-row .bar.fa { background: var(--ok-bg); }
+.blame-row .n { font-size: 18px; color: var(--muted); font-variant-numeric: tabular-nums; }
+details.inc { border-top: 1px solid var(--border); padding: 10px 0; }
+details.inc:first-of-type { border-top: none; }
+details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.when { color: var(--muted); font-size: 16px; font-variant-numeric: tabular-nums; }
+.pill { font-size: 15px; padding: 2px 12px; border-radius: 999px; font-weight: 600; }
+.pill.open { background: var(--bad-bg); color: var(--bad-text); }
+.pill.done { background: var(--ok-bg); color: var(--ok-text); }
+.pill.conf { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+.banner {
+  background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px 18px; margin-bottom: 16px; font-size: 17px;
+}
+.banner.bad { background: var(--bad-bg); color: var(--bad-text); }
+.banner .banner-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.banner button {
+  padding: 8px 14px; font-size: 16px; font-weight: 600; cursor: pointer;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text);
+  transition: border-color 150ms ease, transform 80ms ease;
+}
+.banner button:hover { border-color: var(--text); }
+.banner button:active { transform: scale(0.98); }
+.site-meta {
+  margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border);
+  text-align: center; font-size: 15px; color: var(--muted);
+}
+.site-meta a { color: var(--muted); margin: 0 10px; }
+.site-meta a:hover { color: var(--text); }
+.packet { margin-top: 12px; font-size: 17px; font-variant-numeric: tabular-nums; }
+.packet p { margin: 6px 0; }
+.packet .k { color: var(--muted); }
+.diffbox { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 10px 0; }
+.diffbox .d-row { padding: 6px 0; font-size: 16px; }
+.diffbox .d-row b { display: block; font-size: 17px; }
+.diffbox .arrow { color: var(--muted); }
+.diffbox .flipped b { color: var(--bad-text); }
+.timeline { list-style: none; margin: 8px 0 0; padding: 0; }
+.timeline details { padding: 4px 0; }
+.timeline summary { cursor: pointer; font-size: 16px; }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; }
+.dot.ok { background: var(--ok-text); } .dot.warn { background: var(--warn-text); } .dot.bad { background: var(--bad-text); }
+.rawruns { font-size: 15px; color: var(--muted); padding: 6px 0 4px 20px; }
+.playbook { margin-top: 14px; font-size: 17px; }
+.playbook summary { cursor: pointer; font-weight: 700; font-size: 18px; }
+.playbook ol { margin: 10px 0 4px; padding-left: 26px; }
+.playbook li { margin: 10px 0; }
+.playbook li b { display: block; font-size: 17px; }
+.playbook li span { font-size: 16px; opacity: 0.92; }
+.playbook-note {
+  margin: 10px 0; padding: 10px 12px; border-left: 4px solid var(--warn-text);
+  background: var(--warn-bg); color: var(--warn-text); border-radius: 6px;
+  font-size: 15px;
+}
+.step-kind {
+  display: inline-block; margin: 0 8px 3px 0; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); font-size: 12px !important;
+  font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.step-kind.interruption { background: var(--bad-bg); color: var(--bad-text); border-color: transparent; }
+.step-kind.escalate { background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
+.step-success { display: block; margin-top: 3px; color: var(--muted); font-size: 14px !important; }
+.verify-fix-btn {
+  margin-top: 12px; width: 100%; padding: 14px 18px; font-size: 17px;
+}
+.verify-result { margin: 10px 0 0; font-size: 16px; line-height: 1.45; }
+.verify-result.ok { color: var(--ok-text); }
+.verify-result.bad { color: var(--bad-text); }
+.verify-chip {
+  display: inline-block; margin-left: 8px; font-size: 13px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; vertical-align: middle;
+}
+.verify-chip.ok { background: var(--ok-bg); color: var(--ok-text); }
+.verify-chip.bad { background: var(--bad-bg); color: var(--bad-text); }
+.similar-inc { margin: 6px 0 0; padding-left: 22px; font-size: 16px; color: var(--muted); }
+.similar-inc li { margin: 6px 0; }
+.auth-trust-banner {
+  font-size: 15px; color: var(--muted); margin: 0 0 14px; line-height: 1.45; text-align: center;
+}
+.auth-trust-banner a { color: var(--text); font-weight: 600; }
+.histbar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.histbar-row {
+  display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; width: 100%;
+}
+.histbar-row input[type="text"],
+.histbar-row .hist-go,
+.histbar-row .custom-select-trigger {
+  height: 52px; min-height: 52px; box-sizing: border-box;
+  font: inherit; font-size: 17px; font-weight: 600; line-height: 1.2;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: var(--card); color: var(--text);
+}
+.histbar-row input[type="text"] {
+  flex: 1 1 160px; min-width: 0; padding: 0 18px;
+}
+.histbar-row .hist-go {
+  flex: 0 0 auto; padding: 0 24px; cursor: pointer; white-space: nowrap;
+}
+.custom-select { position: relative; flex: 1 1 200px; min-width: 180px; display: flex; }
+.custom-select-trigger {
+  width: 100%; flex: 1; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; text-align: left; padding: 0 18px; cursor: pointer;
+}
+.custom-select-trigger:hover { border-color: var(--text); }
+.custom-select-chevron { color: var(--muted); font-size: 13px; flex: none; line-height: 1; transition: transform 150ms ease; }
+.custom-select-trigger[aria-expanded="true"] .custom-select-chevron { transform: rotate(180deg); }
+.custom-select-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
+  margin: 0; padding: 6px; list-style: none;
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(30, 26, 16, 0.14); max-height: 320px; overflow-y: auto;
+}
+@media (prefers-color-scheme: dark) {
+  .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+}
+.custom-select-menu li {
+  padding: 12px 14px; border-radius: 10px; cursor: pointer;
+  font-size: 17px; font-weight: 600; border: 1px solid transparent;
+  transition: background-color 120ms ease;
+}
+.custom-select-menu li:hover { background: var(--bg); }
+.custom-select-menu li:focus-visible { background: var(--bg); outline: 2px solid var(--line); outline-offset: -2px; }
+.custom-select-menu li[aria-selected="true"] {
+  background: var(--bg); border-color: var(--border);
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.inc-ref { font-family: ui-monospace, monospace; font-size: 15px; color: var(--muted); margin-right: 8px; }
+#hist-stats { font-size: 16px; color: var(--muted); margin: 0; line-height: 1.45; }
+.set-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; flex-wrap: wrap; }
+.set-row label { min-width: 220px; font-size: 17px; font-weight: 600; }
+.set-row input, .set-row select {
+  flex: 1; min-width: 160px; font: 17px system-ui, sans-serif; padding: 9px 12px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.set-row input[type="checkbox"] {
+  flex: none; width: 22px; height: 22px; min-width: 22px; cursor: pointer;
+}
+.set-row textarea {
+  flex: 1; min-width: 160px; font: 15px ui-monospace, monospace; padding: 9px 12px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  resize: vertical;
+}
+.wh-item {
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0;
+}
+.wh-item-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wh-item-title b { font-size: 17px; }
+.wh-item-status { margin: 6px 0 8px; font-size: 15px; color: var(--muted); }
+.wh-item-status.bad { color: var(--bad-text); }
+.wh-item-status.queued { color: var(--warn-text, #b26a00); }
+.wh-item-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.wh-test-msg { font-size: 15px; margin-left: 4px; align-self: center; }
+.wh-test-msg.ok { color: var(--ok-text); }
+.wh-test-msg.bad { color: var(--bad-text); }
+#wh-form { border: 1px solid var(--border); border-radius: 10px; padding: 4px 14px 14px; margin: 12px 0; }
+#wh-events { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
+#wh-events label { display: flex; align-items: center; gap: 8px; font-size: 16px; padding: 4px 0; cursor: pointer; }
+#wh-events input { width: 18px; height: 18px; }
+#wh-msg.ok, #wh-curl-msg.ok { color: var(--ok-text); }
+#wh-msg.bad, #wh-curl-msg.bad { color: var(--bad-text); }
+#wh-curl-msg { margin-left: 12px; font-size: 16px; }
+.set-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+.set-section h4 { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--text); }
+#save-settings { margin-top: 14px; }
+#vacuum-db { margin-right: 12px; }
+#settings-msg, #db-msg { margin-left: 12px; font-size: 16px; }
+#settings-msg.ok, #db-msg.ok { color: var(--ok-text); }
+#settings-msg.bad, #db-msg.bad { color: var(--bad-text); }
+#db-status { margin: 0 0 12px; line-height: 1.45; }
+.empty { color: var(--muted); font-size: 18px; }
+.device-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.device-toolbar h3 { margin: 0; }
+.device-card { position: relative; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.device-card:hover { box-shadow: 0 2px 10px rgba(30, 26, 16, 0.08); }
+@media (prefers-color-scheme: dark) {
+  .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+}
+.device-card.up { border-left: 6px solid var(--ok-text); }
+.device-card.degraded, .device-card.error { border-left: 6px solid var(--warn-text); }
+.device-card.down { border-left: 6px solid var(--bad-text); }
+.device-card.disabled { opacity: 0.72; }
+.device-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.device-title h3 { color: var(--text); font-size: 21px; margin: 0; }
+.device-state {
+  padding: 3px 10px; border-radius: 999px; font-size: 14px; font-weight: 700;
+  background: var(--bg); color: var(--muted);
+}
+.device-state.up { background: var(--ok-bg); color: var(--ok-text); }
+.device-state.degraded, .device-state.error { background: var(--warn-bg); color: var(--warn-text); }
+.device-state.down { background: var(--bad-bg); color: var(--bad-text); }
+.device-summary { margin: 10px 0 4px; }
+.device-meta { margin: 4px 0; color: var(--muted); font-size: 15px; }
+.device-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.device-history { margin-top: 12px; font-size: 16px; }
+.device-history summary { cursor: pointer; font-weight: 600; }
+.device-history-row { padding: 7px 0; border-top: 1px solid var(--border); }
+.device-history-row:first-child { margin-top: 8px; }
+.device-form-actions { display: flex; gap: 10px; margin-top: 14px; }
+.device-warning {
+  background: var(--warn-bg); color: var(--warn-text); padding: 10px 12px;
+  border-radius: 9px; font-size: 15px; margin: 8px 0;
+}
+#device-msg { font-size: 16px; margin: 8px 0 0; }
+#device-msg.bad { color: var(--bad-text); }
+#device-msg.ok { color: var(--ok-text); }
+.sec-copy { font-family: ui-monospace, monospace; font-size: 14px; word-break: break-all; user-select: all; background: var(--surface-1); padding: 4px 8px; border-radius: 6px; }
+.sec-qr { margin: 6px 0 14px; }
+.sec-qr svg { width: 200px; height: 200px; background: #fff; padding: 10px; border-radius: 9px; display: block; }
+.sec-codes { font-family: ui-monospace, monospace; font-size: 15px; line-height: 1.7; background: var(--surface-1); padding: 12px 14px; border-radius: 9px; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
+#sec-pw-msg, #sec-totp-msg { display: block; margin-top: 8px; font-size: 16px; }
+#sec-pw-msg.bad, #sec-totp-msg.bad { color: var(--bad-text); }
+#sec-pw-msg.ok, #sec-totp-msg.ok { color: var(--ok-text); }
+.sec-audit-row { padding: 7px 0; border-top: 1px solid var(--border); font-size: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
+.sec-audit-row .when { color: var(--muted); min-width: 150px; }
+.sec-audit-row .ev { font-weight: 600; }
+#tab-security .set-section .action-btn { margin-right: 10px; margin-top: 4px; }
+#auth-gate {
+  position: fixed; inset: 0; background: var(--bg); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+#auth-gate.hidden { display: none; }
+.auth-box {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 28px 32px; max-width: 420px; width: 100%;
+}
+.auth-box h2 { margin: 0 0 8px; font-size: 24px; text-align: center; }
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 6px 0 18px; }
+.auth-brand img { width: 128px; height: auto; }
+.auth-brand span { font-size: 24px; font-weight: 600; letter-spacing: 0.3px; }
+.auth-note { color: var(--muted); line-height: 1.45; margin: 0 0 16px; }
+.auth-box label { display: block; font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.auth-box label.role-opt {
+  display: flex; gap: 10px; align-items: flex-start; font-weight: 400;
+  font-size: 16px; padding: 12px; margin-bottom: 12px;
+  border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+}
+.auth-box .role-opt input { width: auto; margin: 3px 0 0; flex: none; }
+.role-opt:hover { border-color: var(--text); }
+.role-opt:has(input:checked) { border-color: var(--line); }
+.auth-box input {
+  width: 100%; font: 17px system-ui, sans-serif; padding: 10px 12px;
+  border-radius: 8px; border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); margin-bottom: 14px;
+}
+.auth-box button {
+  width: 100%; padding: 14px; font-size: 18px; font-weight: 600;
+  border-radius: 10px; border: 1px solid var(--border); background: var(--card);
+  color: var(--text); cursor: pointer;
+  transition: border-color 150ms ease, transform 80ms ease;
+}
+.auth-box button:hover { border-color: var(--text); }
+.auth-box button:active { transform: scale(0.99); }
+.auth-err { color: var(--bad-text); font-size: 16px; margin: 0 0 6px; }
+.auth-err:empty { display: none; }
+#logout-btn {
+  font-size: 16px; color: var(--muted); background: none; border: none;
+  cursor: pointer; padding: 0;
+}
+#logout-btn:hover { color: var(--text); }
+</style>
+</head>
+<body>
+<div id="auth-gate" class="hidden">
+  <div class="auth-box">
+    <div class="auth-brand">
+      <img src="linkmoth-mark-white.svg" alt="Linkmoth logo">
+      <span>Linkmoth</span>
+    </div>
+    <h2 id="auth-title">Sign in</h2>
+    <p class="auth-trust-banner"><b>Certificate safety:</b> before trusting the
+      <a href="/ca.crt">Linkmoth certificate</a>, compare its SHA-256 fingerprint
+      with the value printed by the installer or obtained over SSH. Never enroll
+      a CA on a guest, shared, or untrusted network.</p>
+    <p id="auth-err" class="auth-err"></p>
+    <div id="auth-onboarding-step" class="hidden">
+      <p class="auth-note">Create the admin password for this Linkmoth installation. Paste the one-time setup token printed by the installer.</p>
+      <label for="auth-setup-token">Setup token</label>
+      <input id="auth-setup-token" type="password" autocomplete="one-time-code">
+      <label for="auth-new-password">New password</label>
+      <input id="auth-new-password" type="password" autocomplete="new-password" minlength="12">
+      <label for="auth-confirm-password">Confirm password</label>
+      <input id="auth-confirm-password" type="password" autocomplete="new-password" minlength="12">
+      <button id="auth-setup-btn" type="button">Finish setup</button>
+    </div>
+    <div id="auth-role-step" class="hidden">
+      <p class="auth-note">How should Linkmoth watch your connection? You can change this later in Settings.</p>
+      <label class="role-opt">
+        <input type="radio" name="auth-role" value="checker" checked>
+        <span><b>Linkmoth is my uptime checker</b>
+          <span class="set-hint hint-block">Best if you don't run another monitor. Linkmoth checks the network itself every few minutes and opens an incident when it finds a fault.</span></span>
+      </label>
+      <label class="role-opt">
+        <input type="radio" name="auth-role" value="explainer">
+        <span><b>I already use another monitor</b> (e.g. Uptime Kuma)
+          <span class="set-hint hint-block">Leave uptime checking to that service. It calls Linkmoth's webhook when something is down, and Linkmoth explains which layer failed and who's to blame — it won't open incidents on its own.</span></span>
+      </label>
+      <p id="auth-role-webhook" class="set-hint hidden">After you finish, copy the inbound webhook URL and token from <b>Settings → Integrations</b> into your monitor.</p>
+      <button id="auth-role-btn" type="button">Continue</button>
+    </div>
+    <div id="auth-password-step">
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password">
+      <button id="auth-login-btn" type="button">Sign in</button>
+    </div>
+    <div id="auth-totp-step" class="hidden">
+      <label for="auth-totp">Authenticator code</label>
+      <input id="auth-totp" type="text" inputmode="text" autocomplete="one-time-code" maxlength="19">
+      <button id="auth-totp-btn" type="button">Verify</button>
+    </div>
+  </div>
+</div>
+<main>
+  <header>
+    <img src="linkmoth-mark-white.svg" alt="" width="56" height="33" class="site-logo">
+    <h1>Linkmoth</h1>
+    <span id="age">loading…</span>
+    <div id="host-health" class="host-health hidden" aria-label="Linkmoth host health">
+      <div id="host-cpu" class="host-metric"><span class="k">CPU</span><span class="v">—</span></div>
+      <div id="host-temp" class="host-metric"><span class="k">TEMP</span><span class="v">—</span></div>
+      <div id="host-memory" class="host-metric"><span class="k">RAM</span><span class="v">—</span></div>
+      <div id="host-disk" class="host-metric"><span class="k">DISK</span><span class="v">—</span></div>
+    </div>
+    <button id="logout-btn" type="button" class="hidden">Sign out</button>
+  </header>
+
+  <button id="nav-burger" class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="main-nav">☰ Menu</button>
+  <nav id="main-nav">
+    <button id="nav-today" class="active">Today</button>
+    <button id="nav-devices">Devices</button>
+    <button id="nav-history">History</button>
+    <button id="nav-settings">Settings</button>
+    <button id="nav-security">Security</button>
+  </nav>
+
+  <div id="tab-today">
+    <div id="today-banner" class="banner hidden"></div>
+    <section id="verdict" class="card ok">
+      <h2 id="v-title">Waiting for first data…</h2>
+      <p id="v-ref" class="hint hidden"></p>
+      <p id="v-explain"></p>
+      <p id="v-hint" class="hint"></p>
+      <p id="v-evidence" class="hint hidden"></p>
+      <p id="v-pattern" class="hint hidden"></p>
+      <details id="v-playbook" class="playbook hidden">
+        <summary>What to do next — safest steps first</summary>
+        <p class="playbook-note">Start at step 1 and stop when the linked rung turns green. “Interruption” steps briefly disconnect people. Never press a router’s factory-reset pin unless you already have a configuration backup.</p>
+        <ol id="v-playbook-steps"></ol>
+        <p id="verify-result" class="verify-result hidden"></p>
+        <button type="button" id="verify-fix-btn" class="action-btn verify-fix-btn hidden">I tried this — check again</button>
+      </details>
+    </section>
+
+    <div class="action-bar">
+      <button id="diagnose" type="button" class="action-btn action-btn-primary">Diagnose now</button>
+      <button id="copy-diagnosis" type="button" class="action-btn hidden">Copy support summary</button>
+    </div>
+    <div id="incident-actions" class="action-bar hidden">
+      <button type="button" id="incident-recheck" class="action-btn">Recheck open incident</button>
+      <button type="button" id="incident-close" class="action-btn">Close incident</button>
+      <button type="button" id="incident-false-alarm" class="action-btn">Mark false alarm</button>
+    </div>
+
+    <div class="statgrid" id="stats"></div>
+
+    <section class="card">
+      <h3>Latency history</h3>
+      <p id="hist-meta" class="set-hint mt0">Loading history…</p>
+      <div class="spark-wrap">
+        <svg class="spark" id="spark-inet" viewBox="0 0 600 72" preserveAspectRatio="none" tabindex="0"></svg>
+        <p class="spark-detail" id="spark-inet-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
+      </div>
+      <div class="spark-label"><span>Internet ping</span><span id="inet-now"></span></div>
+      <div class="spark-wrap">
+        <svg class="spark" id="spark-gw" viewBox="0 0 600 72" preserveAspectRatio="none" tabindex="0"></svg>
+        <p class="spark-detail" id="spark-gw-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
+      </div>
+      <div class="spark-label"><span>Router ping</span><span id="gw-now"></span></div>
+    </section>
+
+    <section id="quality-card" class="card">
+      <h3>Connection quality</h3>
+      <p id="q-meta" class="set-hint mt0">Measuring…</p>
+      <div class="q-head">
+        <span id="q-badge" class="q-badge q-unknown">—</span>
+        <div class="q-stats">
+          <span><b id="q-latency">—</b><small>latency</small></span>
+          <span><b id="q-jitter">—</b><small>jitter</small></span>
+          <span><b id="q-loss">—</b><small>loss</small></span>
+        </div>
+      </div>
+      <p id="q-reasons" class="hint"></p>
+    </section>
+
+    <section class="card">
+      <h3>Fault ladder (last diagnosis)</h3>
+      <div id="ladder"><p class="empty">No diagnosis has run yet. Press the button above.</p></div>
+    </section>
+
+    <section class="card">
+      <h3>Blame board (30 days)</h3>
+      <div id="blame"><p class="empty">Nobody to blame yet.</p></div>
+    </section>
+  </div>
+
+  <div id="tab-devices" class="hidden">
+    <section class="card">
+      <div class="device-toolbar">
+        <div>
+          <h3>LAN devices</h3>
+          <p class="set-hint mt4">Watch selected devices without changing Linkmoth network blame.</p>
+        </div>
+        <button type="button" id="device-add" class="action-btn">Add device</button>
+      </div>
+    </section>
+
+    <section id="device-form" class="card hidden">
+      <h3 id="device-form-title">Add device</h3>
+      <div class="set-row"><label for="d-name">Name</label><input id="d-name" maxlength="80" placeholder="Living Room Printer"></div>
+      <div class="set-row"><label for="d-address">Private IPv4 address</label><input id="d-address" inputmode="decimal" placeholder="192.168.1.40"></div>
+      <p class="set-hint">Allowed ranges: 10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16. Hostnames are not accepted.</p>
+      <div class="set-row">
+        <label for="d-preset">Preset</label>
+        <select id="d-preset">
+          <option value="generic">Generic (ping)</option>
+          <option value="printer">Printer (ping + TCP 9100)</option>
+          <option value="web_ui">Web UI (ping + HTTP/S)</option>
+          <option value="tcp_service">TCP service (ping + port)</option>
+        </select>
+      </div>
+      <div id="d-tcp-settings" class="hidden">
+        <div class="set-row"><label for="d-port">TCP port</label><input id="d-port" type="number" min="1" max="65535" value="80"></div>
+      </div>
+      <div id="d-web-settings" class="hidden">
+        <div class="set-row">
+          <label for="d-scheme">Protocol</label>
+          <select id="d-scheme"><option value="http">HTTP</option><option value="https">HTTPS</option></select>
+        </div>
+        <div class="set-row"><label for="d-web-port">Port</label><input id="d-web-port" type="number" min="1" max="65535" value="80"></div>
+        <div class="set-row"><label for="d-path">Path</label><input id="d-path" value="/" maxlength="512"></div>
+        <div class="set-row"><label for="d-status">Expected HTTP status</label><input id="d-status" type="number" min="100" max="599" value="200"></div>
+        <div class="set-row"><label for="d-body">Body contains (optional)</label><input id="d-body" maxlength="256"></div>
+        <div id="d-tls-row" class="set-row hidden">
+          <label for="d-verify-tls">Verify HTTPS certificate</label>
+          <input id="d-verify-tls" type="checkbox" checked>
+        </div>
+        <p id="d-tls-warning" class="device-warning hidden"><b>Unsafe certificate mode:</b> traffic remains encrypted, but Linkmoth cannot verify that it reached the intended device.</p>
+      </div>
+      <div class="set-row">
+        <label for="d-interval">Automatic checks</label>
+        <select id="d-interval">
+          <option value="0">Off</option>
+          <option value="300">Every 5 minutes</option>
+          <option value="900">Every 15 minutes</option>
+          <option value="1800">Every 30 minutes</option>
+          <option value="3600">Every 60 minutes</option>
+        </select>
+      </div>
+      <div class="set-row"><label for="d-enabled">Enabled</label><input id="d-enabled" type="checkbox" checked></div>
+      <div class="set-section">
+        <h4>Device alerts</h4>
+        <p id="d-alert-note" class="set-hint">Alerts use the notification integrations configured in Settings and are off by default.</p>
+        <div class="set-row"><label for="d-alert-discord">Discord</label><input id="d-alert-discord" type="checkbox"></div>
+        <div class="set-row"><label for="d-alert-push">Browser push</label><input id="d-alert-push" type="checkbox"></div>
+        <div class="set-row"><label for="d-alert-webhook">Generic webhook</label><input id="d-alert-webhook" type="checkbox"></div>
+      </div>
+      <p id="device-msg"></p>
+      <div class="device-form-actions">
+        <button type="button" id="device-save" class="action-btn">Save device</button>
+        <button type="button" id="device-cancel" class="action-btn">Cancel</button>
+      </div>
+    </section>
+
+    <div id="device-list">
+      <section class="card"><p class="empty">Loading devices…</p></section>
+    </div>
+  </div>
+
+  <div id="tab-history" class="hidden">
+    <div class="histbar">
+      <div class="histbar-row">
+        <input id="hist-ref" type="text" placeholder="INC-YYYYMMDD-0001" aria-label="Incident reference">
+        <button type="button" id="hist-ref-go" class="action-btn hist-go">Find</button>
+        <div class="custom-select" id="hist-filter-wrap">
+          <button type="button" class="action-btn custom-select-trigger" id="hist-filter-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="hist-filter-menu">
+            <span id="hist-filter-label">All incidents</span>
+            <span class="custom-select-chevron" aria-hidden="true">▾</span>
+          </button>
+          <ul class="custom-select-menu hidden" id="hist-filter-menu" role="listbox" tabindex="-1"></ul>
+          <select id="hist-filter" class="sr-only" tabindex="-1" aria-hidden="true">
+            <option value="">All incidents</option>
+            <option value="open">Ongoing</option>
+            <option value="wan_down">ISP / WAN</option>
+            <option value="local_dns_broken">Local DNS</option>
+            <option value="router_down">Router</option>
+            <option value="router_wlan_down">Router Wi-Fi</option>
+            <option value="upstream_dns_down">Upstream DNS</option>
+            <option value="pi_link">Linkmoth host link</option>
+            <option value="host_power">Linkmoth host power</option>
+            <option value="web_broken">Web / HTTPS</option>
+            <option value="partial_routing">Routing</option>
+            <option value="restricted_connectivity">Filtered connectivity</option>
+            <option value="all_clear">False alarms</option>
+          </select>
+        </div>
+      </div>
+      <p id="hist-stats"></p>
+    </div>
+    <section class="card">
+      <div id="hist-list"><p class="empty">Loading…</p></div>
+    </section>
+  </div>
+
+  <div id="tab-settings" class="hidden">
+    <section class="card">
+      <h3>Settings</h3>
+      <div class="set-row"><label for="s-kuma">Uptime Kuma link</label><input id="s-kuma" placeholder="auto"></div>
+      <p class="set-hint">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</p>
+      <div class="set-row"><label for="s-refresh">Auto-refresh (seconds)</label><input id="s-refresh" type="number" min="2" max="120" step="1"></div>
+      <p class="set-hint">How often the dashboard re-fetches data. Does not run new network checks by itself.</p>
+      <div class="set-row"><label for="s-history">Latency history (minutes)</label><input id="s-history" type="number" min="0" max="1440" step="1"></div>
+      <p class="set-hint">Background diagnosis interval that feeds the sparkline graphs. 0 = use baseline interval only.</p>
+      <div class="set-row"><label for="s-baseline">Baseline check (minutes)</label><input id="s-baseline" type="number" min="0" max="1440" step="1"></div>
+      <p class="set-hint">How often Linkmoth may auto-open an incident when a background check finds a fault. 0 turns it off.</p>
+      <div class="set-row"><label for="s-retention">Keep history (days)</label><input id="s-retention" type="number" min="1" max="3650" step="1"></div>
+      <div class="set-row"><label for="s-domain">DNS test domain</label><input id="s-domain" placeholder="gstatic.com"></div>
+      <div class="set-section">
+        <h4>Local DNS resolver</h4>
+        <div class="set-row">
+          <label for="s-local-dns-mode">Check mode</label>
+          <select id="s-local-dns-mode">
+            <option value="auto">Auto-detect same-host resolver</option>
+            <option value="enabled">Always check</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </div>
+        <div class="set-row"><label for="s-local-dns-address">Resolver IPv4 address</label><input id="s-local-dns-address" inputmode="decimal" placeholder="127.0.0.1"></div>
+        <div class="set-row">
+          <label for="s-local-dns-provider">Same-host provider</label>
+          <select id="s-local-dns-provider">
+            <option value="auto">Auto</option>
+            <option value="generic">Generic</option>
+            <option value="pihole">Pi-hole</option>
+            <option value="unbound">Unbound</option>
+            <option value="dnsmasq">dnsmasq</option>
+          </select>
+        </div>
+        <p id="s-local-dns-note" class="set-hint">Provider-specific checks are available only when the resolver runs on the Linkmoth host. Remote resolvers always use generic DNS-response checks.</p>
+      </div>
+      <div class="set-row"><label for="s-upstream">Upstream DNS servers</label><input id="s-upstream" placeholder="1.1.1.1, 8.8.8.8"></div>
+      <div class="set-row"><label for="s-ping">Ping targets</label><input id="s-ping" placeholder="1.1.1.1, 8.8.8.8"></div>
+      <div class="set-row"><label for="s-wifi-clients">Wi-Fi client IPs</label><input id="s-wifi-clients" placeholder="192.168.1.50, 192.168.1.51"></div>
+      <p class="set-hint">Always-on devices on router Wi-Fi. Linkmoth pings them after the router LAN check; if the router answers but every client is silent, the WLAN rung fails.</p>
+      <div class="set-section">
+        <h4>Notification Integrations</h4>
+        <div class="set-row">
+          <label for="s-discord-enabled">Enable Discord alerts</label>
+          <input id="s-discord-enabled" type="checkbox">
+        </div>
+        <div class="set-row">
+          <label for="s-discord-url">Discord webhook URL</label>
+          <input id="s-discord-url" type="url" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
+        </div>
+        <p class="set-hint">Create a webhook in Discord channel settings. Alerts fire on confirmed faults and recoveries only. During WAN outages, Discord alerts are deferred until the link returns.</p>
+      </div>
+      <div class="set-section">
+        <h4>Browser push</h4>
+        <div class="set-row">
+          <label for="s-push-enabled">Enable push notifications</label>
+          <input id="s-push-enabled" type="checkbox">
+        </div>
+        <p id="push-status" class="set-hint">Loading push status…</p>
+        <button type="button" id="push-enable" class="action-btn">Enable push on this device</button>
+        <button type="button" id="push-disable" class="action-btn hidden">Disable push on this device</button>
+        <p class="set-hint">Works on desktop and Android in the browser. On iPhone/iPad you must add Linkmoth to the Home Screen first (Share → Add to Home Screen), open it from the icon, then enable push — Safari tabs cannot subscribe. The Linkmoth CA must be fully trusted on iOS (profile install <em>and</em> Settings → General → About → Certificate Trust Settings). Global outages defer push until the network recovers.</p>
+      </div>
+      <div class="set-section">
+        <h4>Outbound webhooks</h4>
+        <p class="set-hint"><b>Linkmoth sends events out to another app.</b> Create an inbound webhook in that app first, then paste the URL it gives you below. There is no Linkmoth URL to copy for this direction. Failed deliveries, and events during an outage, are queued and retried after recovery.</p>
+        <div id="wh-list"><p class="empty">Loading webhooks…</p></div>
+        <button type="button" id="wh-add" class="action-btn">Add webhook</button>
+
+        <div id="wh-form" class="hidden">
+          <h4 id="wh-form-title">Add webhook</h4>
+          <div class="set-row"><label for="wh-name">Name</label><input id="wh-name" maxlength="64" placeholder="Phone alerts (ntfy)"></div>
+          <div class="set-row">
+            <label for="wh-preset">Preset</label>
+            <select id="wh-preset"></select>
+          </div>
+          <div class="set-row"><label for="wh-url">Destination URL</label><input id="wh-url" type="url" autocomplete="off"></div>
+          <p id="wh-url-hint" class="set-hint">Paste the receiving app's webhook URL here.</p>
+          <div class="set-row"><label for="wh-enabled">Enabled</label><input id="wh-enabled" type="checkbox" checked></div>
+          <div class="set-section">
+            <h4>Events to send</h4>
+            <div id="wh-events"></div>
+          </div>
+          <div class="set-row wh-headers-row">
+            <label for="wh-headers">Custom headers</label>
+            <textarea id="wh-headers" rows="2" spellcheck="false" placeholder="Authorization: Bearer xxx&#10;X-Linkmoth-Token: xxx"></textarea>
+          </div>
+          <p class="set-hint">One <code>Name: value</code> per line. Values are stored as secrets — after saving they show masked (<code>••••••••abcd</code>); leave the masked value untouched to keep it.</p>
+          <div id="wh-template-wrap" class="hidden">
+            <div class="set-row wh-headers-row">
+              <label for="wh-template">Payload template</label>
+              <textarea id="wh-template" rows="6" spellcheck="false"></textarea>
+            </div>
+            <p class="set-hint">Placeholders only — no logic: <code id="wh-template-vars"></code></p>
+          </div>
+          <p id="wh-msg"></p>
+          <div class="device-form-actions">
+            <button type="button" id="wh-save" class="action-btn">Save webhook</button>
+            <button type="button" id="wh-cancel" class="action-btn">Cancel</button>
+          </div>
+        </div>
+
+        <div class="set-section">
+          <h4>Inbound webhook</h4>
+          <p class="set-hint"><b>Another app sends an alert into Linkmoth.</b> Copy the URL and bearer token below into Uptime Kuma, Grafana, Zabbix, or your script. Linkmoth then runs a diagnosis.</p>
+          <div class="set-row"><label for="wh-inbound-url">Linkmoth inbound URL</label><input id="wh-inbound-url" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
+          <div class="set-row"><label for="wh-inbound-secret">Bearer token</label><input id="wh-inbound-secret" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
+          <p class="set-hint">Send a JSON <code>POST</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Example body: <code>{"source":"grafana","event":"down","monitor":"WAN"}</code>.</p>
+          <div class="device-form-actions">
+            <button type="button" id="wh-copy-url" class="action-btn">Copy inbound URL</button>
+            <button type="button" id="wh-copy-token" class="action-btn">Copy bearer token</button>
+            <button type="button" id="wh-copy-curl" class="action-btn">Copy curl test</button>
+          </div>
+          <span id="wh-curl-msg" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="set-section">
+        <h4>Database maintenance</h4>
+        <p id="db-status" class="set-hint">Loading database info…</p>
+        <button type="button" id="vacuum-db" class="action-btn">Run VACUUM</button><span id="db-msg"></span>
+      </div>
+      <button id="save-settings" class="action-btn">Save settings</button><span id="settings-msg"></span>
+    </section>
+  </div>
+
+  <div id="tab-security" class="hidden">
+    <section class="card">
+      <h3>Security</h3>
+
+      <div class="set-section">
+        <h4>Change password</h4>
+        <div class="set-row"><label for="sec-cur-pw">Current password</label>
+          <input id="sec-cur-pw" type="password" autocomplete="current-password"></div>
+        <div class="set-row"><label for="sec-new-pw">New password</label>
+          <input id="sec-new-pw" type="password" autocomplete="new-password" minlength="12"></div>
+        <div class="set-row"><label for="sec-new-pw2">Confirm new password</label>
+          <input id="sec-new-pw2" type="password" autocomplete="new-password" minlength="12"></div>
+        <p class="set-hint">At least 12 characters. Changing your password signs you out of all sessions on every device — you'll log back in.</p>
+        <button type="button" id="sec-change-pw" class="action-btn">Change password</button>
+        <span id="sec-pw-msg"></span>
+      </div>
+
+      <div class="set-section">
+        <h4>Two-factor authentication (2FA)</h4>
+        <p id="sec-totp-status" class="set-hint">Loading…</p>
+
+        <div id="sec-totp-off">
+          <p class="set-hint">Add an authenticator app (TOTP) as a second factor. Enabling 2FA signs you out of all sessions — you'll log back in with a code.</p>
+          <button type="button" id="sec-totp-begin" class="action-btn">Set up 2FA</button>
+        </div>
+
+        <div id="sec-totp-enroll" class="hidden">
+          <p class="set-hint">1. Scan this QR code with your authenticator app (or enter the secret manually), then enter a 6-digit code to activate. Your recovery codes appear after you activate.</p>
+          <div id="sec-totp-qr" class="sec-qr" aria-label="TOTP setup QR code"></div>
+          <div class="set-row"><label>Secret</label><code id="sec-totp-secret" class="sec-copy"></code></div>
+          <div class="set-row"><label>Setup link</label><code id="sec-totp-uri" class="sec-copy"></code></div>
+          <div class="set-row"><label for="sec-totp-code">Enter a code to activate</label>
+            <input id="sec-totp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+          <button type="button" id="sec-totp-activate" class="action-btn">Activate 2FA</button>
+          <button type="button" id="sec-totp-cancel" class="action-btn">Cancel</button>
+        </div>
+
+        <div id="sec-totp-activated" class="hidden">
+          <p class="device-warning"><b>2FA is on. Save your recovery codes now.</b> Each works once if you lose your authenticator — they are shown only this once.</p>
+          <pre id="sec-totp-codes" class="sec-codes"></pre>
+          <p class="set-hint">After signing in with your password, use the next authenticator code if your app still shows the code you just entered.</p>
+          <button type="button" id="sec-totp-done" class="action-btn">I've saved my codes — sign in</button>
+        </div>
+
+        <div id="sec-totp-on" class="hidden">
+          <p class="set-hint">2FA is on. Disabling it, or regenerating recovery codes, requires your password and signs you out of all sessions.</p>
+          <div class="set-row"><label for="sec-totp-pw">Password</label>
+            <input id="sec-totp-pw" type="password" autocomplete="current-password"></div>
+          <button type="button" id="sec-totp-regen" class="action-btn">Regenerate recovery codes</button>
+          <button type="button" id="sec-totp-disable" class="action-btn">Disable 2FA</button>
+          <pre id="sec-regen-codes" class="sec-codes hidden"></pre>
+        </div>
+        <span id="sec-totp-msg"></span>
+      </div>
+
+      <div class="set-section">
+        <h4>Security posture</h4>
+        <div id="sec-posture" class="set-hint">Loading…</div>
+      </div>
+
+      <div class="set-section">
+        <h4>Audit log</h4>
+        <p class="set-hint">Recent authentication events. Secrets are never recorded.</p>
+        <div id="sec-audit"><p class="empty">Loading…</p></div>
+      </div>
+    </section>
+  </div>
+
+  <footer id="site-meta" class="site-meta hidden" aria-label="About Linkmoth">
+    Linkmoth <span id="meta-version">…</span>
+    · <a id="meta-github" href="https://github.com/benukas/linkmoth" target="_blank" rel="noopener">GitHub</a>
+    · <a id="meta-changelog" href="https://github.com/benukas/linkmoth/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+    · <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">AGPL-3.0-only</a>
+    · <span>Copyright © 2026 Benas Urniežius · No warranty</span>
+  </footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+let refreshSec = 5;
+let settingsLoaded = false;
+let lastStats = null;
+let csrfToken = null;
+let authReady = false;
+let holdAuthForRecoveryCodes = false;
+let localDnsRuntime = null;
+let deviceData = [];
+let deviceMeta = null;
+let editingDeviceId = null;
+let devicesLoading = false;
+let latestStatus = null;
+const packetCache = {};
+function clearPacketCache() {
+  Object.keys(packetCache).forEach((key) => { delete packetCache[key]; });
+}
+const BLAME_NAMES = {
+  wan_down: "ISP / WAN", local_dns_broken: "Local DNS", pihole_broken: "Local DNS", router_down: "Router",
+  router_wlan_down: "Router Wi-Fi", upstream_dns_down: "Upstream DNS", pi_link: "Linkmoth host link",
+  link_degraded: "Host Ethernet degraded", host_power: "Linkmoth host power",
+  restricted_connectivity: "Filtered connectivity",
+  web_broken: "Web/HTTPS", partial_routing: "Routing", all_clear: "False alarm",
+};
+
+const PLAYBOOKS = {
+  router_down: [
+    ["Look at the router's lights", "No lights means a power problem. Reseat the power plug and check that its socket works.", ["gateway"], "check"],
+    ["Try the router from another device", "From a phone on its Wi-Fi, open the router admin address printed on its sticker. This separates a Linkmoth-host problem from a router-wide problem.", ["gateway"], "check", "Success: the admin page opens; investigate the Linkmoth host's cable or route instead of rebooting the router."],
+    ["Reseat the LAN cable", "The cable between the Linkmoth host and router or switch should click firmly at both ends. Check any switch in between too.", ["link", "gateway"], "interruption", "Success: Router (LAN) turns green after diagnosis."],
+    ["Power-cycle the router", "Unplug power, count to 30, plug it back in, then allow a full 2–3 minutes to start. Do not press the factory-reset pin.", ["gateway"], "interruption", "Success: the router light pattern returns to normal and Router (LAN) turns green."],
+    ["Escalate a persistent failure", "If other devices also cannot open the router after power and cables are confirmed, use the vendor's support process or replace the router.", [], "escalate"],
+  ],
+  wan_down: [
+    ["Check the provider on mobile data", "Use the provider's app or status page while disconnected from home Wi-Fi. A listed area outage means waiting is safer than changing equipment.", [], "check"],
+    ["Inspect the WAN path", "Check the router's Internet/WAN light and the modem or fibre box. Reseat only the external WAN cable; note any red alarm light.", ["upstream_dns", "raw_ping", "https"], "check"],
+    ["Run one fresh diagnosis", "Short provider and routing failures often clear by themselves. Recheck before interrupting everyone.", ["upstream_dns", "raw_ping", "https"], "check", "Success: two consecutive diagnoses return all clear."],
+    ["Power-cycle modem, then router", "Turn both off for 30 seconds. Power the modem/fibre box first and wait for normal lights, then power the router. Do not factory-reset either device.", ["upstream_dns", "raw_ping", "https"], "interruption", "Success: WAN/Internet lights normalize and the three Internet-path rungs turn green."],
+    ["Give the provider the evidence", "If it stays down, call the provider with the incident reference, exact start time, light status, and the copied support summary.", [], "escalate"],
+  ],
+  restricted_connectivity: [
+    ["Confirm ordinary websites open", "Open two unrelated HTTPS websites from a device on the same network. If they load, this is not a total internet outage.", ["https"], "check", "Success: normal websites load while Linkmoth's Web (HTTPS) rung stays green."],
+    ["Pause VPN or filtering briefly", "Temporarily pause a VPN, firewall rule, parental-control profile, or guest-network isolation and diagnose again.", ["upstream_dns", "raw_ping"], "interruption", "Success: direct DNS or ping turns green; re-enable the feature and adjust only the blocking rule."],
+    ["Check whether this is intentional", "Managed and guest networks often block ping or direct DNS on purpose. If browsing works and the policy is expected, no repair is needed.", [], "check"],
+  ],
+  local_dns_broken: [
+    ["Check the resolver service", "Open the resolver host or container and confirm its DNS service is running. Read the micro-check directly under Local DNS first.", ["local_dns"], "check"],
+    ["Check storage and port 53", "A full disk can stop updates or startup. The resolver must also be listening for UDP DNS on port 53 at the configured address.", ["local_dns"], "check"],
+    ["Confirm an affected device uses this resolver", "Check that the device actually received the configured resolver address from the router. If it uses another DNS server, this fault is unrelated to that device.", ["local_dns"], "check"],
+    ["Use a temporary bypass only if needed", "On one affected device, temporarily select a trusted public resolver. This bypasses local filtering and local hostnames, so undo it after repair.", ["local_dns"], "interruption", "Success: public names work on that device, confirming the local resolver is the failed layer."],
+  ],
+  pi_link: [
+    ["Treat downstream results as unknown", "While its own connection is unavailable, Linkmoth cannot fairly judge the router, DNS, or provider.", ["link"], "check"],
+    ["Check the host's connection", "For Ethernet, reseat both ends and look for port lights. For Wi-Fi, confirm it joined the intended network.", ["link"], "check"],
+    ["Try another port or cable", "Switch ports and cables fail more often than network adapters.", ["link"], "interruption", "Success: Host network link turns green and shows the expected interface."],
+    ["Restart the Linkmoth host", "If settings and physical connection look correct, restart the host to renew DHCP and renegotiate the link.", ["link"], "interruption", "Success: Host network link and Router (LAN) both turn green."],
+  ],
+  router_wlan_down: [
+    ["Wake one configured witness", "Unlock a configured Wi-Fi phone or laptop, keep it awake, and confirm it is on this Wi-Fi. Sleeping clients and blocked ping can look exactly like failed radios.", ["router_wlan"], "check", "Success: that witness replies and Router Wireless turns green."],
+    ["Try Wi-Fi normally", "Open the router page or another LAN service from that wireless device. If it works, Wi-Fi is usable even if ping is blocked; choose a better witness instead of rebooting.", ["router_wlan"], "check"],
+    ["Check the Wi-Fi light and settings", "Confirm the physical WLAN button, radio enable switches, and schedules. Use a wired device for the admin page if possible.", ["router_wlan"], "check"],
+    ["Power-cycle the router", "Only after the witness checks fail, restart the router and wait 2–3 minutes. Do not factory-reset it.", ["router_wlan"], "interruption", "Success: normal Wi-Fi returns and a configured witness turns the rung green."],
+    ["Prevent repeat failures", "If confirmed radio crashes recur, save the incident references, update firmware, and ask the vendor about the repeated pattern.", [], "escalate"],
+  ],
+  link_degraded: [
+    ["Confirm the expected speed", "A 100 Mb/s link is normal for some devices and USB adapters. Only repair it if this host and port are meant to be faster.", ["link"], "check"],
+    ["Inspect the cable run", "Look for sharp kinks, crushed cable, loose plugs, couplers, or a cable category that cannot support the expected speed.", ["link"], "check"],
+    ["Swap cable, then switch port", "Change one item at a time and diagnose after each change so the evidence identifies the cause.", ["link"], "interruption", "Success: Host network link shows the expected speed and full duplex."],
+  ],
+  upstream_dns_down: [
+    ["Run a fresh diagnosis", "The configured public resolvers can have a short interruption. Check the per-target evidence to see whether all or only one failed.", ["upstream_dns"], "check"],
+    ["Check router, VPN, and filtering rules", "Direct DNS can be intentionally forced through the router or a VPN. If so, this may be policy rather than damage.", ["upstream_dns"], "check"],
+    ["Test from another device", "An advanced user can run nslookup gstatic.com 1.1.1.1. If it fails there too while browsing works, direct DNS is probably filtered.", ["upstream_dns"], "check"],
+    ["Escalate persistent unplanned blocking", "Copy the support summary and ask the network administrator or provider whether outbound DNS on port 53 is blocked.", [], "escalate"],
+  ],
+  partial_routing: [
+    ["Confirm Web (HTTPS) is green", "If websites work and the HTTPS rung stays green, the path is usable and ping is probably filtered.", ["raw_ping", "https"], "check"],
+    ["Check the per-target evidence", "One silent target may be the target itself. Repeated failure of every ping target is stronger evidence of filtering.", ["raw_ping"], "check"],
+    ["Escalate only if real traffic also fails", "If browsing is broken too, use the WAN outage steps and give the provider the support summary.", [], "escalate"],
+  ],
+  web_broken: [
+    ["Try two normal websites", "Use a device on the same network. If both load, inspect Linkmoth's per-target HTTPS evidence before changing the network.", ["https"], "check"],
+    ["Check the Linkmoth host's clock", "A wrong date breaks certificate checks. Run date and timedatectl; correct NTP before bypassing any certificate warning.", ["https"], "check", "Success: the host time is correct and Web (HTTPS) turns green."],
+    ["Check for a captive portal", "Open http://neverssl.com from a device on this network. A login page means the network is intercepting traffic.", ["https"], "check"],
+    ["Inspect filtering without disabling TLS", "Review proxy, firewall, DNS-filter, and HTTPS-inspection rules. Do not solve this by turning off certificate verification.", ["https"], "check"],
+  ],
+  host_power: [
+    ["Check the power warning first", "Read the Host power evidence line. It may name an offline supply, low voltage, or throttling.", ["power"], "check"],
+    ["Replace the weak supply or cable", "Use the hardware maker's rated adapter and a short, sound power cable.", ["power"], "interruption", "Success: after restart, Host power says power is OK and stays green under load."],
+    ["Protect the storage", "If undervoltage has happened repeatedly, back up Linkmoth's state and check the host storage for errors after power is stable.", [], "check"],
+  ],
+  all_clear: [
+    ["Return to the original alert", "The network ladder is healthy now. Read the service's own error, logs, or monitor response before restarting anything.", [], "check"],
+    ["Check the affected service directly", "Open only that service from another LAN device. A single broken app with a healthy ladder is an app or host problem, not an ISP outage.", [], "check"],
+    ["Restart only the affected service", "If its own evidence shows it is stuck, restart that service or container—not the router and not unrelated devices.", [], "interruption", "Success: the original service check recovers while the network ladder remains green."],
+    ["Tune a repeated false alarm", "If the service is merely slow, adjust that monitor's timeout or retries based on observed response time; do not silence real failures globally.", [], "check"],
+  ],
+  probe_disagreement: [
+    ["Run one fresh diagnosis", "The network has a working path, but at least one redundant target did not answer. A second run separates a brief target blip from a repeatable problem.", ["upstream_dns", "raw_ping", "https"], "check", "Success: all targets agree, or the same single target is clearly identified again."],
+    ["Inspect only the amber rung", "Expand its per-target evidence. Do not reboot the network while another target in every required layer still works.", ["upstream_dns", "raw_ping", "https"], "check"],
+    ["Replace a consistently bad diagnostic target", "If the same external target alone fails across fresh runs, replace it in configuration. That improves future diagnosis without treating the target as your outage.", [], "check"],
+  ],
+  wifi_witness_disagreement: [
+    ["Wake the silent Wi-Fi witness", "Unlock it, keep it awake, confirm it is on the intended Wi-Fi, and diagnose again. Phones often stop replying while asleep.", ["router_wlan"], "check", "Success: every configured witness replies, or you identify one device that never accepts ping."],
+    ["Test that device normally", "Open the router page or another LAN service from it. If normal Wi-Fi works but ping does not, the device is a poor witness—not a broken radio.", ["router_wlan"], "check"],
+    ["Remove an unreliable witness", "Keep only Wi-Fi-only devices that stay awake and accept ping. This improves diagnosis without creating a device-monitoring list.", ["router_wlan"], "check"],
+  ],
+  power_issue: [
+    ["Use a rated power supply", "Underrated chargers and thin cables cause undervoltage that looks like network trouble. Use the hardware maker's rated adapter.", ["power"], "interruption", "Success: Host power stays green during a fresh diagnosis."],
+    ["Protect against repeat damage", "After power is stable, back up Linkmoth state and check storage if undervoltage has been chronic; repeated brownouts can corrupt it.", [], "check"],
+  ],
+};
+
+const DNS_SERVICE_NAMES = {
+  pihole: ["Pi-hole", "pihole-FTL"],
+  unbound: ["Unbound", "unbound"],
+  dnsmasq: ["dnsmasq", "dnsmasq"],
+};
+
+const LADDER_GROUPS = {
+  power: "Observer health", link: "Observer health",
+  gateway: "Local network", router_wlan: "Local network",
+  local_dns: "Name resolution", upstream_dns: "Name resolution",
+  raw_ping: "Internet path", https: "Internet path",
+};
+
+let verifyHighlight = null;
+
+function ordinal(n) {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
+function formatPattern(p, code) {
+  if (!p || p.count < 2) return "";
+  const name = (BLAME_NAMES[code] || code).toLowerCase();
+  if (p.tier === "recurrence") {
+    return `2nd ${name} failure recently`;
+  }
+  if (p.tier === "pattern") {
+    const parts = [`${ordinal(p.count)} ${name} failure this period`];
+    if (p.median_duration_s) parts.push(`median ${fmtDur(p.median_duration_s)}`);
+    if (p.clusters_hour_range) parts.push(`usually ${p.clusters_hour_range}`);
+    return parts.join(" · ");
+  }
+  return "";
+}
+
+function formatIncidentPattern(p) {
+  if (!p || p.count < 2) return "";
+  const parts = [p.tier === "pattern" ? `Recurring pattern: ${p.count} matching incidents` : "Recurring issue: 2 matching incidents"];
+  if (p.median_duration_s) parts.push(`usually lasts ${fmtDur(p.median_duration_s)}`);
+  if (p.median_gap_s) parts.push(`typically returns after ${fmtDur(p.median_gap_s)}`);
+  if (p.clusters_hour_range) parts.push(`often ${p.clusters_hour_range}`);
+  return parts.join(" · ");
+}
+
+function playbookSteps(code, checks) {
+  const internetDisagreement = (checks || []).some((c) =>
+    c.state === "partial" && ["upstream_dns", "raw_ping", "https"].includes(c.id)
+  );
+  const wifiDisagreement = (checks || []).some((c) =>
+    c.state === "partial" && c.id === "router_wlan"
+  );
+  const playbookCode = code === "all_clear" && internetDisagreement
+    ? "probe_disagreement"
+    : code === "all_clear" && wifiDisagreement ? "wifi_witness_disagreement" : code;
+  const steps = (PLAYBOOKS[playbookCode] || []).slice();
+  const localDns = (checks || []).find((c) => c.id === "local_dns");
+  if (code === "local_dns_broken" && localDns) {
+    const failedMicro = (localDns.micro || []).filter((m) => m.ok === false);
+    const serviceFailure = failedMicro.find((m) => /service/i.test(m.label || ""));
+    const diskFailure = failedMicro.find((m) => /disk/i.test(m.label || ""));
+    if (diskFailure) {
+      steps.unshift(["Free disk space before restarting DNS", diskFailure.detail, ["local_dns"], "interruption", "Success: the DNS service can start and Local DNS turns green."]);
+    } else if (serviceFailure && DNS_SERVICE_NAMES[localDns.provider]) {
+      const [name, service] = DNS_SERVICE_NAMES[localDns.provider];
+      steps.unshift([`Restart ${name} on the Linkmoth host`, `Run sudo systemctl restart ${service}, then diagnose again.`, ["local_dns"], "interruption", `Success: ${name} is active and Local DNS turns green.`]);
+    }
+  }
+  const link = (checks || []).find((c) => c.id === "link");
+  if (code === "pi_link" && link && /no default route/i.test(link.detail || "")) {
+    steps.unshift(["Restore the host's network route", "The host has no default route. Check its network settings or DHCP lease before replacing hardware.", ["link", "gateway"], "check", "Success: Linkmoth shows an interface and can reach the router."]);
+  }
+  const power = (checks || []).find((c) => c.id === "power");
+  if (power && power.ok === false && code !== "host_power") {
+    steps.push(...PLAYBOOKS.power_issue);
+  }
+  const seen = new Set();
+  return steps.filter((step) => {
+    const key = step[0];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function playbookHtml(steps) {
+  return steps.map(([t, d, rungs, kind, success]) => {
+    const attr = (rungs && rungs.length) ? ` data-rungs="${esc(rungs.join(","))}"` : "";
+    const kindLabel = kind === "interruption" ? "Interruption" : kind === "escalate" ? "Escalate" : "Safe check";
+    const kindHtml = kind ? `<span class="step-kind ${esc(kind)}">${kindLabel}</span>` : "";
+    const successHtml = success ? `<span class="step-success">${esc(success)}</span>` : "";
+    return `<li${attr}>${kindHtml}<b>${esc(t)}</b><span>${esc(d)}</span>${successHtml}</li>`;
+  }).join("");
+}
+
+function playbookRungs(code) {
+  const seen = [];
+  for (const step of (PLAYBOOKS[code] || [])) {
+    for (const r of (step[2] || [])) {
+      if (!seen.includes(r)) seen.push(r);
+    }
+  }
+  return seen;
+}
+
+function fmtAge(sec) {
+  if (sec < 90) return Math.round(sec) + "s ago";
+  if (sec < 5400) return Math.round(sec / 60) + " min ago";
+  if (sec < 172800) return (sec / 3600).toFixed(1) + " h ago";
+  return Math.round(sec / 86400) + " d ago";
+}
+function fmtTs(ts) {
+  return new Date(ts * 1000).toLocaleString([], {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+  });
+}
+function fmtTime(ts) {
+  return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function fmtDur(sec) {
+  if (sec < 90) return Math.round(sec) + " s";
+  if (sec < 5400) return Math.round(sec / 60) + " min";
+  return (sec / 3600).toFixed(1) + " h";
+}
+
+function spark(svgId, hist, key, color, label, detailId) {
+  const svg = $(svgId);
+  const detail = $(detailId);
+  const W = 600, H = 72, PAD = 4;
+  const pts = hist.map((h) => h.ms[key]);
+  const valid = pts.filter((v) => v != null);
+  svg.setAttribute("aria-label", `${label} latency history. Hover or use the left and right arrow keys to inspect samples.`);
+  if (!valid.length) {
+    svg.innerHTML = "";
+    detail.textContent = "No latency samples available yet.";
+    return null;
+  }
+  const max = Math.max(...valid) * 1.15 || 1;
+  const x = (i) => pts.length === 1 ? W / 2 : PAD + (i * (W - 2 * PAD)) / (pts.length - 1);
+  const y = (v) => H - PAD - (v / max) * (H - 2 * PAD);
+  let d = "", pen = false;
+  pts.forEach((v, i) => {
+    if (v == null) { pen = false; return; }
+    d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1);
+    pen = true;
+  });
+  let marks = "";
+  hist.forEach((h, i) => {
+    if (h.severity === "bad") {
+      marks += `<line x1="${x(i).toFixed(1)}" y1="${PAD}" x2="${x(i).toFixed(1)}" y2="${H - PAD}" stroke="var(--bad-text)" stroke-width="2" opacity="0.65"/>`;
+    }
+  });
+  svg.innerHTML = marks
+    + `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`
+    + `<line class="spark-cursor" visibility="hidden" stroke="${color}" stroke-width="1" opacity="0.75"/>`
+    + `<circle class="spark-point" visibility="hidden" r="4" fill="var(--card)" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+  const cursor = svg.querySelector(".spark-cursor");
+  const point = svg.querySelector(".spark-point");
+  let selected = -1;
+
+  function nearestValid(index) {
+    if (pts[index] != null) return index;
+    for (let offset = 1; offset < pts.length; offset += 1) {
+      if (pts[index - offset] != null) return index - offset;
+      if (pts[index + offset] != null) return index + offset;
+    }
+    return -1;
+  }
+  function show(index) {
+    selected = nearestValid(Math.max(0, Math.min(pts.length - 1, index)));
+    if (selected < 0) return;
+    const value = pts[selected];
+    const sample = hist[selected];
+    const px = x(selected), py = y(value);
+    cursor.setAttribute("x1", px.toFixed(1));
+    cursor.setAttribute("x2", px.toFixed(1));
+    cursor.setAttribute("y1", String(PAD));
+    cursor.setAttribute("y2", String(H - PAD));
+    cursor.setAttribute("visibility", "visible");
+    point.setAttribute("cx", px.toFixed(1));
+    point.setAttribute("cy", py.toFixed(1));
+    point.setAttribute("visibility", "visible");
+    detail.textContent = `${label} — ${fmtTs(sample.ts)} · ${Math.round(value)} ms`;
+  }
+  function clear() {
+    selected = -1;
+    cursor.setAttribute("visibility", "hidden");
+    point.setAttribute("visibility", "hidden");
+    detail.textContent = "Hover or focus the chart to inspect a sample.";
+  }
+  svg.onpointermove = (event) => {
+    const rect = svg.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    show(Math.round(ratio * (pts.length - 1)));
+  };
+  svg.onpointerleave = () => { if (document.activeElement !== svg) clear(); };
+  svg.onfocus = () => show(pts.length - 1);
+  svg.onblur = clear;
+  svg.onkeydown = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") show(0);
+    else if (event.key === "End") show(pts.length - 1);
+    else show((selected < 0 ? pts.length - 1 : selected) + (event.key === "ArrowLeft" ? -1 : 1));
+  };
+  return valid[valid.length - 1];
+}
+
+function checkState(c) {
+  if (c.state) return c.state;
+  if (c.ok === null) return "skipped";
+  if (c.ok === false) return "failed";
+  return c.id === "link" && String(c.detail || "").includes("⚠️") ? "degraded" : "passed";
+}
+
+function confidenceForChecks(checks) {
+  const byId = Object.fromEntries((checks || []).map((c) => [c.id, c]));
+  if (byId.link && byId.link.ok === false) return "low";
+  if (byId.power && byId.power.ok === false) return "medium";
+  if (byId.router_wlan && byId.router_wlan.ok === false) return "medium";
+  if (["upstream_dns", "raw_ping", "https"].some((id) =>
+    byId[id] && checkState(byId[id]) === "partial"
+  )) return "medium";
+  if (byId.router_wlan && checkState(byId.router_wlan) === "partial") return "medium";
+  return "high";
+}
+
+function evidenceSummary(checks) {
+  const states = (checks || []).map(checkState);
+  const failed = states.filter((state) => state === "failed").length;
+  const partial = states.filter((state) => ["partial", "degraded"].includes(state)).length;
+  const passed = states.filter((state) => state === "passed").length;
+  const skipped = states.filter((state) => state === "skipped").length;
+  const parts = [`Evidence: ${passed} passed`];
+  if (failed) parts.push(`${failed} failed`);
+  if (partial) parts.push(`${partial} needs attention`);
+  if (skipped) parts.push(`${skipped} optional skipped`);
+  parts.push(`confidence ${confidenceForChecks(checks)}`);
+  return parts.join(" · ");
+}
+
+function renderLadderCheck(c) {
+  const state = checkState(c);
+  const attention = state === "partial" || state === "degraded";
+  const cls = state === "skipped" ? "na" : state === "failed" ? "bad" : attention ? "warn" : "ok";
+  const mark = state === "skipped" ? "–" : state === "failed" ? "✕" : attention ? "~" : "✓";
+  let chip = "";
+  if (verifyHighlight) {
+    if (verifyHighlight.fixed.includes(c.id)) {
+      chip = `<span class="verify-chip ok">fixed</span>`;
+    } else if (verifyHighlight.still_bad.includes(c.id)) {
+      chip = `<span class="verify-chip bad">still bad</span>`;
+    } else if ((verifyHighlight.improved || []).includes(c.id)) {
+      chip = `<span class="verify-chip ok">evidence improved</span>`;
+    } else if ((verifyHighlight.regressed || []).includes(c.id)) {
+      chip = `<span class="verify-chip bad">new disagreement</span>`;
+    }
+  }
+  const summary = c.probe_summary || {};
+  const disagreement = state === "partial"
+    ? `<span class="probe-summary">${summary.passed || 0}/${summary.attempted || 0} targets passed</span>`
+    : "";
+  let html = `<div class="row"><div class="badge ${cls}">${mark}</div>
+    <div><div class="label">${esc(c.label)}${chip}${disagreement}</div><div class="detail">${esc(c.detail)}</div></div></div>`;
+  if ((c.probes || []).length > 1) {
+    html += `<details class="probe-evidence"><summary>Per-target evidence (${c.probes.length})</summary><ul>`
+      + c.probes.map((probe) =>
+        `<li>${probe.ok ? "✓" : "✕"} <b>${esc(probe.target)}</b> — ${esc(probe.detail)}</li>`
+      ).join("") + `</ul></details>`;
+  }
+  for (const m of c.micro || []) {
+    const mcls = m.ok === null ? "na" : m.ok ? "ok" : "bad";
+    const mmark = m.ok === null ? "–" : m.ok ? "✓" : "✕";
+    html += `<div class="row micro-row"><div class="badge ${mcls}">${mmark}</div>
+      <div><div class="label">${esc(m.label)}</div><div class="detail">${esc(m.detail)}</div></div></div>`;
+  }
+  if (c.id === "router_wlan" && c.ok === false) {
+    html += `<p class="set-hint wlan-hint">Use Wi-Fi-only devices that reply to ping — not a wired PC. Windows often blocks ICMP.</p>`;
+  }
+  return html;
+}
+
+function renderLadder(checks) {
+  let group = null;
+  return (checks || []).map((check) => {
+    const nextGroup = LADDER_GROUPS[check.id] || "Other evidence";
+    const heading = nextGroup === group ? "" : `<div class="ladder-group">${esc(nextGroup)}</div>`;
+    group = nextGroup;
+    return heading + renderLadderCheck(check);
+  }).join("");
+}
+
+function supportSummary(status) {
+  const run = status && status.last_run;
+  if (!run) return "Linkmoth has not run a diagnosis yet.";
+  const inc = status.open_incident;
+  const lines = [
+    "Linkmoth support summary",
+    `Time: ${new Date(run.ts * 1000).toISOString()}`,
+    `Incident: ${inc && inc.ref ? inc.ref : "none open"}`,
+    `Verdict: ${run.title} (${run.code}, ${run.severity})`,
+    `Confidence: ${confidenceForChecks(run.checks)}`,
+  ];
+  if (run.explain) lines.push(`Why: ${run.explain}`);
+  if (run.hint) lines.push(`Next step: ${run.hint}`);
+  lines.push("", "Fault ladder:");
+  for (const check of run.checks || []) {
+    const state = checkState(check);
+    const mark = state === "failed" ? "FAIL" : state === "skipped" ? "SKIP" : state.toUpperCase();
+    lines.push(`- [${mark}] ${check.label}: ${check.detail}`);
+    for (const probe of check.probes || []) {
+      lines.push(`  - ${probe.ok ? "PASS" : "FAIL"} ${probe.target}: ${probe.detail}`);
+    }
+    for (const micro of check.micro || []) {
+      lines.push(`  - ${micro.ok ? "PASS" : micro.ok === false ? "FAIL" : "SKIP"} ${micro.label}: ${micro.detail}`);
+    }
+  }
+  lines.push("", "Generated locally by Linkmoth; no webhook credentials are included.");
+  return lines.join("\n");
+}
+
+function incidentSupportSummary(packet) {
+  if (!packet || !packet.incident) return "Incident evidence is unavailable.";
+  const inc = packet.incident;
+  const run = (packet.runs || []).find((item) => item.severity !== "ok")
+    || (packet.runs || [])[packet.runs.length - 1];
+  if (!run) return `Linkmoth incident ${inc.ref || inc.id}: no diagnosis runs stored.`;
+  const base = supportSummary({ last_run: run, open_incident: inc });
+  const timeline = (packet.runs || []).map((item) =>
+    `- ${new Date(item.ts * 1000).toISOString()} — ${item.title}`
+  );
+  return base + `\n\nIncident started: ${new Date(inc.started * 1000).toISOString()}`
+    + (inc.resolved ? `\nIncident resolved: ${new Date(inc.resolved * 1000).toISOString()}` : "\nIncident status: open")
+    + (packet.confidence_reason ? `\nConfidence basis: ${packet.confidence_reason}` : "")
+    + (formatIncidentPattern(packet.pattern) ? `\n${formatIncidentPattern(packet.pattern)}` : "")
+    + `\n\nDiagnosis timeline:\n${timeline.join("\n")}`;
+}
+
+async function copyPlainText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  area.remove();
+  if (!copied) throw new Error("copy failed");
+}
+
+function fmtBytes(n) {
+  if (n == null || n < 0) return "—";
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(2) + " MB";
+}
+
+function renderDatabaseInfo(db) {
+  if (!db || !db.exists) {
+    $("db-status").textContent = "No state.db file yet — it is created on first run.";
+    return;
+  }
+  const avNote = db.auto_vacuum === 0
+    ? "AUTO_VACUUM is off (legacy database) — daily cleanup may run full VACUUM when many free pages remain."
+    : `AUTO_VACUUM is ${db.auto_vacuum_label} — daily cleanup reclaims free pages; manual VACUUM fully repacks the file.`;
+  $("db-status").textContent =
+    `File size ${fmtBytes(db.size_bytes)} · ${db.freelist_count} free page(s) · ${avNote}`;
+}
+
+async function loadDatabaseInfo() {
+  if (!authReady) return;
+  try {
+    const r = await fetch("/api/status");
+    if (r.status === 401) return;
+    const out = await r.json();
+    renderDatabaseInfo(out.database);
+  } catch (e) {
+    $("db-status").textContent = "Could not load database info.";
+  }
+}
+
+function authHeaders(extra) {
+  const h = Object.assign({ "Content-Type": "application/json" }, extra || {});
+  if (csrfToken) h["X-CSRF-Token"] = csrfToken;
+  return h;
+}
+
+function syncLocalDnsControls() {
+  const address = $("s-local-dns-address").value.trim();
+  const configured = localDnsRuntime && localDnsRuntime.configured;
+  const unchangedLocal = !!(
+    configured && localDnsRuntime.same_host && address === configured.address
+  );
+  const loopback = /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(address);
+  const sameHost = unchangedLocal || loopback;
+  const provider = $("s-local-dns-provider");
+  provider.disabled = !sameHost;
+  if (!sameHost) provider.value = "generic";
+  const effective = localDnsRuntime && localDnsRuntime.effective_provider;
+  const detected = localDnsRuntime && localDnsRuntime.provider_detected;
+  $("s-local-dns-note").textContent = sameHost
+    ? `Provider-specific checks are local only.${detected && effective ? " Detected: " + effective + "." : ""}`
+    : "Remote resolver: Linkmoth trusts only the DNS response, forces generic behaviour, and never inspects the remote service.";
+}
+
+$("s-local-dns-address").addEventListener("input", syncLocalDnsControls);
+
+async function authStatus() {
+  try {
+    const r = await fetch("/api/auth/status");
+    return await r.json();
+  } catch (e) {
+    return { enabled: true, authenticated: false };
+  }
+}
+
+function showAuthGate(mode) {
+  $("auth-gate").classList.remove("hidden");
+  $("auth-onboarding-step").classList.toggle("hidden", mode !== "onboarding");
+  $("auth-role-step").classList.toggle("hidden", mode !== "role");
+  $("auth-password-step").classList.toggle("hidden", mode !== "password");
+  $("auth-totp-step").classList.toggle("hidden", mode !== "totp");
+  $("auth-title").textContent =
+      mode === "onboarding" ? "Welcome to Linkmoth"
+    : mode === "role" ? "How will you use Linkmoth?"
+    : mode === "totp" ? "Two-factor code" : "Sign in";
+  $("auth-err").textContent = "";
+}
+
+function hideAuthGate() {
+  $("auth-gate").classList.add("hidden");
+  $("logout-btn").classList.remove("hidden");
+}
+
+async function ensureAuth() {
+  if (holdAuthForRecoveryCodes) return false;
+  const st = await authStatus();
+  if (st.authenticated) {
+    csrfToken = st.csrf_token || csrfToken;
+    authReady = true;
+    hideAuthGate();
+    return true;
+  }
+  authReady = false;
+  showAuthGate(st.onboarding_required ? "onboarding" : st.needs_totp ? "totp" : "password");
+  return false;
+}
+
+async function doSetup() {
+  $("auth-err").textContent = "";
+  const password = $("auth-new-password").value;
+  const confirm = $("auth-confirm-password").value;
+  if (password !== confirm) {
+    $("auth-err").textContent = "Passwords do not match";
+    return;
+  }
+  const r = await fetch("/api/auth/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      token: $("auth-setup-token").value.trim(),
+      password,
+      confirm,
+    }),
+  });
+  const out = await r.json();
+  if (!r.ok) {
+    $("auth-err").textContent = out.error || "Setup failed";
+    if (out.retry_after) $("auth-err").textContent += " (retry in " + out.retry_after + "s)";
+    return;
+  }
+  $("auth-setup-token").value = "";
+  $("auth-new-password").value = "";
+  $("auth-confirm-password").value = "";
+  csrfToken = out.csrf_token || null;
+  authReady = true;
+  // Account created; now let the user pick how Linkmoth watches the connection.
+  showAuthGate("role");
+}
+
+async function doRole() {
+  $("auth-err").textContent = "";
+  const picked = document.querySelector('input[name="auth-role"]:checked');
+  const role = picked ? picked.value : "checker";
+  // Wire the choice to the engine: baseline_minutes > 0 makes Linkmoth its own
+  // uptime checker (self-detects faults and opens incidents); 0 turns that off
+  // so an external monitor drives incidents and Linkmoth is the explanation
+  // layer. Background sampling (history_sample_minutes) keeps running either way.
+  const baseline_minutes = role === "explainer" ? 0 : 60;
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ baseline_minutes }),
+    });
+    const out = await r.json();
+    if (!out.saved) {
+      $("auth-err").textContent = "Could not save preference: " +
+        Object.entries(out.errors || { _: "unknown error" })
+          .map(([k, v]) => `${k}: ${v}`).join(", ");
+      return;
+    }
+  } catch (e) {
+    $("auth-err").textContent = "Could not save preference (network error)";
+    return;
+  }
+  hideAuthGate();
+  tick();
+}
+
+async function doLogin() {
+  $("auth-err").textContent = "";
+  const r = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: $("auth-password").value }),
+  });
+  const out = await r.json();
+  if (!r.ok) {
+    $("auth-err").textContent = out.error || "Login failed";
+    if (out.retry_after) $("auth-err").textContent += " (retry in " + out.retry_after + "s)";
+    return;
+  }
+  csrfToken = out.csrf_token || null;
+  if (out.needs_totp) {
+    showAuthGate("totp");
+    return;
+  }
+  authReady = true;
+  hideAuthGate();
+  tick();
+}
+
+async function doTotp() {
+  $("auth-err").textContent = "";
+  const r = await fetch("/api/auth/totp", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ code: $("auth-totp").value.trim() }),
+  });
+  const out = await r.json();
+  if (!r.ok) {
+    $("auth-err").textContent = out.error || "Invalid code";
+    return;
+  }
+  csrfToken = out.csrf_token || csrfToken;
+  authReady = true;
+  hideAuthGate();
+  tick();
+}
+
+async function doLogout() {
+  await fetch("/api/auth/logout", { method: "POST", headers: authHeaders({}) });
+  csrfToken = null;
+  authReady = false;
+  settingsLoaded = false;
+  Object.keys(packetCache).forEach((k) => delete packetCache[k]);
+  await ensureAuth();
+}
+
+$("auth-setup-btn").addEventListener("click", doSetup);
+$("auth-confirm-password").addEventListener("keydown", (e) => { if (e.key === "Enter") doSetup(); });
+$("auth-role-btn").addEventListener("click", doRole);
+document.querySelectorAll('input[name="auth-role"]').forEach((el) => {
+  el.addEventListener("change", () => {
+    const explainer = document.querySelector('input[name="auth-role"]:checked').value === "explainer";
+    $("auth-role-webhook").classList.toggle("hidden", !explainer);
+  });
+});
+$("auth-login-btn").addEventListener("click", doLogin);
+$("auth-password").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+$("auth-totp-btn").addEventListener("click", doTotp);
+$("auth-totp").addEventListener("keydown", (e) => { if (e.key === "Enter") doTotp(); });
+$("logout-btn").addEventListener("click", doLogout);
+
+function renderQuality(q) {
+  const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
+  const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
+  const fmtMs = (v) => (v === null || v === undefined) ? "—" : Math.round(v) + " ms";
+  const fmtPct = (v) => (v === null || v === undefined) ? "—" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
+  if (!q || q.enabled === false) {
+    meta.textContent = q ? "Quality checks are off (enable in config)." : "Quality data unavailable.";
+    setBadge("q-unknown", "—");
+    $("q-latency").textContent = $("q-jitter").textContent = $("q-loss").textContent = "—";
+    reasons.textContent = "";
+    return;
+  }
+  const c = q.current;
+  if (!c) {
+    meta.textContent = "Measuring… first sample appears within a few minutes.";
+    setBadge("q-unknown", "—");
+    return;
+  }
+  setBadge("q-" + (c.state || "unknown"), c.state || "unknown");
+  $("q-latency").textContent = fmtMs(c.latency_ms);
+  $("q-jitter").textContent = fmtMs(c.jitter_ms);
+  $("q-loss").textContent = fmtPct(c.loss_pct);
+  const ago = c.ts ? Math.max(0, Math.round((Date.now() / 1000 - c.ts) / 60)) : null;
+  meta.textContent = "Internet path" + (ago !== null ? ` · updated ${ago} min ago` : "");
+  reasons.textContent = (c.reasons && c.reasons.length)
+    ? c.reasons.join(" · ")
+    : (c.state === "good" ? "Latency, jitter, and loss all look healthy." : "");
+}
+
+function fmtBytesShort(bytes) {
+  if (bytes === null || bytes === undefined) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Number(bytes), unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function renderHostMetric(id, value, title, level) {
+  const el = $(id);
+  el.classList.remove("warn", "bad");
+  if (level) el.classList.add(level);
+  el.querySelector(".v").textContent = value;
+  el.title = title || "Host reading unavailable";
+}
+
+function renderHostHealth(host) {
+  const panel = $("host-health");
+  if (!host || typeof host !== "object") { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  const cpu = host.cpu_percent;
+  renderHostMetric("host-cpu", cpu === null ? "—" : `${Math.round(cpu)}%`,
+    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% · load: ${host.load_1m ?? "—"} · ${host.cpu_cores || 1} core(s)`,
+    cpu >= 95 ? "bad" : cpu >= 80 ? "warn" : "");
+  const temp = host.temperature_c;
+  renderHostMetric("host-temp", temp === null ? "—" : `${Math.round(temp)}°`,
+    temp === null ? "No CPU temperature sensor was found" : `Hottest thermal sensor: ${temp}°C`,
+    temp >= 85 ? "bad" : temp >= 75 ? "warn" : "");
+  const memory = host.memory_percent;
+  renderHostMetric("host-memory", memory === null ? "—" : `${Math.round(memory)}%`,
+    memory === null ? "Memory usage unavailable" : `RAM: ${fmtBytesShort(host.memory_used_bytes)} of ${fmtBytesShort(host.memory_total_bytes)} used`,
+    memory >= 95 ? "bad" : memory >= 85 ? "warn" : "");
+  const disk = host.disk_percent;
+  renderHostMetric("host-disk", disk === null ? "—" : `${Math.round(disk)}%`,
+    disk === null ? "Disk usage unavailable" : `Root disk: ${fmtBytesShort(host.disk_used_bytes)} of ${fmtBytesShort(host.disk_total_bytes)} used`,
+    disk >= 95 ? "bad" : disk >= 85 ? "warn" : "");
+}
+
+async function refresh() {
+  if (!authReady || holdAuthForRecoveryCodes) return;
+  let s;
+  try {
+    const resp = await fetch("/api/status");
+    if (resp.status === 401) {
+      authReady = false;
+      await ensureAuth();
+      return;
+    }
+    s = await resp.json();
+    latestStatus = s;
+  } catch (e) {
+    $("age").textContent = "dashboard can't reach Linkmoth";
+    return;
+  }
+  try {
+  if (s.auth) {
+    csrfToken = s.auth.csrf_token || csrfToken;
+    $("logout-btn").classList.remove("hidden");
+  }
+  if (s.app) {
+    $("meta-version").textContent = "v" + (s.app.version || "?");
+    if (s.app.github) $("meta-github").href = s.app.github;
+    if (s.app.changelog) $("meta-changelog").href = s.app.changelog;
+    $("site-meta").classList.remove("hidden");
+  }
+  renderHostHealth(s.host);
+  if (s.local_dns) localDnsRuntime = s.local_dns;
+  renderQuality(s.quality);
+  if (s.settings) {
+    refreshSec = s.settings.ui_refresh_seconds || 5;
+    if (!settingsLoaded) {
+      $("s-kuma").value = s.settings.kuma_url;
+      $("s-refresh").value = s.settings.ui_refresh_seconds;
+      $("s-history").value = s.settings.history_sample_minutes;
+      $("s-baseline").value = s.settings.baseline_minutes;
+      $("s-retention").value = s.settings.retention_days;
+      $("s-domain").value = s.settings.dns_test_domain;
+      const localDns = s.settings.local_dns || {
+        mode: "auto", address: "127.0.0.1", provider: "auto"
+      };
+      $("s-local-dns-mode").value = localDns.mode || "auto";
+      $("s-local-dns-address").value = localDns.address || "127.0.0.1";
+      $("s-local-dns-provider").value = localDns.provider || "auto";
+      syncLocalDnsControls();
+      $("s-upstream").value = (s.settings.upstream_dns || []).join(", ");
+      $("s-ping").value = (s.settings.ping_targets || []).join(", ");
+      $("s-wifi-clients").value = (s.settings.target_wifi_clients || []).join(", ");
+      $("s-discord-url").value = s.settings.discord_webhook_url || "";
+      $("s-discord-enabled").checked = !!s.settings.discord_notifications_enabled;
+      $("s-push-enabled").checked = s.settings.push_notifications_enabled !== false;
+      settingsLoaded = true;
+    }
+  }
+  renderTodayBanner(s);
+  if (s.database && !$("tab-settings").classList.contains("hidden")) {
+    renderDatabaseInfo(s.database);
+  }
+  const run = s.last_run;
+  let everythingAnswers = false;
+  const v = $("verdict");
+  if (run) {
+    v.className = "card " + run.severity;
+    $("v-title").textContent = run.title;
+    $("v-explain").textContent = run.explain || "";
+    $("v-hint").textContent = run.hint || "";
+    $("v-evidence").textContent = evidenceSummary(run.checks);
+    $("v-evidence").classList.remove("hidden");
+    const partialEvidence = (run.checks || []).some((c) => checkState(c) === "partial");
+    everythingAnswers = run.code === "all_clear" && !partialEvidence;
+    const allClearNeedsHelp = run.code !== "all_clear" || partialEvidence;
+    const pbSteps = allClearNeedsHelp ? playbookSteps(run.code, run.checks) : [];
+    if (pbSteps.length) {
+      $("v-playbook-steps").innerHTML = playbookHtml(pbSteps);
+      $("v-playbook").classList.remove("hidden");
+      $("verify-fix-btn").classList.remove("hidden");
+    } else {
+      $("v-playbook").classList.add("hidden");
+      $("verify-fix-btn").classList.add("hidden");
+    }
+    $("copy-diagnosis").classList.toggle("hidden", everythingAnswers);
+    const patLine = formatPattern(s.patterns, run.code);
+    const vPat = $("v-pattern");
+    if (patLine) {
+      vPat.textContent = patLine;
+      vPat.classList.remove("hidden");
+    } else {
+      vPat.textContent = "";
+      vPat.classList.add("hidden");
+    }
+    $("age").textContent = (s.diagnosing ? "diagnosing… · " : "") + "last check " + fmtAge(s.now - run.ts);
+    $("ladder").innerHTML = renderLadder(run.checks);
+  } else {
+    $("age").textContent = s.diagnosing ? "diagnosing…" : "idle — no data yet";
+    $("v-evidence").classList.add("hidden");
+    $("copy-diagnosis").classList.add("hidden");
+  }
+  const openInc = s.open_incident;
+  const openMeta = s.open_incident_meta;
+  const vRef = $("v-ref");
+  const incActions = $("incident-actions");
+  if (!everythingAnswers && openInc && openInc.ref) {
+    vRef.textContent = "Open incident: " + openInc.ref;
+    vRef.classList.remove("hidden");
+    incActions.classList.remove("hidden");
+  } else {
+    vRef.textContent = "";
+    vRef.classList.add("hidden");
+    incActions.classList.add("hidden");
+  }
+  if (s.push || s.outage_active) {
+    renderPushStatus(s);
+  }
+
+  if (s.stats) {
+    lastStats = s.stats;
+    const st = s.stats;
+    const blameEntries = Object.entries(st.blame || {});
+    const top = blameEntries.sort((a, b) => b[1] - a[1])[0];
+    $("stats").innerHTML = `
+      <div class="stat"><div class="k">Uptime, 30 days</div><div class="v">${st.uptime_pct}%</div></div>
+      <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d} <small>${st.false_alarms_30d} false</small></div></div>
+      <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div></div>
+      <div class="stat"><div class="k">Top offender</div><div class="v v-compact">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "—"}</div></div>`;
+    const maxN = Math.max(...blameEntries.map((e) => e[1]), st.false_alarms_30d, 1);
+    const total = blameEntries.reduce((acc, e) => acc + e[1], 0) + st.false_alarms_30d;
+    if (total > 0) {
+      let rows = blameEntries.sort((a, b) => b[1] - a[1]).map(([code, n]) =>
+        `<div class="blame-row"><span class="who">${esc(BLAME_NAMES[code] || code)}</span>
+         <div class="bar" data-w="${Math.max(8, (n / maxN) * 60)}"></div><span class="n">${n}</span></div>`);
+      if (st.false_alarms_30d) {
+        rows.push(`<div class="blame-row"><span class="who">False alarm</span>
+          <div class="bar fa" data-w="${Math.max(8, (st.false_alarms_30d / maxN) * 60)}"></div>
+          <span class="n">${st.false_alarms_30d}</span></div>`);
+      }
+      $("blame").innerHTML = rows.join("");
+      // Widths are data-driven; set them via CSSOM so no inline style= attribute
+      // is needed (keeps the CSP free of style-src 'unsafe-inline').
+      $("blame").querySelectorAll(".bar[data-w]").forEach((el) => {
+        el.style.width = el.dataset.w + "%";
+      });
+    }
+  }
+
+  if (s.history_meta) {
+    const hm = s.history_meta;
+    const sample = hm.sample_minutes || hm.baseline_minutes || "—";
+    const refresh = hm.refresh_seconds || refreshSec;
+    let meta = `Dashboard refresh every ${refresh}s · new graph point every ${sample} min`;
+    if (hm.last_ts) {
+      meta += ` · last sample ${fmtAge(s.now - hm.last_ts)}`;
+    } else {
+      meta += " · waiting for first background sample";
+    }
+    $("hist-meta").textContent = meta;
+  }
+
+  if (s.history && s.history.length) {
+    const inet = spark("spark-inet", s.history, "raw_ping", "var(--line)", "Internet ping", "spark-inet-detail");
+    const gw = spark("spark-gw", s.history, "gateway", "var(--line2)", "Router ping", "spark-gw-detail");
+    $("inet-now").innerHTML = inet != null ? `now <b>${Math.round(inet)} ms</b>` : "";
+    $("gw-now").innerHTML = gw != null ? `now <b>${Math.round(gw)} ms</b>` : "";
+  }
+  if (!$("tab-devices").classList.contains("hidden")) loadDevices(true);
+  if (!$("tab-settings").classList.contains("hidden")) loadWebhooks(true);
+  } catch (e) {
+    console.error("refresh render failed", e);
+  }
+}
+
+function renderPacket(d) {
+  const inc = d.incident;
+  const lines = [];
+  const conf = d.confidence ? `<span class="pill conf" title="${esc(d.confidence_reason || "")}">confidence: ${esc(d.confidence)}</span>` : "";
+  lines.push(`<p><span class="k">Trigger:</span> ${esc(inc.detail || inc.source)}</p>`);
+  if (inc.ref) {
+    lines.push(`<p><span class="k">Reference:</span> <span class="inc-ref">${esc(inc.ref)}</span></p>`);
+  }
+  if (d.first_failure) {
+    lines.push(`<p><span class="k">First failure:</span> <b>${esc(d.first_failure.label)}</b> — ${esc(d.first_failure.detail)}${d.first_failure_note ? `<br><small>${esc(d.first_failure_note)}</small>` : ""}</p>`);
+  }
+  const why = [];
+  if (d.confidence_reason) why.push(`<li><b>Confidence:</b> ${esc(d.confidence_reason)}</li>`);
+  if (d.stayed_healthy && d.stayed_healthy.length) why.push(`<li><b>Ruled out:</b> ${esc(d.stayed_healthy.join(", "))} stayed healthy at the first failing run.</li>`);
+  if (why.length) lines.push(`<div class="diffbox"><span class="k">Why Linkmoth thinks this:</span><ul>${why.join("")}</ul></div>`);
+  const firstBad = d.runs.find((r) => r.severity !== "ok");
+  const pbCode = inc.verdict_code || (firstBad ? firstBad.code : null);
+  const pbRun = firstBad || d.runs[d.runs.length - 1];
+  const pbSteps = pbCode ? playbookSteps(pbCode, pbRun ? pbRun.checks : []) : [];
+  if (pbSteps.length) {
+    const btnLabel = inc.resolved ? "Run a fresh diagnosis" : "I tried this — check again";
+    lines.push(`<details class="playbook"><summary>What to do next — safest steps first</summary>
+      <p class="playbook-note">Start with safe checks. Stop when the linked rung turns green, and avoid a factory reset unless you have a configuration backup.</p>
+      <ol>${playbookHtml(pbSteps)}</ol>
+      <button type="button" class="action-btn verify-fix-btn">${esc(btnLabel)}</button>
+      <p class="verify-result packet-verify-result hidden"></p></details>`);
+  }
+  lines.push(`<button type="button" class="action-btn copy-packet-btn">Copy this incident for support</button>`);
+  if (d.similar && d.similar.length) {
+    lines.push(`<p class="k mt12">Similar incidents</p><ul class="similar-inc">`
+      + d.similar.map((s) =>
+        `<li><span class="inc-ref">${esc(s.ref || "—")}</span> ${fmtTs(s.started)} · ${fmtDur(s.duration_s || 0)}</li>`
+      ).join("") + `</ul>`);
+  }
+  const recurrence = formatIncidentPattern(d.pattern);
+  if (recurrence) {
+    lines.push(`<div class="diffbox"><span class="k">Repeat evidence:</span><b>${esc(recurrence)}</b><p>Keep this incident reference and the copied support summary. Repeated faults are evidence for a router vendor, DNS operator, or ISP—not a reason to repeatedly reboot things.</p></div>`);
+  }
+  if (d.diff.length) {
+    lines.push(`<div class="diffbox"><span class="k">What changed vs last healthy check${d.baseline_before ? " (" + fmtTs(d.baseline_before.ts) + ")" : ""}:</span>`
+      + (d.comparison_summary ? `<p><b>${esc(d.comparison_summary)}</b></p>` : "")
+      + d.diff.map((x) =>
+        `<div class="d-row ${x.flipped ? "flipped" : ""}"><b>${esc(x.label)}</b>
+         ${esc(x.before)} <span class="arrow">→</span> ${esc(x.after)}</div>`).join("")
+      + `</div>`);
+  } else if (d.comparison_summary) {
+    lines.push(`<p><span class="k">Before/after:</span> ${esc(d.comparison_summary)}</p>`);
+  }
+  if (d.stayed_healthy.length) {
+    lines.push(`<p><span class="k">Stayed healthy:</span> ${d.stayed_healthy.map(esc).join(", ")}</p>`);
+  }
+  lines.push(`<p class="k mt10">Diagnosis timeline ${conf}</p>`);
+  lines.push(`<ul class="timeline">` + d.runs.map((r) =>
+    `<li><details><summary><span class="dot ${r.severity}"></span>${fmtTime(r.ts)} — ${esc(r.title)}</summary>
+     <div class="rawruns">` + r.checks.map((c) => {
+       const state = checkState(c);
+       const mark = state === "skipped" ? "–" : state === "failed" ? "✕" : ["partial", "degraded"].includes(state) ? "~" : "✓";
+       const head = `${mark} ${esc(c.label)}: ${esc(c.detail)}${c.ms != null ? ` (${Math.round(c.ms)} ms)` : ""}`;
+       const probes = (c.probes || []).map((probe) =>
+         `<br>&nbsp;&nbsp;↳ ${probe.ok ? "✓" : "✕"} ${esc(probe.target)}: ${esc(probe.detail)}`
+       ).join("");
+       const micro = (c.micro || []).map((m) =>
+         `<br>&nbsp;&nbsp;↳ ${m.ok === null ? "–" : m.ok ? "✓" : "✕"} ${esc(m.label)}: ${esc(m.detail)}`
+       ).join("");
+       return head + probes + micro;
+     }).join("<br>") + `</div></details></li>`).join("") + `</ul>`);
+  return `<div class="packet">${lines.join("")}</div>`;
+}
+
+async function loadHistory() {
+  if (!authReady) return;
+  const code = $("hist-filter").value;
+  let data;
+  try {
+    const resp = await fetch("/api/incidents?limit=100" + (code ? "&code=" + encodeURIComponent(code) : ""));
+    if (resp.status === 401) { await ensureAuth(); return; }
+    data = await resp.json();
+  } catch (e) {
+    $("hist-list").innerHTML = `<p class="empty">Can't reach Linkmoth.</p>`;
+    return;
+  }
+  if (lastStats) {
+    let statsLine =
+      `30 days: ${lastStats.uptime_pct}% uptime · ${lastStats.incidents_30d} incidents · ${lastStats.downtime_s ? fmtDur(lastStats.downtime_s) + " down" : "no downtime"}`;
+    if (data.pattern) {
+      const extra = formatPattern(data.pattern, code);
+      if (extra) statsLine += ` · ${extra}`;
+    }
+    $("hist-stats").textContent = statsLine;
+  }
+  const list = data.incidents || [];
+  if (!list.length) {
+    $("hist-list").innerHTML = `<p class="empty">Nothing here. Either it never broke, or the filter is too picky.</p>`;
+    return;
+  }
+  $("hist-list").innerHTML = list.map((i) => {
+    const open = !i.resolved;
+    const pill = open ? '<span class="pill open">open</span>'
+                      : '<span class="pill done">' + fmtDur(i.resolved - i.started) + "</span>";
+    const faPill = i.false_alarm ? ' <span class="pill conf">false alarm</span>' : "";
+    const title = open ? "Ongoing — diagnosing" : (i.verdict_title || i.verdict_code || "resolved");
+    const ref = i.ref ? `<span class="inc-ref">${esc(i.ref)}</span>` : "";
+    return `<details class="inc" data-id="${i.id}"${i.ref ? ` data-ref="${esc(i.ref)}"` : ""}><summary>${ref}<span class="when">${fmtTs(i.started)}</span>
+      ${pill}${faPill} ${esc(title)} <span class="when">· ${i.run_count} run(s)</span></summary>
+      <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`;
+  }).join("");
+  document.querySelectorAll("details.inc").forEach((el) => {
+    el.addEventListener("toggle", async () => {
+      if (!el.open) return;
+      const id = el.dataset.id;
+      if (!packetCache[id]) {
+        try {
+          const pr = await fetch("/api/incident?id=" + id);
+          if (pr.status === 401) return;
+          packetCache[id] = await pr.json();
+        } catch (e) { return; }
+      }
+      el.querySelector(".packet-slot").innerHTML =
+        renderPacket(packetCache[id]) + falseAlarmActionHtml(packetCache[id].incident);
+    });
+  });
+}
+
+function falseAlarmActionHtml(inc) {
+  if (!inc || !inc.resolved || inc.false_alarm || !inc.ref) return "";
+  return `<p><button type="button" class="action-btn fa-mark-btn" data-ref="${esc(inc.ref)}">Mark as false alarm</button></p>`;
+}
+
+function deviceIntervalLabel(seconds) {
+  if (!seconds) return "Manual checks only";
+  if (seconds < 3600) return `Every ${seconds / 60} minutes`;
+  return "Every 60 minutes";
+}
+
+function renderDeviceCard(d) {
+  const state = d.last_state || "unknown";
+  const stateLabel = d.running ? "checking…" : state;
+  const latest = d.last_run_ts ? `Last checked ${fmtAge(Date.now() / 1000 - d.last_run_ts)}` : "Never checked";
+  const alerts = Object.entries(d.alerts || {}).filter(([, on]) => on).map(([name]) => name);
+  const monitoring = d.interval_seconds
+    ? `${deviceIntervalLabel(d.interval_seconds)} · monitored state: ${d.stable_state || "unknown"}`
+    : "Automatic checks off";
+  const summary = d.last_summary || "Run a check to see whether this device answers.";
+  return `<section class="card device-card ${esc(state)}${d.enabled ? "" : " disabled"}" data-device-id="${esc(d.id)}">
+    <div class="device-title">
+      <h3>${esc(d.name)}</h3>
+      <span class="device-state ${esc(state)}">${esc(stateLabel)}</span>
+      ${d.enabled ? "" : '<span class="pill conf">disabled</span>'}
+    </div>
+    <p class="device-summary">${esc(summary)}</p>
+    <p class="device-meta">${esc(d.address)} · ${esc(d.preset)} · ${esc(latest)}</p>
+    <p class="device-meta">${esc(monitoring)} · Alerts: ${alerts.length ? esc(alerts.join(", ")) : "off"}</p>
+    <div class="device-actions">
+      <button type="button" class="action-btn" data-device-action="run" data-device-id="${esc(d.id)}"${!d.enabled || d.running ? " disabled" : ""}>Run now</button>
+      <button type="button" class="action-btn" data-device-action="edit" data-device-id="${esc(d.id)}">Edit</button>
+      <button type="button" class="action-btn" data-device-action="delete" data-device-id="${esc(d.id)}"${d.running ? " disabled" : ""}>Delete</button>
+    </div>
+    <details class="device-history" data-device-history="${esc(d.id)}">
+      <summary>Recent checks</summary>
+      <div class="device-history-list"><p class="empty">Open to load recent checks.</p></div>
+    </details>
+  </section>`;
+}
+
+async function loadDeviceHistory(details) {
+  const id = details.dataset.deviceHistory;
+  const slot = details.querySelector(".device-history-list");
+  slot.innerHTML = `<p class="empty">Loading…</p>`;
+  try {
+    const r = await fetch(`/api/devices/${encodeURIComponent(id)}/history?limit=20`);
+    const out = await r.json();
+    if (!r.ok) {
+      slot.innerHTML = `<p class="empty">${esc(out.error || "Could not load history.")}</p>`;
+      return;
+    }
+    const rows = out.history || [];
+    if (!rows.length) {
+      slot.innerHTML = `<p class="empty">No checks yet.</p>`;
+      return;
+    }
+    slot.innerHTML = rows.map((run) =>
+      `<div class="device-history-row"><b>${esc(run.state)}</b> · ${esc(fmtTs(run.ts))}
+       <span class="when">· ${esc(run.source)}</span><br><span class="when">${esc(run.summary)}</span></div>`
+    ).join("");
+  } catch (e) {
+    slot.innerHTML = `<p class="empty">Could not reach Linkmoth.</p>`;
+  }
+}
+
+function bindDeviceCards() {
+  $("device-list").querySelectorAll("[data-device-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.deviceId;
+      if (button.dataset.deviceAction === "run") runDeviceNow(id, button);
+      if (button.dataset.deviceAction === "edit") {
+        const device = deviceData.find((item) => item.id === id);
+        if (device) openDeviceForm(device);
+      }
+      if (button.dataset.deviceAction === "delete") deleteDevice(id);
+    });
+  });
+  $("device-list").querySelectorAll("[data-device-history]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      if (details.open && !details.dataset.loaded) {
+        details.dataset.loaded = "true";
+        loadDeviceHistory(details);
+      }
+    });
+  });
+}
+
+async function loadDevices(silent) {
+  if (!authReady || devicesLoading) return;
+  if (silent && (
+    !$("device-form").classList.contains("hidden")
+    || $("device-list").querySelector("details[open]")
+  )) return;
+  devicesLoading = true;
+  try {
+    const r = await fetch("/api/devices");
+    if (r.status === 401) {
+      await ensureAuth();
+      return;
+    }
+    const out = await r.json();
+    if (!r.ok) throw new Error(out.error || "device request failed");
+    deviceData = out.devices || [];
+    deviceMeta = out;
+    if (!deviceData.length) {
+      $("device-list").innerHTML = `<section class="card">
+        <h3>No devices yet</h3>
+        <p class="empty">Add a printer, web interface, TCP service, or any private-LAN device that answers ping.</p>
+        <button type="button" class="action-btn" id="device-empty-add">Add your first device</button>
+      </section>`;
+      $("device-empty-add").addEventListener("click", () => openDeviceForm(null));
+    } else {
+      $("device-list").innerHTML = deviceData.map(renderDeviceCard).join("");
+      bindDeviceCards();
+    }
+    const channels = out.channels || {};
+    const unavailable = Object.entries(channels).filter(([, ready]) => !ready).map(([name]) => name);
+    $("d-alert-note").textContent = unavailable.length
+      ? `These global integrations are currently unavailable: ${unavailable.join(", ")}. Device choices are saved but send only after the integration is enabled in Settings.`
+      : "Alerts use the notification integrations configured in Settings and are off by default.";
+  } catch (e) {
+    if (!silent) {
+      $("device-list").innerHTML = `<section class="card"><p class="empty">Could not load devices.</p></section>`;
+    }
+  } finally {
+    devicesLoading = false;
+  }
+}
+
+function syncDeviceForm() {
+  const preset = $("d-preset").value;
+  $("d-tcp-settings").classList.toggle("hidden", preset !== "tcp_service");
+  $("d-web-settings").classList.toggle("hidden", preset !== "web_ui");
+  const https = $("d-scheme").value === "https";
+  $("d-tls-row").classList.toggle("hidden", !https);
+  if (!https) $("d-verify-tls").checked = true;
+  $("d-tls-warning").classList.toggle(
+    "hidden", !https || $("d-verify-tls").checked
+  );
+}
+
+function openDeviceForm(device) {
+  editingDeviceId = device ? device.id : null;
+  $("device-form-title").textContent = device ? "Edit device" : "Add device";
+  $("d-name").value = device ? device.name : "";
+  $("d-address").value = device ? device.address : "";
+  $("d-preset").value = device ? device.preset : "generic";
+  $("d-enabled").checked = device ? !!device.enabled : true;
+  $("d-interval").value = String(device ? device.interval_seconds : 0);
+  $("d-alert-discord").checked = !!(device && device.alerts.discord);
+  $("d-alert-push").checked = !!(device && device.alerts.push);
+  $("d-alert-webhook").checked = !!(device && device.alerts.webhook);
+  const settings = (device && device.settings) || {};
+  $("d-port").value = settings.port || 80;
+  $("d-scheme").value = settings.scheme || "http";
+  $("d-web-port").value = settings.port || (settings.scheme === "https" ? 443 : 80);
+  $("d-path").value = settings.path || "/";
+  $("d-status").value = settings.expected_status || 200;
+  $("d-body").value = settings.body_contains || "";
+  $("d-verify-tls").checked = settings.verify_tls !== false;
+  $("device-msg").textContent = "";
+  $("device-msg").className = "";
+  syncDeviceForm();
+  $("device-form").classList.remove("hidden");
+  $("d-name").focus();
+}
+
+function closeDeviceForm() {
+  editingDeviceId = null;
+  $("device-form").classList.add("hidden");
+  $("device-msg").textContent = "";
+}
+
+async function saveDevice() {
+  const preset = $("d-preset").value;
+  let settings = {};
+  if (preset === "tcp_service") {
+    settings = { port: Number($("d-port").value) };
+  } else if (preset === "web_ui") {
+    settings = {
+      scheme: $("d-scheme").value,
+      port: Number($("d-web-port").value),
+      path: $("d-path").value.trim() || "/",
+      expected_status: Number($("d-status").value),
+      body_contains: $("d-body").value,
+      verify_tls: $("d-verify-tls").checked,
+    };
+  }
+  const payload = {
+    name: $("d-name").value.trim(),
+    address: $("d-address").value.trim(),
+    preset,
+    enabled: $("d-enabled").checked,
+    interval_seconds: Number($("d-interval").value),
+    alerts: {
+      discord: $("d-alert-discord").checked,
+      push: $("d-alert-push").checked,
+      webhook: $("d-alert-webhook").checked,
+    },
+    settings,
+  };
+  const msg = $("device-msg");
+  $("device-save").disabled = true;
+  msg.textContent = "Saving…";
+  msg.className = "";
+  try {
+    const editing = editingDeviceId;
+    const url = editing ? `/api/devices/${encodeURIComponent(editing)}` : "/api/devices";
+    const r = await fetch(url, {
+      method: editing ? "PUT" : "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const out = await r.json();
+    if (!r.ok) {
+      msg.textContent = out.error || "Could not save device.";
+      msg.className = "bad";
+      return;
+    }
+    msg.textContent = "Saved";
+    msg.className = "ok";
+    closeDeviceForm();
+    await loadDevices(false);
+  } catch (e) {
+    msg.textContent = "Could not reach Linkmoth.";
+    msg.className = "bad";
+  } finally {
+    $("device-save").disabled = false;
+  }
+}
+
+async function runDeviceNow(id, button) {
+  button.disabled = true;
+  button.textContent = "Checking…";
+  try {
+    const r = await fetch(`/api/devices/${encodeURIComponent(id)}/run`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: "{}",
+    });
+    const out = await r.json();
+    if (!r.ok) alert(out.error || "Device check failed.");
+    await loadDevices(false);
+  } catch (e) {
+    alert("Device check failed: can't reach Linkmoth.");
+    button.disabled = false;
+    button.textContent = "Run now";
+  }
+}
+
+async function deleteDevice(id) {
+  const device = deviceData.find((item) => item.id === id);
+  if (!confirm(`Delete ${device ? device.name : "this device"} and its recent check history?`)) return;
+  try {
+    const r = await fetch(`/api/devices/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    const out = await r.json();
+    if (!r.ok) {
+      alert(out.error || "Delete failed.");
+      return;
+    }
+    await loadDevices(false);
+  } catch (e) {
+    alert("Delete failed: can't reach Linkmoth.");
+  }
+}
+
+$("device-add").addEventListener("click", () => openDeviceForm(null));
+$("device-cancel").addEventListener("click", closeDeviceForm);
+$("device-save").addEventListener("click", saveDevice);
+$("d-preset").addEventListener("change", syncDeviceForm);
+$("d-scheme").addEventListener("change", () => {
+  $("d-web-port").value = $("d-scheme").value === "https" ? 443 : 80;
+  syncDeviceForm();
+});
+$("d-verify-tls").addEventListener("change", syncDeviceForm);
+
+let webhookData = [];
+let webhookMeta = null;
+let webhooksLoading = false;
+let editingWebhookId = null;
+let webhookHoldUntil = 0;
+let inboundWebhookInfo = null;
+
+const WH_URL_HINTS = {
+  generic: "Paste the receiving app's endpoint. It must accept a JSON POST.",
+  ntfy: "Full topic URL, e.g. https://ntfy.sh/your-topic",
+  gotify: "Message endpoint with token, e.g. https://gotify.example/message?token=YOUR_APP_TOKEN",
+  home_assistant: "Paste the webhook trigger URL from Home Assistant, e.g. http://192.168.1.20:8123/api/webhook/linkmoth.",
+  discord: "Channel webhook, e.g. https://discord.com/api/webhooks/…",
+  slack: "Incoming webhook, e.g. https://hooks.slack.com/services/… (Mattermost/Rocket.Chat work too)",
+  n8n: "Paste the URL from your n8n or Node-RED webhook node.",
+  custom: "Paste the receiving endpoint. The template below is POSTed as its request body.",
+};
+const WH_URL_PLACEHOLDERS = {
+  generic: "https://example.com/hook",
+  ntfy: "https://ntfy.sh/your-topic",
+  gotify: "https://gotify.example/message?token=…",
+  home_assistant: "http://homeassistant.local:8123/api/webhook/linkmoth",
+  discord: "https://discord.com/api/webhooks/…",
+  slack: "https://hooks.slack.com/services/…",
+  n8n: "http://n8n.local:5678/webhook/linkmoth",
+  custom: "https://example.com/hook",
+};
+const WH_TEMPLATE_EXAMPLE = `{
+  "title": "{{title}}",
+  "body": "{{summary}}",
+  "severity": "{{severity}}",
+  "incident_id": "{{incident_id}}",
+  "status": "{{status}}",
+  "duration_seconds": {{duration_seconds}},
+  "confidence": "{{confidence}}"
+}`;
+
+function whPresetLabel(id) {
+  const preset = ((webhookMeta || {}).presets || []).find((p) => p.id === id);
+  return preset ? preset.label : id;
+}
+
+function whStatusLine(w) {
+  const now = Date.now() / 1000;
+  if (w.queued > 0) {
+    const parts = [`${w.queued} queued`];
+    const err = w.queue_error || w.last_error;
+    if (err) parts.push(`last failed: ${err}`);
+    if (w.next_attempt) {
+      const wait = Math.round(w.next_attempt - now);
+      parts.push(wait > 2 ? `next retry in ${fmtDur(wait)}` : "retrying now");
+    }
+    return { text: parts.join(" · "), cls: "queued" };
+  }
+  if (w.last_error) return { text: `last send failed: ${w.last_error}`, cls: "bad" };
+  if (w.last_send_ts) {
+    return {
+      text: `last sent HTTP ${w.last_status} · ${fmtAge(now - w.last_send_ts)}`,
+      cls: "",
+    };
+  }
+  return { text: "never sent — try a test", cls: "" };
+}
+
+function renderWebhookItem(w) {
+  const status = whStatusLine(w);
+  const events = (w.events || []).length;
+  return `<div class="wh-item" data-webhook-id="${esc(w.id)}">
+    <div class="wh-item-title">
+      <b>${esc(w.name)}</b>
+      <span class="pill conf">${esc(whPresetLabel(w.preset))}</span>
+      ${w.enabled ? "" : '<span class="pill conf">disabled</span>'}
+      <span class="when">${events} event${events === 1 ? "" : "s"}</span>
+    </div>
+    <p class="wh-item-status ${status.cls}">${esc(status.text)}</p>
+    <div class="wh-item-actions">
+      <button type="button" class="action-btn" data-wh-action="test-fault">Test fault</button>
+      <button type="button" class="action-btn" data-wh-action="test-recovery">Test recovery</button>
+      <button type="button" class="action-btn" data-wh-action="edit">Edit</button>
+      <button type="button" class="action-btn" data-wh-action="delete">Delete</button>
+      <span class="wh-test-msg"></span>
+    </div>
+  </div>`;
+}
+
+function whFillMeta() {
+  const presetSel = $("wh-preset");
+  if (!webhookMeta || presetSel.options.length) return;
+  (webhookMeta.presets || []).forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.label;
+    presetSel.appendChild(opt);
+  });
+  $("wh-events").innerHTML = (webhookMeta.events || []).map((ev) =>
+    `<label><input type="checkbox" data-wh-event="${esc(ev.id)}"> ${esc(ev.label)}</label>`
+  ).join("");
+  $("wh-template-vars").textContent =
+    (webhookMeta.template_variables || []).map((v) => `{{${v}}}`).join(" ");
+}
+
+async function loadWebhooks(silent) {
+  if (!authReady || webhooksLoading) return;
+  if (silent && (
+    !$("wh-form").classList.contains("hidden") || Date.now() < webhookHoldUntil
+  )) return;
+  webhooksLoading = true;
+  try {
+    const r = await fetch("/api/webhooks");
+    if (r.status === 401) { await ensureAuth(); return; }
+    const out = await r.json();
+    if (!r.ok) throw new Error(out.error || "webhook request failed");
+    webhookData = out.webhooks || [];
+    webhookMeta = out;
+    whFillMeta();
+    $("wh-list").innerHTML = webhookData.length
+      ? webhookData.map(renderWebhookItem).join("")
+      : '<p class="empty">No webhooks yet. Add one to send Linkmoth events to your tools.</p>';
+  } catch (e) {
+    if (!silent) $("wh-list").innerHTML = '<p class="empty">Could not load webhooks.</p>';
+  } finally {
+    webhooksLoading = false;
+  }
+}
+
+function whHeadersToText(headers) {
+  return Object.entries(headers || {}).map(([k, v]) => `${k}: ${v}`).join("\n");
+}
+
+function whParseHeaders(text) {
+  const headers = {};
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const idx = line.indexOf(":");
+    if (idx < 1) throw new Error(`header line needs "Name: value" — got "${line.slice(0, 40)}"`);
+    headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  return headers;
+}
+
+function syncWebhookForm() {
+  const preset = $("wh-preset").value || "generic";
+  $("wh-url").placeholder = WH_URL_PLACEHOLDERS[preset] || "";
+  $("wh-url-hint").textContent = WH_URL_HINTS[preset] || "";
+  const custom = preset === "custom";
+  $("wh-template-wrap").classList.toggle("hidden", !custom);
+  if (custom && !$("wh-template").value.trim()) {
+    $("wh-template").value = WH_TEMPLATE_EXAMPLE;
+  }
+}
+
+function openWebhookForm(webhook) {
+  whFillMeta();
+  editingWebhookId = webhook ? webhook.id : null;
+  $("wh-form-title").textContent = webhook ? "Edit webhook" : "Add webhook";
+  $("wh-name").value = webhook ? webhook.name : "";
+  $("wh-preset").value = webhook ? webhook.preset : "generic";
+  $("wh-url").value = webhook ? webhook.url : "";
+  $("wh-enabled").checked = webhook ? !!webhook.enabled : true;
+  $("wh-headers").value = whHeadersToText(webhook && webhook.headers);
+  $("wh-template").value = (webhook && webhook.template) || "";
+  const selected = new Set(webhook ? webhook.events : ["fault_opened", "degradation_detected", "fault_recovered"]);
+  $("wh-events").querySelectorAll("[data-wh-event]").forEach((box) => {
+    box.checked = selected.has(box.dataset.whEvent);
+  });
+  $("wh-msg").textContent = "";
+  $("wh-msg").className = "";
+  syncWebhookForm();
+  $("wh-form").classList.remove("hidden");
+  $("wh-name").focus();
+}
+
+function closeWebhookForm() {
+  editingWebhookId = null;
+  $("wh-form").classList.add("hidden");
+  $("wh-msg").textContent = "";
+}
+
+async function saveWebhook() {
+  const msg = $("wh-msg");
+  let headers;
+  try {
+    headers = whParseHeaders($("wh-headers").value);
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = "bad";
+    return;
+  }
+  const preset = $("wh-preset").value;
+  const events = [...$("wh-events").querySelectorAll("[data-wh-event]")]
+    .filter((box) => box.checked).map((box) => box.dataset.whEvent);
+  const payload = {
+    name: $("wh-name").value.trim(),
+    enabled: $("wh-enabled").checked,
+    url: $("wh-url").value.trim(),
+    preset,
+    headers,
+    events,
+    template: preset === "custom" ? $("wh-template").value : null,
+  };
+  $("wh-save").disabled = true;
+  msg.textContent = "Saving…";
+  msg.className = "";
+  try {
+    const editing = editingWebhookId;
+    const url = editing ? `/api/webhooks/${encodeURIComponent(editing)}` : "/api/webhooks";
+    const r = await fetch(url, {
+      method: editing ? "PUT" : "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const out = await r.json();
+    if (!r.ok) {
+      msg.textContent = out.error || "Could not save webhook.";
+      msg.className = "bad";
+      return;
+    }
+    closeWebhookForm();
+    await loadWebhooks(false);
+  } catch (e) {
+    msg.textContent = "Could not reach Linkmoth.";
+    msg.className = "bad";
+  } finally {
+    $("wh-save").disabled = false;
+  }
+}
+
+async function deleteWebhook(id) {
+  const webhook = webhookData.find((item) => item.id === id);
+  if (!confirm(`Delete ${webhook ? webhook.name : "this webhook"}? Queued deliveries for it are dropped.`)) return;
+  try {
+    const r = await fetch(`/api/webhooks/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    const out = await r.json();
+    if (!r.ok) { alert(out.error || "Delete failed."); return; }
+    await loadWebhooks(false);
+  } catch (e) {
+    alert("Delete failed: can't reach Linkmoth.");
+  }
+}
+
+async function testWebhook(id, kind, item) {
+  const msg = item.querySelector(".wh-test-msg");
+  const buttons = item.querySelectorAll("[data-wh-action^='test']");
+  buttons.forEach((b) => { b.disabled = true; });
+  msg.textContent = "Sending…";
+  msg.className = "wh-test-msg";
+  try {
+    const r = await fetch(`/api/webhooks/${encodeURIComponent(id)}/test`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ kind }),
+    });
+    const out = await r.json();
+    if (!r.ok) {
+      msg.textContent = out.error || "Test failed.";
+      msg.className = "wh-test-msg bad";
+    } else if (out.ok) {
+      msg.textContent = `HTTP ${out.status} — delivered`;
+      msg.className = "wh-test-msg ok";
+    } else {
+      msg.textContent = `Failed: ${out.error || ("HTTP " + out.status)}`;
+      msg.className = "wh-test-msg bad";
+    }
+  } catch (e) {
+    msg.textContent = "Test failed: can't reach Linkmoth.";
+    msg.className = "wh-test-msg bad";
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+    webhookHoldUntil = Date.now() + 12000;  // keep the result visible
+  }
+}
+
+$("wh-list").addEventListener("click", (ev) => {
+  const button = ev.target.closest("[data-wh-action]");
+  if (!button) return;
+  const item = button.closest("[data-webhook-id]");
+  const id = item.dataset.webhookId;
+  const action = button.dataset.whAction;
+  if (action === "edit") {
+    const webhook = webhookData.find((w) => w.id === id);
+    if (webhook) openWebhookForm(webhook);
+  } else if (action === "delete") {
+    deleteWebhook(id);
+  } else if (action === "test-fault") {
+    testWebhook(id, "fault", item);
+  } else if (action === "test-recovery") {
+    testWebhook(id, "recovery", item);
+  }
+});
+
+$("wh-add").addEventListener("click", () => openWebhookForm(null));
+$("wh-cancel").addEventListener("click", closeWebhookForm);
+$("wh-save").addEventListener("click", saveWebhook);
+$("wh-preset").addEventListener("change", syncWebhookForm);
+
+async function loadInboundWebhookInfo() {
+  try {
+    const r = await fetch("/api/webhooks/inbound-info");
+    if (r.status === 401) { await ensureAuth(); return; }
+    const out = await r.json();
+    if (!r.ok) throw new Error(out.error || "request failed");
+    inboundWebhookInfo = out;
+    $("wh-inbound-url").value = out.url || "Unavailable";
+    $("wh-inbound-secret").value = out.secret || "Unavailable";
+  } catch (e) {
+    inboundWebhookInfo = null;
+    $("wh-inbound-url").value = "Could not load inbound URL";
+    $("wh-inbound-secret").value = "Could not load bearer token";
+  }
+}
+
+async function copyInboundWebhook(value, label) {
+  const msg = $("wh-curl-msg");
+  msg.textContent = "";
+  msg.className = "";
+  try {
+    if (!inboundWebhookInfo || !value) throw new Error("inbound details unavailable");
+    await copyPlainText(value);
+    msg.textContent = label === "curl test"
+      ? "Copied. It includes the bearer token, so paste it with care."
+      : `${label} copied.`;
+    msg.className = "ok";
+  } catch (e) {
+    msg.textContent = "Could not copy inbound webhook details.";
+    msg.className = "bad";
+  }
+  setTimeout(() => { msg.textContent = ""; }, 6000);
+}
+
+$("wh-copy-url").addEventListener("click", () =>
+  copyInboundWebhook(inboundWebhookInfo && inboundWebhookInfo.url, "Inbound URL"));
+$("wh-copy-token").addEventListener("click", () =>
+  copyInboundWebhook(inboundWebhookInfo && inboundWebhookInfo.secret, "Bearer token"));
+$("wh-copy-curl").addEventListener("click", () =>
+  copyInboundWebhook(inboundWebhookInfo && inboundWebhookInfo.curl_example, "curl test"));
+
+function closeNavMenu() {
+  $("main-nav").classList.remove("open");
+  $("nav-burger").setAttribute("aria-expanded", "false");
+}
+function showTab(name) {
+  for (const t of ["today", "devices", "history", "settings", "security"]) {
+    $("tab-" + t).classList.toggle("hidden", t !== name);
+    $("nav-" + t).classList.toggle("active", t === name);
+  }
+  if (name === "devices") loadDevices(false);
+  if (name === "history") loadHistory();
+  if (name === "settings") { loadDatabaseInfo(); loadWebhooks(false); loadInboundWebhookInfo(); }
+  if (name === "security") loadSecurity();
+  closeNavMenu();
+}
+$("nav-today").addEventListener("click", () => showTab("today"));
+$("nav-devices").addEventListener("click", () => showTab("devices"));
+$("nav-history").addEventListener("click", () => showTab("history"));
+$("nav-settings").addEventListener("click", () => showTab("settings"));
+$("nav-security").addEventListener("click", () => showTab("security"));
+$("nav-burger").addEventListener("click", () => {
+  const open = $("main-nav").classList.toggle("open");
+  $("nav-burger").setAttribute("aria-expanded", String(open));
+});
+
+// ---- Minimal dependency-free QR encoder (byte mode, ECL-L, single-block v1-5) ----
+// Enough for a short otpauth:// URI. Reed-Solomon logic is informed by the
+// MIT-licensed Project Nayuki QR Code generator; see THIRD_PARTY_NOTICES.md.
+const QR = (() => {
+  function mul(x, y) {
+    let z = 0;
+    for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11d); z ^= ((y >>> i) & 1) * x; }
+    return z & 0xff;
+  }
+  function divisor(degree) {
+    const r = new Array(degree).fill(0); r[degree - 1] = 1;
+    let root = 1;
+    for (let i = 0; i < degree; i++) {
+      for (let j = 0; j < r.length; j++) { r[j] = mul(r[j], root); if (j + 1 < r.length) r[j] ^= r[j + 1]; }
+      root = mul(root, 0x02);
+    }
+    return r;
+  }
+  function remainder(data, div) {
+    const r = div.map(() => 0);
+    for (const b of data) {
+      const factor = b ^ r.shift(); r.push(0);
+      div.forEach((c, i) => { r[i] ^= mul(c, factor); });
+    }
+    return r;
+  }
+  // version -> [size, dataCodewords, ecCodewords, byteCapacity, alignCenter(0=none)]
+  const V = {
+    1: [21, 19, 7, 17, 0], 2: [25, 34, 10, 32, 18], 3: [29, 55, 15, 53, 22],
+    4: [33, 80, 20, 78, 26], 5: [37, 108, 26, 106, 30],
+  };
+  function pickVersion(len) {
+    for (let v = 1; v <= 5; v++) if (len <= V[v][3]) return v;
+    return 0;
+  }
+  function build(text, forcedMask = null) {
+    const bytes = new TextEncoder().encode(text);
+    const ver = pickVersion(bytes.length);
+    if (!ver) return null;
+    const [size, dataCw, ecCw, , align] = V[ver];
+    // Bit buffer -> data codewords
+    const bits = [];
+    const put = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+    put(0b0100, 4);           // byte mode
+    put(bytes.length, 8);     // char count (v1-9 byte mode = 8 bits)
+    for (const b of bytes) put(b, 8);
+    put(0, 4);                // terminator (may be truncated by capacity)
+    // Always pad to the next byte boundary (adds a full zero byte if already
+    // aligned) — this matches the QR spec exactly, verified against a
+    // reference encoder byte-for-byte.
+    for (let n = 8 - (bits.length % 8); n > 0; n--) bits.push(0);
+    const cw = [];
+    for (let i = 0; i < bits.length; i += 8) { let b = 0; for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j]; cw.push(b); }
+    for (let pad = 0xEC; cw.length < dataCw; pad ^= 0xEC ^ 0x11) cw.push(pad);
+    const ec = remainder(cw, divisor(ecCw));
+    const all = cw.concat(ec);           // single block: data then EC
+
+    // Module grid: null=unset, true=dark, false=light; reserved[] marks function modules
+    const m = Array.from({ length: size }, () => new Array(size).fill(null));
+    const res = Array.from({ length: size }, () => new Array(size).fill(false));
+    const setF = (r, c, v) => { m[r][c] = v; res[r][c] = true; };
+    function finder(r, c) {
+      for (let dr = -1; dr <= 7; dr++) for (let dc = -1; dc <= 7; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+        const inRing = dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6 &&
+          (dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4));
+        setF(rr, cc, inRing);
+      }
+    }
+    finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+    for (let i = 0; i < size; i++) { if (m[6][i] === null) setF(6, i, i % 2 === 0); if (m[i][6] === null) setF(i, 6, i % 2 === 0); }
+    if (align) {
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++)
+        setF(align + dr, align + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+    }
+    // Reserve format-info areas (filled after masking)
+    for (let i = 0; i < 9; i++) { if (m[8][i] === null) setF(8, i, false); if (m[i][8] === null) setF(i, 8, false); }
+    for (let i = 0; i < 8; i++) setF(8, size - 1 - i, false);
+    for (let i = 0; i < 7; i++) setF(size - 1 - i, 8, false);
+    setF(size - 8, 8, true); // fixed dark module; not part of format bits
+
+    // Place data bits in zigzag, skipping reserved modules and column 6
+    let bi = 0;
+    const bit = () => (bi < all.length * 8) ? (all[bi >> 3] >>> (7 - (bi & 7))) & 1 : 0;
+    for (let right = size - 1; right > 0; right -= 2) {
+      if (right === 6) right = 5; // timing column is never data
+      const upward = ((right + 1) & 2) === 0;
+      for (let t = 0; t < size; t++) {
+        const row = upward ? size - 1 - t : t;
+        for (let k = 0; k < 2; k++) {
+          const cc = right - k;
+          if (res[row][cc]) continue;
+          m[row][cc] = bit() === 1; bi++;
+        }
+      }
+    }
+
+    // Masks
+    const maskFns = [
+      (r, c) => (r + c) % 2 === 0, (r, c) => r % 2 === 0, (r, c) => c % 3 === 0,
+      (r, c) => (r + c) % 3 === 0, (r, c) => (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0,
+      (r, c) => ((r * c) % 2) + ((r * c) % 3) === 0, (r, c) => (((r * c) % 2) + ((r * c) % 3)) % 2 === 0,
+      (r, c) => (((r + c) % 2) + ((r * c) % 3)) % 2 === 0,
+    ];
+    function fmtBits(mask) {
+      let data = (0b01 << 3) | mask;          // ECL L = 01
+      let rem = data;
+      for (let i = 0; i < 10; i++) rem = (rem << 1) ^ (((rem >>> 9) & 1) * 0x537);
+      let bitsF = ((data << 10) | (rem & 0x3ff)) ^ 0x5412;
+      return bitsF & 0x7fff;
+    }
+    function penalty(grid) {
+      let p = 0;
+      // Rule 1: runs of >=5 in rows and cols
+      for (let r = 0; r < size; r++) for (let dir = 0; dir < 2; dir++) {
+        let run = 1;
+        for (let c = 1; c < size; c++) {
+          const a = dir ? grid[c][r] : grid[r][c], b = dir ? grid[c - 1][r] : grid[r][c - 1];
+          if (a === b) { run++; if (run === 5) p += 3; else if (run > 5) p += 1; } else run = 1;
+        }
+      }
+      // Rule 2: 2x2 blocks
+      for (let r = 0; r < size - 1; r++) for (let c = 0; c < size - 1; c++)
+        if (grid[r][c] === grid[r][c + 1] && grid[r][c] === grid[r + 1][c] && grid[r][c] === grid[r + 1][c + 1]) p += 3;
+      // Rule 3: literal 1:1:3:1:1 dark:light:dark:dark:dark:light:dark pattern,
+      // scored only when preceded or followed by >=4 light modules (or the
+      // symbol edge). Single-module-width, per ISO/IEC 18004:2015 Table 11 —
+      // matches the reference (segno) implementation exactly, not a scaled
+      // generalization.
+      const N3_PATTERN = [1, 0, 1, 1, 1, 0, 1];
+      function matchesPattern(line, idx) {
+        for (let k = 0; k < 7; k++) if ((line[idx + k] ? 1 : 0) !== N3_PATTERN[k]) return false;
+        return true;
+      }
+      function anyDark(line, from, to) {
+        for (let k = Math.max(0, from); k < Math.min(to, size); k++) if (line[k]) return true;
+        return false;
+      }
+      function finderPenalty(line) {
+        let score = 0;
+        let idx = 0;
+        while (idx <= size - 7) {
+          if (!matchesPattern(line, idx)) { idx++; continue; }
+          const offset = idx + 7;
+          const edge = idx === 0 || idx === size - 7;
+          const lightBefore = !anyDark(line, idx - 4, idx);
+          const lightAfter = !anyDark(line, offset, offset + 4);
+          if (edge || lightBefore || lightAfter) {
+            score += 40;
+            idx = offset;       // scored match: no overlapping re-check
+          } else {
+            idx += 4;           // rejected: allow an overlapping re-check
+          }
+        }
+        return score;
+      }
+      for (let line = 0; line < size; line++) {
+        p += finderPenalty(grid[line]) + finderPenalty(grid.map((row) => row[line]));
+      }
+      // Rule 4: dark ratio
+      let dark = 0; for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) if (grid[r][c]) dark++;
+      const total = size * size;
+      p += Math.max(0, Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1) * 10;
+      return p;
+    }
+
+    let best = null, bestP = Infinity;
+    const masks = forcedMask === null
+      ? [0, 1, 2, 3, 4, 5, 6, 7]
+      : [forcedMask];
+    for (const mask of masks) {
+      const g = m.map((row, r) => row.map(
+        (v, c) => res[r][c] ? Boolean(v) : Boolean(v ^ maskFns[mask](r, c)),
+      ));
+      applyFormatOn(g, mask);
+      const p = penalty(g);
+      if (p < bestP) { bestP = p; best = g; }
+    }
+    function applyFormatOn(g, mask) {
+      const f = fmtBits(mask);
+      const setb = (r, c, i) => { g[r][c] = ((f >>> i) & 1) === 1; };
+      for (let i = 0; i <= 5; i++) setb(i, 8, i);
+      setb(7, 8, 6); setb(8, 8, 7); setb(8, 7, 8);
+      for (let i = 9; i < 15; i++) setb(8, 14 - i, i);
+      for (let i = 0; i < 8; i++) setb(8, size - 1 - i, i);
+      for (let i = 8; i < 15; i++) setb(size - 15 + i, 8, i);
+    }
+    return best;
+  }
+  function svg(text) {
+    const grid = build(text);
+    if (!grid) return null;
+    const n = grid.length, q = 4, dim = n + q * 2;
+    let rects = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+      if (grid[r][c]) rects += `<rect x="${c + q}" y="${r + q}" width="1" height="1"/>`;
+    return `<svg viewBox="0 0 ${dim} ${dim}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges"><rect width="${dim}" height="${dim}" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
+  }
+  return { svg };
+})();
+
+// ---- Security tab ----
+async function loadSecurity() {
+  await Promise.all([loadSecurityPosture(), loadAuditLog()]);
+}
+
+async function loadSecurityPosture() {
+  try {
+    const r = await fetch("/api/auth/security");
+    if (!r.ok) return;
+    const s = await r.json();
+    $("sec-totp-status").textContent = s.totp_enabled
+      ? `Enabled · ${s.recovery_codes_remaining} recovery codes remaining`
+      : "Not enabled";
+    $("sec-totp-off").classList.toggle("hidden", s.totp_enabled);
+    $("sec-totp-on").classList.toggle("hidden", !s.totp_enabled);
+    if (!s.totp_enabled) $("sec-totp-enroll").classList.add("hidden");
+    const mins = (x) => Math.round(x / 60);
+    const tunnels = s.tunnel_exposure || [];
+    const tunnelWarning = tunnels.length
+      ? `<p class="device-warning"><b>Bind exposure:</b> listening on 0.0.0.0 reaches beyond your LAN over ` +
+        `${tunnels.map((t) => `<b>${esc(t.iface)}</b> (${esc(t.address)})`).join(", ")} ` +
+        `— a VPN/tunnel interface Linkmoth detected on this host. Set <code>"bind"</code> in ` +
+        `<code>/etc/linkmoth/config.json</code> to your LAN IP instead of 0.0.0.0, then restart.</p>`
+      : "";
+    $("sec-posture").innerHTML =
+      tunnelWarning +
+      `<p><b>Network exposure:</b> ${esc(s.internet_note)}</p>` +
+      `<p><b>HTTPS:</b> ${s.tls ? "on (encrypted)" : "off"} · listening on ${esc(String(s.bind))}</p>` +
+      `<p><b>Sessions:</b> idle timeout ${mins(s.session_idle_seconds)} min · absolute lifetime ${mins(s.session_ttl_seconds)} min</p>` +
+      `<p><b>CA enrollment:</b> compare the downloaded CA fingerprint with a trusted installer/SSH value before importing it. Do not enroll on guest, shared, or untrusted networks. <a href="/ca.crt">Download the Linkmoth CA certificate</a>.</p>`;
+  } catch (e) { /* leave prior content */ }
+}
+
+async function loadAuditLog() {
+  try {
+    const r = await fetch("/api/auth/audit?limit=50");
+    if (!r.ok) { $("sec-audit").innerHTML = `<p class="empty">Could not load the audit log.</p>`; return; }
+    const out = await r.json();
+    const rows = out.events || [];
+    if (!rows.length) { $("sec-audit").innerHTML = `<p class="empty">No events yet.</p>`; return; }
+    $("sec-audit").innerHTML = rows.map((e) =>
+      `<div class="sec-audit-row"><span class="when">${esc(fmtTs(e.ts))}</span>` +
+      `<span class="ev">${esc(e.event)}</span>` +
+      `<span class="when">${esc(e.ip || "")}</span>` +
+      (e.detail ? `<span>${esc(e.detail)}</span>` : "") + `</div>`
+    ).join("");
+  } catch (e) {
+    $("sec-audit").innerHTML = `<p class="empty">Could not reach Linkmoth.</p>`;
+  }
+}
+
+function secMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = text ? (ok ? "ok" : "bad") : "";
+}
+
+async function secPost(path, payload) {
+  const r = await fetch(path, {
+    method: "POST", headers: authHeaders(), body: JSON.stringify(payload || {}),
+  });
+  let body = {};
+  try { body = await r.json(); } catch (e) { /* ignore */ }
+  return { ok: r.ok, status: r.status, body };
+}
+
+$("sec-change-pw").addEventListener("click", async () => {
+  const cur = $("sec-cur-pw").value, np = $("sec-new-pw").value, np2 = $("sec-new-pw2").value;
+  if (np !== np2) { secMsg("sec-pw-msg", "New passwords do not match.", false); return; }
+  const { ok, body } = await secPost("/api/auth/change-password", { current: cur, new: np });
+  if (ok) {
+    secMsg("sec-pw-msg", "Password changed — signing you out…", true);
+    setTimeout(ensureAuth, 1200);
+  } else {
+    secMsg("sec-pw-msg", body.error || "Could not change password.", false);
+  }
+});
+
+$("sec-totp-begin").addEventListener("click", async () => {
+  const { ok, body } = await secPost("/api/auth/totp/setup", {});
+  if (!ok) { secMsg("sec-totp-msg", body.error || "Could not start setup.", false); return; }
+  $("sec-totp-secret").textContent = body.secret;
+  $("sec-totp-uri").textContent = body.otpauth_uri;
+  $("sec-totp-code").value = "";
+  $("sec-totp-codes").textContent = "";
+  $("sec-totp-activated").classList.add("hidden");
+  const qr = QR.svg(body.otpauth_uri || "");
+  $("sec-totp-qr").innerHTML = qr || "";
+  $("sec-totp-off").classList.add("hidden");
+  $("sec-totp-enroll").classList.remove("hidden");
+  secMsg(
+    "sec-totp-msg",
+    qr ? "" : "QR generation failed — enter the secret manually.",
+    false,
+  );
+});
+
+$("sec-totp-cancel").addEventListener("click", () => {
+  $("sec-totp-enroll").classList.add("hidden");
+  $("sec-totp-off").classList.remove("hidden");
+  $("sec-totp-qr").innerHTML = "";
+  $("sec-totp-secret").textContent = "";
+  $("sec-totp-uri").textContent = "";
+  $("sec-totp-code").value = "";
+});
+
+$("sec-totp-activate").addEventListener("click", async () => {
+  const button = $("sec-totp-activate");
+  button.disabled = true;
+  // Pause auth polling before activation invalidates the current session, so a
+  // racing 401 cannot cover the one-time recovery codes with the sign-in gate.
+  holdAuthForRecoveryCodes = true;
+  try {
+    const { ok, body } = await secPost("/api/auth/totp/activate", { code: $("sec-totp-code").value.trim() });
+    if (ok) {
+      const codes = body.recovery_codes || [];
+      $("sec-totp-codes").textContent = codes.join("\n");
+      $("sec-totp-enroll").classList.add("hidden");
+      $("sec-totp-activated").classList.remove("hidden");
+      authReady = false;
+      secMsg("sec-totp-msg", "2FA enabled. Save these recovery codes before signing in again.", true);
+    } else {
+      holdAuthForRecoveryCodes = false;
+      button.disabled = false;
+      secMsg("sec-totp-msg", body.error || "Invalid code.", false);
+    }
+  } catch (e) {
+    holdAuthForRecoveryCodes = false;
+    button.disabled = false;
+    secMsg("sec-totp-msg", "Could not activate 2FA — try again.", false);
+  }
+});
+
+$("sec-totp-done").addEventListener("click", async () => {
+  $("sec-totp-codes").textContent = "";
+  $("sec-totp-activated").classList.add("hidden");
+  $("sec-totp-qr").innerHTML = "";
+  $("sec-totp-secret").textContent = "";
+  $("sec-totp-uri").textContent = "";
+  $("sec-totp-code").value = "";
+  holdAuthForRecoveryCodes = false;
+  csrfToken = null;
+  await ensureAuth();
+});
+
+$("sec-totp-disable").addEventListener("click", async () => {
+  const { ok, body } = await secPost("/api/auth/totp/disable", { password: $("sec-totp-pw").value });
+  if (ok) {
+    secMsg("sec-totp-msg", "2FA disabled — signing you out…", true);
+    setTimeout(ensureAuth, 1200);
+  } else {
+    secMsg("sec-totp-msg", body.error || "Could not disable 2FA.", false);
+  }
+});
+
+$("sec-totp-regen").addEventListener("click", async () => {
+  const { ok, body } = await secPost("/api/auth/totp/recovery-codes", { password: $("sec-totp-pw").value });
+  if (ok) {
+    $("sec-regen-codes").textContent = (body.recovery_codes || []).join("\n");
+    $("sec-regen-codes").classList.remove("hidden");
+    secMsg("sec-totp-msg", "New recovery codes generated. Save them now.", true);
+    loadSecurityPosture();
+  } else {
+    secMsg("sec-totp-msg", body.error || "Could not regenerate codes.", false);
+  }
+});
+
+function initHistFilter() {
+  const select = $("hist-filter");
+  const trigger = $("hist-filter-trigger");
+  const label = $("hist-filter-label");
+  const menu = $("hist-filter-menu");
+
+  menu.innerHTML = Array.from(select.options).map((opt) =>
+    `<li role="option" data-value="${esc(opt.value)}" tabindex="0">${esc(opt.textContent)}</li>`
+  ).join("");
+
+  function closeMenu() {
+    menu.classList.add("hidden");
+    trigger.setAttribute("aria-expanded", "false");
+  }
+
+  function syncLabel() {
+    const opt = select.options[select.selectedIndex];
+    label.textContent = opt ? opt.textContent : "All incidents";
+    menu.querySelectorAll("[role=option]").forEach((li) => {
+      li.setAttribute("aria-selected", li.dataset.value === select.value ? "true" : "false");
+    });
+  }
+
+  function choose(value) {
+    select.value = value;
+    syncLabel();
+    closeMenu();
+    loadHistory();
+  }
+
+  trigger.addEventListener("click", () => {
+    if (menu.classList.contains("hidden")) {
+      menu.classList.remove("hidden");
+      trigger.setAttribute("aria-expanded", "true");
+    } else {
+      closeMenu();
+    }
+  });
+
+  menu.querySelectorAll("[role=option]").forEach((li) => {
+    li.addEventListener("click", () => choose(li.dataset.value));
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        choose(li.dataset.value);
+      }
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!$("hist-filter-wrap").contains(e.target)) closeMenu();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMenu();
+  });
+
+  syncLabel();
+}
+initHistFilter();
+
+async function openIncidentByRef(ref) {
+  const trimmed = (ref || "").trim();
+  if (!trimmed) return;
+  showTab("history");
+  $("hist-list").innerHTML = `<p class="empty">Loading ${esc(trimmed)}…</p>`;
+  try {
+    const pr = await fetch("/api/incident?ref=" + encodeURIComponent(trimmed));
+    if (pr.status === 401) { await ensureAuth(); return; }
+    if (pr.status === 404) {
+      $("hist-list").innerHTML = `<p class="empty">No incident with reference ${esc(trimmed)}.</p>`;
+      return;
+    }
+    const packet = await pr.json();
+    packetCache[packet.incident.id] = packet;
+    const inc = packet.incident;
+    const open = !inc.resolved;
+    const pill = open ? '<span class="pill open">open</span>'
+                      : '<span class="pill done">' + fmtDur(inc.resolved - inc.started) + "</span>";
+    const faPill = inc.false_alarm ? ' <span class="pill conf">false alarm</span>' : "";
+    const title = open ? "Ongoing — diagnosing" : (inc.verdict_title || inc.verdict_code || "resolved");
+    const refHtml = inc.ref ? `<span class="inc-ref">${esc(inc.ref)}</span>` : "";
+    $("hist-list").innerHTML =
+      `<details class="inc" data-id="${inc.id}" open><summary>${refHtml}<span class="when">${fmtTs(inc.started)}</span>
+        ${pill}${faPill} ${esc(title)}</summary>
+        <div class="packet-slot">${renderPacket(packet)}${falseAlarmActionHtml(inc)}</div></details>`;
+  } catch (e) {
+    $("hist-list").innerHTML = `<p class="empty">Could not load incident.</p>`;
+  }
+}
+
+$("hist-ref-go").addEventListener("click", () => openIncidentByRef($("hist-ref").value));
+$("hist-ref").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") openIncidentByRef($("hist-ref").value);
+});
+
+$("diagnose").addEventListener("click", async () => {
+  verifyHighlight = null;
+  $("verify-result").classList.add("hidden");
+  $("diagnose").disabled = true;
+  $("diagnose").textContent = "Diagnosing…";
+  await fetch("/api/diagnose", { method: "POST", headers: authHeaders({}) });
+  setTimeout(() => {
+    $("diagnose").disabled = false;
+    $("diagnose").textContent = "Diagnose now";
+    refresh();
+  }, 4000);
+});
+
+$("copy-diagnosis").addEventListener("click", async () => {
+  const button = $("copy-diagnosis");
+  try {
+    await copyPlainText(supportSummary(latestStatus));
+    button.textContent = "Copied";
+  } catch (e) {
+    button.textContent = "Copy failed";
+  }
+  setTimeout(() => { button.textContent = "Copy support summary"; }, 1800);
+});
+
+async function runVerifyFix(resultEl) {
+  const msg = resultEl || $("verify-result");
+  const btn = resultEl ? resultEl.previousElementSibling : $("verify-fix-btn");
+  if (btn) btn.disabled = true;
+  msg.textContent = "Running verification…";
+  msg.className = resultEl ? "verify-result packet-verify-result" : "verify-result";
+  msg.classList.remove("hidden", "ok", "bad");
+  try {
+    const r = await fetch("/api/verify", { method: "POST", headers: authHeaders() });
+    const out = await r.json();
+    if (r.status === 429) {
+      msg.textContent = out.error || "Wait a few seconds and try again.";
+      msg.classList.add("bad");
+      return;
+    }
+    if (!r.ok) {
+      msg.textContent = out.error || "Verification failed.";
+      msg.classList.add("bad");
+      return;
+    }
+    verifyHighlight = {
+      fixed: out.fixed || [], still_bad: out.still_bad || [],
+      improved: out.improved || [], regressed: out.regressed || [],
+    };
+    if ((out.fixed || []).length) {
+      msg.textContent = `Fixed: ${(out.fixed_labels || out.fixed).join(", ")}.`
+        + ((out.still_bad || []).length ? ` Still failing: ${(out.still_bad_labels || out.still_bad).join(", ")}.` : "");
+      msg.classList.add((out.still_bad || []).length ? "bad" : "ok");
+    } else if ((out.improved || []).length) {
+      msg.textContent = `Evidence improved: ${(out.improved_labels || out.improved).join(", ")}. No failed rung remains.`;
+      msg.classList.add("ok");
+    } else if ((out.regressed || []).length) {
+      msg.textContent = `New target disagreement: ${(out.regressed_labels || out.regressed).join(", ")}. The network still has a working path; expand the amber rung.`;
+      msg.classList.add("bad");
+    } else if (out.verdict && out.verdict.severity === "ok") {
+      msg.textContent = "All clear — the network looks healthy now. Close the incident if you are done investigating.";
+      msg.classList.add("ok");
+    } else {
+      msg.textContent = "Still failing — try another step from the playbook.";
+      msg.classList.add("bad");
+    }
+    await refresh();
+  } catch (e) {
+    msg.textContent = "Verification failed: can't reach Linkmoth.";
+    msg.classList.add("bad");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+$("verify-fix-btn").addEventListener("click", () => runVerifyFix(null));
+
+document.addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".verify-fix-btn");
+  if (!btn || btn.id === "verify-fix-btn") return;
+  const msg = btn.parentElement.querySelector(".packet-verify-result");
+  if (msg) runVerifyFix(msg);
+});
+
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".copy-packet-btn");
+  if (!btn) return;
+  const incidentEl = btn.closest(".inc");
+  const packet = incidentEl ? packetCache[incidentEl.dataset.id] : null;
+  try {
+    await copyPlainText(incidentSupportSummary(packet));
+    btn.textContent = "Copied";
+  } catch (e) {
+    btn.textContent = "Copy failed";
+  }
+  setTimeout(() => { btn.textContent = "Copy this incident for support"; }, 1800);
+});
+
+$("save-settings").addEventListener("click", async () => {
+  const msg = $("settings-msg");
+  const payload = {
+    kuma_url: $("s-kuma").value.trim(),
+    ui_refresh_seconds: $("s-refresh").value,
+    history_sample_minutes: $("s-history").value,
+    baseline_minutes: $("s-baseline").value,
+    retention_days: $("s-retention").value,
+    dns_test_domain: $("s-domain").value.trim(),
+    local_dns: {
+      mode: $("s-local-dns-mode").value,
+      address: $("s-local-dns-address").value.trim(),
+      provider: $("s-local-dns-provider").disabled
+        ? "generic"
+        : $("s-local-dns-provider").value,
+    },
+    upstream_dns: $("s-upstream").value,
+    ping_targets: $("s-ping").value,
+    target_wifi_clients: $("s-wifi-clients").value,
+    discord_webhook_url: $("s-discord-url").value.trim(),
+    discord_notifications_enabled: $("s-discord-enabled").checked,
+    push_notifications_enabled: $("s-push-enabled").checked,
+  };
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const out = await r.json();
+    if (out.saved) {
+      msg.textContent = "Saved — applied immediately";
+      msg.className = "ok";
+      settingsLoaded = false;
+      refresh();
+    } else {
+      msg.textContent = "Not saved: " + Object.entries(out.errors)
+        .map(([k, v]) => `${k}: ${v}`).join(", ");
+      msg.className = "bad";
+    }
+  } catch (e) {
+    msg.textContent = "Not saved: can't reach Linkmoth";
+    msg.className = "bad";
+  }
+  setTimeout(() => { msg.textContent = ""; }, 5000);
+});
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function isAppleMobile() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneApp() {
+  return window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+}
+
+function pushSetupBlocker() {
+  if (isAppleMobile() && !isStandaloneApp()) {
+    return "On iPhone/iPad, open Linkmoth from the Home Screen icon (not Safari), then try again.";
+  }
+  return null;
+}
+
+function pushHttpsErrorHint(err) {
+  const name = (err && err.name) || "";
+  const text = String((err && err.message) || err || "").toLowerCase();
+  if (name === "SecurityError" || text.includes("ssl") || text.includes("secure")
+      || text.includes("certificate") || text.includes("https")) {
+    if (isAppleMobile()) {
+      return "HTTPS/certificate error on this device. Install the Linkmoth CA, then enable full trust in Settings → General → About → Certificate Trust Settings. Reopen the Home Screen app and try again.";
+    }
+    return "HTTPS/certificate error — trust the Linkmoth CA on this device (see README TLS section) and reload.";
+  }
+  return "Push setup failed — check HTTPS, Home Screen app (iPhone), and browser support.";
+}
+
+function renderTodayBanner(s) {
+  const el = $("today-banner");
+  const lines = [];
+  if (s.outage_active) {
+    el.className = "banner bad";
+    lines.push(`<b>Global outage active</b> — ${esc(s.outage_active.title || s.outage_active.code)}. Alerts are deferred until the network can reach Discord/push again.`);
+  } else if (s.open_incident_meta) {
+    const m = s.open_incident_meta;
+    el.className = "banner";
+    const last = m.last_run;
+    const lastTxt = last
+      ? `${esc(last.title)} (${fmtAge(s.now - last.ts)} ago)`
+      : "waiting for first recheck";
+    lines.push(`<b>Open incident ${esc(m.ref || ("#" + m.id))}</b> — ${m.run_count} run(s) · last loop: ${lastTxt}${m.diagnosing ? " · diagnosing…" : ""}`);
+    if (last && last.severity === "ok" && s.last_run && s.last_run.severity === "ok") {
+      lines.push(`Live ladder is green; incident closes after two consecutive healthy loop runs (up to ~10 min apart).`);
+    }
+  } else {
+    el.className = "banner hidden";
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = lines.join("<br>");
+  el.classList.remove("hidden");
+}
+
+function renderPushStatus(s) {
+  const p = s.push || {};
+  const el = $("push-status");
+  const enableBtn = $("push-enable");
+  const disableBtn = $("push-disable");
+  let lines = [];
+  if (s.outage_active) {
+    lines.push(`Global outage active: ${esc(s.outage_active.title || s.outage_active.code)} — alerts deferred until recovery.`);
+  }
+  if (!p.available) {
+    lines.push("Server push unavailable — run on the host: sudo bash install.sh --with-push");
+    enableBtn.disabled = true;
+    disableBtn.classList.add("hidden");
+    el.innerHTML = lines.join(" ");
+    return;
+  }
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (isAppleMobile() && !isStandaloneApp()) {
+      lines.push("iPhone/iPad: add Linkmoth to the Home Screen, open it from the icon, then return here.");
+    } else {
+      lines.push("This browser does not support Web Push.");
+    }
+    enableBtn.disabled = true;
+    disableBtn.classList.add("hidden");
+    el.innerHTML = lines.join(" ");
+    return;
+  }
+  const iosBlock = pushSetupBlocker();
+  if (iosBlock) {
+    lines.push(iosBlock);
+    enableBtn.disabled = true;
+  } else if (!p.enabled) {
+    lines.push("Push is disabled in settings.");
+    enableBtn.disabled = true;
+  } else if (!iosBlock) {
+    enableBtn.disabled = Notification.permission === "granted";
+  }
+  lines.push(`Registered devices: ${p.subscribers || 0}. Permission here: ${Notification.permission}.`);
+  el.innerHTML = lines.join(" ");
+  disableBtn.classList.toggle("hidden", Notification.permission !== "granted");
+}
+
+async function enablePushOnDevice() {
+  const msg = $("push-status");
+  const blocked = pushSetupBlocker();
+  if (blocked) {
+    msg.textContent = blocked;
+    return;
+  }
+  try {
+    if (Notification.permission === "denied") {
+      msg.textContent = "Notifications blocked — allow them in browser settings.";
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") {
+      msg.textContent = "Permission not granted.";
+      return;
+    }
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const keyResp = await fetch("/api/push/vapid-key");
+    if (!keyResp.ok) {
+      msg.textContent = "Could not load push keys from Linkmoth.";
+      return;
+    }
+    const { publicKey } = await keyResp.json();
+    const sub = await reg.pushManager.subscribe({
+      userVisibleRequired: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    const r = await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(sub.toJSON()),
+    });
+    if (!r.ok) {
+      msg.textContent = "Could not register this device with Linkmoth.";
+      return;
+    }
+    msg.textContent = "Push enabled on this device.";
+    refresh();
+  } catch (e) {
+    console.error("push subscribe failed", e);
+    msg.textContent = pushHttpsErrorHint(e);
+  }
+}
+
+async function disablePushOnDevice() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) {
+      await fetch("/api/push/unsubscribe", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      });
+      await sub.unsubscribe();
+    }
+    $("push-status").textContent = "Push disabled on this device.";
+    refresh();
+  } catch (e) {
+    console.error("push unsubscribe failed", e);
+  }
+}
+
+$("push-enable").addEventListener("click", enablePushOnDevice);
+$("push-disable").addEventListener("click", disablePushOnDevice);
+
+$("incident-recheck").addEventListener("click", async () => {
+  $("incident-recheck").disabled = true;
+  try {
+    const r = await fetch("/api/incident/recheck", { method: "POST", headers: authHeaders() });
+    const out = await r.json();
+    if (!r.ok) alert(out.error || "Recheck failed");
+    else refresh();
+  } catch (e) {
+    alert("Recheck failed");
+  }
+  $("incident-recheck").disabled = false;
+});
+
+$("incident-false-alarm").addEventListener("click", async () => {
+  if (!confirm("Mark the open incident as a false alarm? It closes immediately and is counted as a false alarm in history.")) return;
+  try {
+    const r = await fetch("/api/incident/false-alarm", {
+      method: "POST", headers: authHeaders(), body: "{}",
+    });
+    const out = await r.json();
+    if (!r.ok) alert(out.error || "Could not mark false alarm");
+    else { clearPacketCache(); refresh(); }
+  } catch (e) {
+    alert("Could not mark false alarm");
+  }
+});
+
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".fa-mark-btn");
+  if (!btn) return;
+  if (!confirm(`Mark ${btn.dataset.ref} as a false alarm?`)) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/incident/false-alarm", {
+      method: "POST", headers: authHeaders(),
+      body: JSON.stringify({ ref: btn.dataset.ref }),
+    });
+    const out = await r.json();
+    if (!r.ok) { alert(out.error || "Could not mark false alarm"); btn.disabled = false; return; }
+    clearPacketCache();
+    loadHistory();
+  } catch (e) {
+    alert("Could not mark false alarm");
+    btn.disabled = false;
+  }
+});
+
+$("incident-close").addEventListener("click", async () => {
+  if (!confirm("Close the open incident? Use this when the ladder is green and you are done investigating.")) return;
+  try {
+    const r = await fetch("/api/incident/close", { method: "POST", headers: authHeaders() });
+    const out = await r.json();
+    if (!r.ok) alert(out.error || "Close failed");
+    else refresh();
+  } catch (e) {
+    alert("Close failed");
+  }
+});
+
+$("vacuum-db").addEventListener("click", async () => {
+  const msg = $("db-msg");
+  const btn = $("vacuum-db");
+  if (!confirm(
+    "Run SQLite VACUUM? This repacks the database file and may take a few seconds. "
+    + "Linkmoth pauses diagnosis while it runs."
+  )) return;
+  btn.disabled = true;
+  msg.textContent = "Running VACUUM…";
+  msg.className = "";
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ action: "vacuum" }),
+    });
+    const out = await r.json();
+    if (out.vacuum) {
+      const reclaimed = out.bytes_reclaimed || 0;
+      msg.textContent = reclaimed
+        ? `Done — reclaimed ${fmtBytes(reclaimed)} (${fmtBytes(out.size_before_bytes)} → ${fmtBytes(out.size_after_bytes)})`
+        : "Done — database repacked (no size change)";
+      msg.className = "ok";
+      if (out.database) renderDatabaseInfo(out.database);
+      else loadDatabaseInfo();
+    } else {
+      msg.textContent = out.error || "VACUUM failed";
+      msg.className = "bad";
+    }
+  } catch (e) {
+    msg.textContent = "VACUUM failed: can't reach Linkmoth";
+    msg.className = "bad";
+  }
+  btn.disabled = false;
+  setTimeout(() => { msg.textContent = ""; }, 8000);
+});
+
+async function tick() {
+  if (holdAuthForRecoveryCodes) {
+    setTimeout(tick, Math.max(2, refreshSec) * 1000);
+    return;
+  }
+  if (!authReady) await ensureAuth();
+  try {
+    if (authReady) await refresh();
+  } catch (e) {
+    console.error("tick failed", e);
+  }
+  setTimeout(tick, Math.max(2, refreshSec) * 1000);
+}
+ensureAuth().then(() => tick());
+</script>
+</body>
+</html>

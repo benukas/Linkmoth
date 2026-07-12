@@ -1,0 +1,52 @@
+{
+  "bind": "127.0.0.1",
+  "port": 8686,
+  "dns_test_domain": "gstatic.com",
+  "local_dns": {
+    "mode": "auto",
+    "address": "127.0.0.1",
+    "provider": "auto"
+  },
+  "upstream_dns": ["1.1.1.1", "8.8.8.8"],
+  "ping_targets": ["1.1.1.1", "8.8.8.8"],
+  "https_targets": [
+    "https://connectivitycheck.gstatic.com/generate_204",
+    "https://www.cloudflare.com/cdn-cgi/trace"
+  ],
+  "recheck_seconds": [0, 30, 60, 120, 300],
+  "recheck_repeat": 600,
+  "incident_max_hours": 24,
+  "baseline_minutes": 60,
+  "history_sample_minutes": 5,
+  "ladder_cache_seconds": 10,
+  "retention_days": 90,
+  "kuma_url": "auto",
+  "ui_refresh_seconds": 5,
+  "tls_cert": "/etc/linkmoth/tls/server.crt",
+  "tls_key": "/etc/linkmoth/tls/server.key",
+  "tls_ca": "/etc/linkmoth/tls/ca.crt",
+  "auth": {
+    "session_ttl_seconds": 86400,
+    "session_idle_seconds": 1800,
+    "login_max_attempts": 5,
+    "login_lockout_seconds": 300,
+    "trusted_proxy_cidrs": []
+  },
+  "discord_webhook_url": "",
+  "discord_notifications_enabled": false,
+  "push_notifications_enabled": true,
+  "notify_webhook_url": "",
+  "notify_webhook_enabled": false,
+  "target_wifi_clients": [],
+  "quality": {
+    "enabled": true,
+    "targets": [],
+    "sample_count": 10,
+    "latency_warn_ms": 80,
+    "latency_bad_ms": 200,
+    "jitter_warn_ms": 20,
+    "jitter_bad_ms": 60,
+    "loss_warn_pct": 2,
+    "loss_bad_pct": 10
+  }
+}

@@ -1,0 +1,546 @@
+"""Tests for the outbound webhook engine: presets, templates, queue, migration."""
+import json
+import os
+import shutil
+import sqlite3
+import sys
+import tempfile
+import time
+import unittest
+from contextlib import contextmanager
+from pathlib import Path
+from unittest import mock
+
+BASE = Path(__file__).resolve().parent
+REPO_ROOT = BASE.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+import linkmoth_webhooks as wh
+
+
+class WebhookDbCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="linkmoth_webhooks_"))
+        self.db_path = self.tmp / "state.db"
+        with self.db() as conn:
+            wh.init_webhook_db(conn)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS network_outage(
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    active INTEGER NOT NULL DEFAULT 0,
+                    code TEXT, title TEXT, explain TEXT, started REAL, updated REAL
+                )
+                """
+            )
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @contextmanager
+    def db(self):
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def make_webhook(self, **overrides):
+        data = {
+            "name": "Test hook",
+            "url": "https://example.test/hook",
+            "preset": "generic",
+            "events": ["fault_opened", "fault_recovered"],
+        }
+        data.update(overrides)
+        return wh.create_webhook(self.db, data)
+
+
+class ValidationTests(WebhookDbCase):
+    def test_create_and_list(self):
+        created = self.make_webhook()
+        hooks = wh.list_webhooks(self.db)
+        self.assertEqual(len(hooks), 1)
+        self.assertEqual(hooks[0]["id"], created["id"])
+        self.assertEqual(created["url"], wh.MASK)
+        self.assertEqual(hooks[0]["url"], wh.MASK)
+        self.assertEqual(
+            wh.get_webhook(self.db, created["id"], mask=False)["url"],
+            "https://example.test/hook",
+        )
+        self.assertEqual(hooks[0]["queued"], 0)
+
+    def test_rejects_bad_url(self):
+        for url in (
+            "", "ftp://x", "http://user:pw@host/x", "not a url",
+            "https://host:bad/hook", "https://host/hook#secret",
+            "https://host\\@127.0.0.1/hook", "https://host/unsafe path",
+            "http://example.test/hook",
+        ):
+            with self.assertRaises(ValueError):
+                self.make_webhook(url=url)
+
+    def test_accepts_explicit_private_ipv4_webhook(self):
+        hook = self.make_webhook(url="http://192.168.1.20/hook")
+        self.assertEqual(hook["url"], wh.MASK)
+
+    def test_delivery_rejects_hostname_that_resolves_private(self):
+        fake_result = [(None, None, None, None, ("127.0.0.1", 443))]
+        with mock.patch.object(wh.socket, "getaddrinfo", return_value=fake_result):
+            with self.assertRaises(ValueError):
+                wh._validate_delivery_target("https://example.test/hook")
+
+    def test_rejects_unknown_preset_and_event(self):
+        with self.assertRaises(ValueError):
+            self.make_webhook(preset="jinja")
+        with self.assertRaises(ValueError):
+            self.make_webhook(events=["fault_opened", "made_up"])
+
+    def test_rejects_forbidden_and_malformed_headers(self):
+        with self.assertRaises(ValueError):
+            self.make_webhook(headers={"Host": "evil"})
+        with self.assertRaises(ValueError):
+            self.make_webhook(headers={"X Bad Name": "x"})
+        with self.assertRaises(ValueError):
+            self.make_webhook(headers={"X-Ctl": "a\r\nInjected: yes"})
+        with self.assertRaises(ValueError):
+            self.make_webhook(headers={f"X-{i}": "v" for i in range(11)})
+
+    def test_custom_preset_requires_json_template(self):
+        with self.assertRaises(ValueError):
+            self.make_webhook(preset="custom")
+        with self.assertRaises(ValueError):
+            self.make_webhook(preset="custom", template='{"title": {{title}}')
+        hook = self.make_webhook(
+            preset="custom", template='{"title": "{{title}}"}',
+        )
+        self.assertEqual(hook["preset"], "custom")
+
+    def test_custom_template_non_json_content_type_skips_json_check(self):
+        hook = self.make_webhook(
+            preset="custom",
+            template="event={{event}} title={{title}}",
+            headers={"Content-Type": "text/plain"},
+        )
+        self.assertEqual(hook["preset"], "custom")
+
+    def test_webhook_limit(self):
+        for i in range(wh.MAX_WEBHOOKS):
+            self.make_webhook(name=f"hook {i}")
+        with self.assertRaises(wh.WebhookLimitReached):
+            self.make_webhook(name="one too many")
+
+
+class HeaderSecretTests(WebhookDbCase):
+    def test_headers_masked_in_api_output(self):
+        token = "Bearer super-secret-token-abcd"
+        hook = self.make_webhook(headers={"Authorization": token})
+        self.assertEqual(hook["headers"]["Authorization"], "••••••••abcd")
+        raw = wh.get_webhook(self.db, hook["id"], mask=False)
+        self.assertEqual(raw["headers"]["Authorization"], token)
+
+    def test_masked_value_round_trip_keeps_secret(self):
+        token = "Bearer super-secret-token-abcd"
+        hook = self.make_webhook(headers={"Authorization": token})
+        masked = hook["headers"]["Authorization"]
+        updated = wh.update_webhook(
+            self.db, hook["id"],
+            {"name": "renamed", "headers": {"Authorization": masked}},
+        )
+        self.assertEqual(updated["name"], "renamed")
+        raw = wh.get_webhook(self.db, hook["id"], mask=False)
+        self.assertEqual(raw["headers"]["Authorization"], token)
+
+    def test_new_value_replaces_secret(self):
+        hook = self.make_webhook(headers={"Authorization": "Bearer old-token-1234"})
+        wh.update_webhook(
+            self.db, hook["id"], {"headers": {"Authorization": "Bearer new-token-9999"}},
+        )
+        raw = wh.get_webhook(self.db, hook["id"], mask=False)
+        self.assertEqual(raw["headers"]["Authorization"], "Bearer new-token-9999")
+
+    def test_short_values_fully_masked(self):
+        self.assertEqual(wh.mask_header_value("abc"), "••••••••")
+
+    def test_masked_url_round_trip_keeps_secret(self):
+        hook = self.make_webhook(url="https://secret.example/hooks/token-value")
+        self.assertEqual(hook["url"], wh.MASK)
+        wh.update_webhook(self.db, hook["id"], {"name": "renamed", "url": wh.MASK})
+        raw = wh.get_webhook(self.db, hook["id"], mask=False)
+        self.assertEqual(raw["url"], "https://secret.example/hooks/token-value")
+
+
+class TemplateTests(unittest.TestCase):
+    def test_substitution_and_json_escaping(self):
+        ctx = {"title": 'He said "boom"\nline2', "duration_seconds": 62,
+               "delayed": True, "missing_ok": "x"}
+        rendered = wh.render_template(
+            '{"t": "{{title}}", "d": {{duration_seconds}}, "late": {{delayed}},'
+            ' "gone": "{{unknown}}"}',
+            ctx,
+        )
+        parsed = json.loads(rendered)
+        self.assertEqual(parsed["t"], 'He said "boom"\nline2')
+        self.assertEqual(parsed["d"], 62)
+        self.assertIs(parsed["late"], True)
+        self.assertEqual(parsed["gone"], "")
+
+    def test_no_logic_no_attribute_access(self):
+        ctx = {"title": "T"}
+        self.assertEqual(
+            wh.render_template("{{ title.upper() }}", ctx), "{{ title.upper() }}",
+        )
+        self.assertEqual(
+            wh.render_template("{% for x in y %}", ctx), "{% for x in y %}",
+        )
+        self.assertEqual(wh.render_template("{{title|upper}}", ctx), "{{title|upper}}")
+
+
+class ContextTests(unittest.TestCase):
+    def test_fault_context_fields(self):
+        ctx = wh.build_event_context(
+            "fault_opened",
+            verdict={"severity": "bad", "code": "wan_down",
+                     "title": "WAN down", "explain": "No route", "hint": "check"},
+            incident={"ref": "INC-20260707-0001", "started": 1000.0, "source": "kuma-down"},
+            checks=[{"id": "link", "ok": True}],
+        )
+        self.assertEqual(ctx["event"], "fault_opened")
+        self.assertEqual(ctx["status"], "fault")
+        self.assertEqual(ctx["affected_layer"], "wan")
+        self.assertEqual(ctx["incident_id"], "INC-20260707-0001")
+        self.assertEqual(ctx["confidence"], "high")
+        self.assertEqual(ctx["summary"], "No route")
+
+    def test_affected_layers(self):
+        cases = {"pi_link": "host", "host_power": "host", "router_down": "lan", "router_wlan_down": "wlan",
+                 "wan_down": "wan", "restricted_connectivity": "wan",
+                 "local_dns_broken": "dns", "web_broken": "web",
+                 "all_clear": "none"}
+        for code, layer in cases.items():
+            self.assertEqual(wh.affected_layer_for("fault_opened", code), layer)
+        self.assertEqual(wh.affected_layer_for("device_down", None), "device")
+
+    def test_delayed_annotation(self):
+        base = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        fresh = wh._finalize_context(base, queued_ts=1000.0, now=1030.0)
+        self.assertFalse(fresh["delayed"])
+        late = wh._finalize_context(base, queued_ts=1000.0, now=1100.0)
+        self.assertTrue(late["delayed"])
+        self.assertTrue(late["queued_at"].startswith("1970-01-01T00:16:40"))
+
+
+class PresetRenderTests(unittest.TestCase):
+    def ctx(self, **overrides):
+        base = wh.build_event_context(
+            "fault_opened",
+            verdict={"severity": "bad", "code": "wan_down",
+                     "title": "WAN down", "explain": "No route out.", "hint": ""},
+            incident={"ref": "INC-1", "started": 1000.0, "source": "test"},
+        )
+        base = wh._finalize_context(base, queued_ts=time.time())
+        base.update(overrides)
+        return base
+
+    def test_generic_payload_shape(self):
+        body, ct, extra = wh.render_payload({"preset": "generic"}, self.ctx())
+        self.assertEqual(ct, "application/json")
+        self.assertEqual(extra, {})
+        payload = json.loads(body)
+        for key in ("event", "incident_id", "verdict", "severity", "confidence",
+                    "duration_seconds", "affected_layer", "source", "title",
+                    "body", "message", "timestamp", "delayed", "queued_at"):
+            self.assertIn(key, payload)
+        self.assertEqual(payload["verdict"], "wan_down")
+        self.assertEqual(payload["message"], "WAN down\nNo route out.")
+
+    def test_home_assistant_and_n8n_alias_generic(self):
+        expected = wh.render_payload({"preset": "generic"}, self.ctx())[0]
+        for preset in ("home_assistant", "n8n"):
+            self.assertEqual(
+                json.loads(wh.render_payload({"preset": preset}, self.ctx())[0]),
+                json.loads(expected),
+            )
+
+    def test_ntfy_headers(self):
+        body, ct, extra = wh.render_payload({"preset": "ntfy"}, self.ctx())
+        self.assertTrue(ct.startswith("text/plain"))
+        self.assertEqual(extra["X-Priority"], "5")
+        self.assertEqual(extra["X-Tags"], "rotating_light")
+        self.assertEqual(extra["X-Title"], "WAN down")
+        self.assertIn(b"No route out.", body)
+
+    def test_gotify_priorities(self):
+        body, ct, _ = wh.render_payload({"preset": "gotify"}, self.ctx())
+        self.assertEqual(json.loads(body)["priority"], 8)
+        warn = self.ctx(severity="warn")
+        self.assertEqual(
+            json.loads(wh.render_payload({"preset": "gotify"}, warn)[0])["priority"], 5,
+        )
+
+    def test_discord_embed(self):
+        body, ct, _ = wh.render_payload({"preset": "discord"}, self.ctx())
+        payload = json.loads(body)
+        embed = payload["embeds"][0]
+        self.assertEqual(embed["color"], 0xE53935)
+        names = [f["name"] for f in embed["fields"]]
+        self.assertIn("Incident", names)
+        self.assertIn("Verdict", names)
+
+    def test_slack_text(self):
+        body, ct, _ = wh.render_payload({"preset": "slack"}, self.ctx())
+        text = json.loads(body)["text"]
+        self.assertIn("*WAN down*", text)
+        self.assertIn("INC-1", text)
+
+    def test_custom_template(self):
+        webhook = {"preset": "custom", "template": '{"s": "{{severity}}"}'}
+        body, ct, _ = wh.render_payload(webhook, self.ctx())
+        self.assertEqual(json.loads(body)["s"], "bad")
+
+
+class QueueTests(WebhookDbCase):
+    def test_emit_filters_by_subscription_and_enabled(self):
+        subscribed = self.make_webhook(name="subscribed")
+        self.make_webhook(name="other events", events=["device_down"])
+        disabled = self.make_webhook(name="disabled", enabled=False)
+        ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        queued = wh.emit_event(self.db, "fault_opened", ctx)
+        self.assertEqual(queued, 1)
+        with self.db() as conn:
+            rows = conn.execute("SELECT webhook_id FROM webhook_queue").fetchall()
+        self.assertEqual([r["webhook_id"] for r in rows], [subscribed["id"]])
+        self.assertNotEqual(rows[0]["webhook_id"], disabled["id"])
+
+    def test_emit_rejects_unknown_event(self):
+        with self.assertRaises(ValueError):
+            wh.emit_event(self.db, "nope", {})
+
+    def test_drain_success_deletes_and_records(self):
+        hook = self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        with mock.patch.object(wh, "_post", return_value=200) as post:
+            sent, failed = wh.drain_queue_once(self.db)
+        self.assertEqual((sent, failed), (1, 0))
+        self.assertEqual(post.call_count, 1)
+        with self.db() as conn:
+            remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(remaining, 0)
+        refreshed = wh.get_webhook(self.db, hook["id"])
+        self.assertEqual(refreshed["last_status"], 200)
+        self.assertIsNone(refreshed["last_error"])
+
+    def test_drain_failure_backs_off(self):
+        self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        now = time.time()
+        with mock.patch.object(wh, "_post", side_effect=OSError("boom")):
+            sent, failed = wh.drain_queue_once(self.db, now=now)
+        self.assertEqual((sent, failed), (0, 1))
+        with self.db() as conn:
+            row = conn.execute("SELECT * FROM webhook_queue").fetchone()
+        self.assertEqual(row["attempts"], 1)
+        self.assertAlmostEqual(row["next_attempt"], now + wh.BACKOFF_SECONDS[0], delta=1)
+        # Second failure moves to the next backoff step.
+        with mock.patch.object(wh, "_post", side_effect=OSError("boom")):
+            wh.drain_queue_once(self.db, now=row["next_attempt"] + 1)
+        with self.db() as conn:
+            row2 = conn.execute("SELECT * FROM webhook_queue").fetchone()
+        self.assertEqual(row2["attempts"], 2)
+        self.assertAlmostEqual(
+            row2["next_attempt"], row["next_attempt"] + 1 + wh.BACKOFF_SECONDS[1],
+            delta=1,
+        )
+
+    def test_drain_gives_up_after_max_attempts(self):
+        self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        now = time.time()
+        with mock.patch.object(wh, "_post", side_effect=OSError("boom")):
+            for _ in range(wh.MAX_ATTEMPTS):
+                wh.drain_queue_once(self.db, now=now)
+                with self.db() as conn:
+                    row = conn.execute("SELECT next_attempt FROM webhook_queue").fetchone()
+                if row is None:
+                    break
+                now = row["next_attempt"] + 1
+        with self.db() as conn:
+            remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(remaining, 0)
+
+    def test_gone_endpoint_drops_early(self):
+        self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        now = time.time()
+        http_410 = mock.patch.object(
+            wh, "_post",
+            side_effect=wh.urlerror.HTTPError("u", 410, "Gone", {}, None),
+        )
+        with http_410:
+            for _ in range(wh.GONE_MAX_ATTEMPTS):
+                wh.drain_queue_once(self.db, now=now)
+                with self.db() as conn:
+                    row = conn.execute("SELECT next_attempt FROM webhook_queue").fetchone()
+                if row is None:
+                    break
+                now = row["next_attempt"] + 1
+        with self.db() as conn:
+            remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(remaining, 0)
+
+    def test_expired_rows_dropped(self):
+        self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        with mock.patch.object(wh, "_post", return_value=200) as post:
+            wh.drain_queue_once(self.db, now=time.time() + wh.MAX_AGE_SECONDS + 60)
+        self.assertEqual(post.call_count, 0)
+        with self.db() as conn:
+            remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(remaining, 0)
+
+    def test_queue_cap_drops_oldest(self):
+        self.make_webhook()
+        ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        with self.db() as conn:
+            for i in range(wh.QUEUE_CAP):
+                conn.execute(
+                    "INSERT INTO webhook_queue(webhook_id, event, context, created,"
+                    " next_attempt) VALUES(?,?,?,?,?)",
+                    ("w", "fault_opened", "{}", i, i),
+                )
+        wh.emit_event(self.db, "fault_opened", ctx)
+        with self.db() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(total, wh.QUEUE_CAP)
+
+    def test_delayed_flag_reaches_payload(self):
+        self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        captured = {}
+
+        def fake_post(url, body, headers, timeout=10):
+            captured["payload"] = json.loads(body)
+            return 200
+
+        with mock.patch.object(wh, "_post", side_effect=fake_post):
+            wh.drain_queue_once(self.db, now=time.time() + 3600)
+        self.assertTrue(captured["payload"]["delayed"])
+
+    def test_queue_visible_in_list(self):
+        hook = self.make_webhook()
+        wh.emit_event(self.db, "fault_opened",
+                      wh.build_event_context("fault_opened", verdict={"title": "x"}))
+        listed = wh.list_webhooks(self.db)[0]
+        self.assertEqual(listed["id"], hook["id"])
+        self.assertEqual(listed["queued"], 1)
+        self.assertIsNotNone(listed["next_attempt"])
+
+
+class TestSendTests(WebhookDbCase):
+    def test_http_transport_disables_proxies_and_redirects(self):
+        response = mock.MagicMock()
+        response.status = 204
+        response.__enter__.return_value = response
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+        with (
+            mock.patch.object(wh, "_validate_delivery_target"),
+            mock.patch.object(wh.urlrequest, "build_opener", return_value=opener) as build,
+        ):
+            status = wh._post("https://example.test/hook", b"{}", {})
+        self.assertEqual(status, 204)
+        handlers = build.call_args.args
+        self.assertTrue(any(isinstance(h, wh.urlrequest.ProxyHandler) for h in handlers))
+        self.assertTrue(any(isinstance(h, wh._NoRedirect) for h in handlers))
+        proxy = next(h for h in handlers if isinstance(h, wh.urlrequest.ProxyHandler))
+        self.assertEqual(proxy.proxies, {})
+
+    def test_send_test_uses_render_path(self):
+        hook = self.make_webhook(preset="ntfy")
+        captured = {}
+
+        def fake_post(url, body, headers, timeout=10):
+            captured["headers"] = headers
+            captured["body"] = body
+            return 200
+
+        with mock.patch.object(wh, "_post", side_effect=fake_post):
+            out = wh.send_test(self.db, hook["id"], "fault")
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["status"], 200)
+        self.assertEqual(captured["headers"]["X-Priority"], "5")
+
+    def test_send_test_failure_reported(self):
+        hook = self.make_webhook()
+        with mock.patch.object(wh, "_post", side_effect=OSError("refused")):
+            out = wh.send_test(self.db, hook["id"], "recovery")
+        self.assertFalse(out["ok"])
+        self.assertIn("refused", out["error"])
+        refreshed = wh.get_webhook(self.db, hook["id"])
+        self.assertIn("refused", refreshed["last_error"])
+
+    def test_custom_headers_win_over_preset(self):
+        hook = self.make_webhook(headers={"Content-Type": "application/xml",
+                                          "Authorization": "Bearer tok-12345678"})
+        captured = {}
+
+        def fake_post(url, body, headers, timeout=10):
+            captured["headers"] = headers
+            return 200
+
+        with mock.patch.object(wh, "_post", side_effect=fake_post):
+            wh.send_test(self.db, hook["id"], "fault")
+        self.assertEqual(captured["headers"]["Content-Type"], "application/xml")
+        self.assertEqual(captured["headers"]["Authorization"], "Bearer tok-12345678")
+
+
+class MigrationTests(WebhookDbCase):
+    def test_migrates_once(self):
+        settings = self.tmp / "settings.json"
+        cfg = {"notify_webhook_url": "https://old.example/hook",
+               "notify_webhook_enabled": True}
+        self.assertTrue(wh.migrate_legacy_webhook(cfg, self.db, settings))
+        hooks = wh.list_webhooks(self.db)
+        self.assertEqual(len(hooks), 1)
+        self.assertEqual(hooks[0]["url"], wh.MASK)
+        self.assertEqual(
+            wh.get_webhook(self.db, hooks[0]["id"], mask=False)["url"],
+            "https://old.example/hook",
+        )
+        self.assertTrue(hooks[0]["enabled"])
+        self.assertEqual(hooks[0]["events"], wh.LEGACY_EVENTS)
+        self.assertTrue(json.loads(settings.read_text())[wh.MIGRATION_MARKER])
+        # Second run is a no-op.
+        self.assertFalse(wh.migrate_legacy_webhook(cfg, self.db, settings))
+        self.assertEqual(len(wh.list_webhooks(self.db)), 1)
+        if os.name == "posix":
+            self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
+
+    def test_no_url_only_writes_marker(self):
+        settings = self.tmp / "settings.json"
+        self.assertFalse(wh.migrate_legacy_webhook({}, self.db, settings))
+        self.assertEqual(wh.list_webhooks(self.db), [])
+        self.assertTrue(json.loads(settings.read_text())[wh.MIGRATION_MARKER])
+
+    def test_preserves_existing_settings_keys(self):
+        settings = self.tmp / "settings.json"
+        settings.write_text(json.dumps({"ui_refresh_seconds": 9}))
+        wh.migrate_legacy_webhook({}, self.db, settings)
+        data = json.loads(settings.read_text())
+        self.assertEqual(data["ui_refresh_seconds"], 9)
+        self.assertTrue(data[wh.MIGRATION_MARKER])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,47 @@
+# Runtime data and secrets — never commit these. config.example.json is the
+# tracked template; config.json/settings.json/auth.json/state.db are produced
+# at install- or run-time and are host-specific (auth.json holds the password
+# hash, TOTP seed, and webhook secret).
+config.json
+settings.json
+auth.json
+state.db
+tls/
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local agent/editor workspace files. These are useful on this machine but are
+# neither Linkmoth source nor part of a public release.
+.agents/
+.claude/
+.codex/
+skills-lock.json
+
+# Generated or separate projects. Linkmoth's release workflow rebuilds dist/
+# from the tracked source, so contributors should not upload it by hand.
+dist/
+dist-release/
+site/
+Assets.xcassets/
+android/
+deep-research-report.md
+
+# Local test/build output
+coverage.xml
+htmlcov/
+.coverage
+*.log
+*.tmp
+
+# OS cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,43 @@
+[Unit]
+Description=Linkmoth (network fault diagnosis + LAN dashboard)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=linkmoth
+Group=linkmoth
+Environment=LINKMOTH_CONFIG=/etc/linkmoth/config.json
+StateDirectory=linkmoth
+StateDirectoryMode=0750
+WorkingDirectory=/opt/linkmoth
+ExecStart=/usr/bin/python3 /opt/linkmoth/linkmoth.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+TasksMax=64
+LimitNOFILE=1024
+MemoryMax=256M
+CPUQuota=150%
+
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=full
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
