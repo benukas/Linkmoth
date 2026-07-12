@@ -79,6 +79,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     steps:
       - name: Download verified candidate
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -91,6 +92,7 @@ jobs:
         working-directory: dist-release
         run: |
           for file in linkmoth-*; do
+            [ -f "$file" ] || continue
             cosign sign-blob --yes --bundle "$file.bundle" "$file"
           done
       - name: Verify release assets
@@ -98,6 +100,7 @@ jobs:
         run: |
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}"
           for file in linkmoth-*; do
+            [ -f "$file" ] || continue
             case "$file" in *.bundle) continue ;; esac
             cosign verify-blob --bundle "$file.bundle" --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
           done

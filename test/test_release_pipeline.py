@@ -23,8 +23,12 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertIn("environment: production-release", publish)
         self.assertIn("contents: write", publish)
         self.assertIn("id-token: write", publish)
+        self.assertIn("artifact-metadata: write", publish)
         self.assertIn("needs: [verify-release-ref, test, checks]", publish)
         self.assertIn("actions/attest@", publish)
+
+    def test_publication_only_signs_regular_release_files(self):
+        self.assertEqual(WORKFLOW.count('[ -f "$file" ] || continue'), 2)
 
 
 if __name__ == "__main__":
