@@ -9,10 +9,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 VERSION="${1:-}"
 [ -n "$VERSION" ] || { echo "usage: $0 <version>" >&2; exit 2; }
-case "$VERSION" in
-  v[0-9]*.[0-9]*.[0-9]*|v[0-9]*.[0-9]*.[0-9]*-*) ;;
-  *) echo "version must be a semantic version such as v1.2.3" >&2; exit 2 ;;
-esac
+python3 - "$VERSION" <<'PY' || { echo "version must be a semantic version such as v1.2.3" >&2; exit 2; }
+import re, sys
+raise SystemExit(not bool(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", sys.argv[1])))
+PY
 
 bash "$ROOT/scripts/build-dist.sh"
 

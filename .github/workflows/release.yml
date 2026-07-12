@@ -38,7 +38,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Run complete test suite
-        run: python -m unittest discover -s test -v
+        run: |
+          bash scripts/build-dist.sh
+          python -m unittest discover -s test -v
 
   checks:
     name: Shell, distribution, and reproducibility checks

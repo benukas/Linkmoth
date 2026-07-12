@@ -13,15 +13,14 @@ REPO="$OFFICIAL_REPO"
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo bash linkmoth-<version>-bootstrap.sh"
-case "$RELEASE_VERSION" in
-  @LINKMOTH_VERSION@|"") die "use the versioned bootstrap asset from a signed release" ;;
-  v[0-9]*.[0-9]*.[0-9]*|v[0-9]*.[0-9]*.[0-9]*-*) ;;
-  *) die "embedded release version is invalid" ;;
-esac
 command -v curl >/dev/null || die "curl is required"
 command -v python3 >/dev/null || die "python3 is required"
 command -v sha256sum >/dev/null || command -v shasum >/dev/null || die "sha256sum or shasum is required"
 command -v cosign >/dev/null || die "cosign is required to verify a Linkmoth release"
+python3 - "$RELEASE_VERSION" <<'PY' || die "use a generated bootstrap with a strict semantic release version"
+import re, sys
+raise SystemExit(not bool(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", sys.argv[1])))
+PY
 
 # An override is deliberately noisy and opt-in: it is useful for a maintainer
 # testing a fork, but it must never silently alter an official installer.
@@ -29,9 +28,10 @@ if [ "${1:-}" = "--allow-repository-override" ]; then
   [ $# -ge 2 ] || die "--allow-repository-override requires owner/repository"
   REPO="$2"
   shift 2
-  case "$REPO" in
-    *[!A-Za-z0-9_.-]*/*|*/*/*|/*|*/|""|*".."*) die "invalid repository override" ;;
-  esac
+  python3 - "$REPO" <<'PY' || die "invalid repository override"
+import re, sys
+raise SystemExit(not bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99}[A-Za-z0-9])?", sys.argv[1])))
+PY
 fi
 [ "$REPO" = "$OFFICIAL_REPO" ] || echo "WARNING: using an advanced, unofficial repository override: $REPO" >&2
 

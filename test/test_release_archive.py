@@ -72,6 +72,7 @@ class ReleaseArchiveTests(unittest.TestCase):
         text = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
         self.assertIn('RELEASE_VERSION="@LINKMOTH_VERSION@"', text)
         self.assertIn("--allow-repository-override", text)
+        self.assertGreaterEqual(text.count("re.fullmatch"), 2)
         self.assertNotIn("releases/latest", text)
 
 
