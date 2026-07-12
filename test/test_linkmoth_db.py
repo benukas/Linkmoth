@@ -31,6 +31,26 @@ class DbMaintenanceTests(unittest.TestCase):
         self.assertEqual(info["journal_mode"], "WAL")
         self.assertEqual(info["busy_timeout_ms"], self.linkmoth.DB_BUSY_TIMEOUT_MS)
 
+    def test_init_db_upgrades_an_existing_delete_journal_to_wal(self):
+        legacy_path = self.state / "legacy-delete-journal.db"
+        conn = sqlite3.connect(legacy_path)
+        try:
+            conn.execute("PRAGMA journal_mode = DELETE")
+            conn.execute("CREATE TABLE legacy_data(value TEXT)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        original_path = self.linkmoth.DB_PATH
+        try:
+            self.linkmoth.DB_PATH = legacy_path
+            self.linkmoth.init_db()
+            self.assertEqual(
+                self.linkmoth.db_maintenance_info()["journal_mode"], "WAL"
+            )
+        finally:
+            self.linkmoth.DB_PATH = original_path
+
     @unittest.skipIf(os.name == "nt", "Windows does not expose POSIX mode bits")
     def test_state_database_is_owner_readable_only(self):
         self.assertEqual(self.linkmoth.DB_PATH.stat().st_mode & 0o777, 0o600)

@@ -13,7 +13,7 @@
 #   sudo bash install.sh --advanced         also ask about every install-time choice
 #   sudo bash install.sh --non-interactive --bind 192.168.1.50
 #                                            unattended install with an explicit bind
-# Extra flags: [--migrate-from DIR] [--no-polkit] [--with-push] [--bind IPv4]
+# Extra flags: [--doctor] [--no-polkit] [--with-push] [--bind IPv4]
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -29,7 +29,7 @@ RENEW_TIMER=/etc/systemd/system/linkmoth-cert-renew.timer
 RENEW_SCRIPT=/usr/local/lib/linkmoth/renew-cert.sh
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
-MIGRATE_FROM=""
+DOCTOR_ONLY=0
 NO_POLKIT=0
 WITH_PUSH=0
 WITH_PUSH_SET=0
@@ -37,7 +37,7 @@ BIND_OVERRIDE=""
 MODE=guided            # guided | advanced | noninteractive
 while [ $# -gt 0 ]; do
   case "$1" in
-    --migrate-from) MIGRATE_FROM="$2"; shift 2 ;;
+    --doctor) DOCTOR_ONLY=1; shift ;;
     --no-polkit) NO_POLKIT=1; shift ;;
     --with-push) WITH_PUSH=1; WITH_PUSH_SET=1; shift ;;
     --bind) BIND_OVERRIDE="${2:-}"; [ -n "$BIND_OVERRIDE" ] || { echo "--bind requires an IPv4 address" >&2; exit 2; }; shift 2 ;;
@@ -90,47 +90,6 @@ ask_yn() {  # ask_yn "Question" "y|n" -> returns 0 for yes
   case "${ans:-$def}" in [Yy]*) return 0 ;; *) return 1 ;; esac
 }
 
-migrate_vamner_install() {
-  local legacy_app=/opt/vamner legacy_etc=/etc/vamner legacy_state=/var/lib/vamner
-  local legacy_lib=/usr/local/lib/vamner legacy_user=vamner legacy_group=vamner
-  if [ ! -e "$legacy_app" ] && [ ! -e "$legacy_etc" ] && [ ! -e "$legacy_state" ] \
-      && [ ! -e "$legacy_lib" ] && [ ! -e /etc/systemd/system/vamner.service ]; then
-    return
-  fi
-  if id linkmoth >/dev/null 2>&1 && id "$legacy_user" >/dev/null 2>&1; then
-    die "both Linkmoth and legacy Vamner service users exist; migrate manually before installing"
-  fi
-  if [ -e "$APP" ] || [ -e "$ETC" ] || [ -e "$STATE" ] || [ -e /usr/local/lib/linkmoth ]; then
-    die "legacy Vamner data and existing Linkmoth paths both exist; migrate manually before installing"
-  fi
-
-  echo "migrating Vamner installation to Linkmoth"
-  systemctl disable --now vamner.service 2>/dev/null || true
-  systemctl disable --now vamner-cert-renew.timer 2>/dev/null || true
-  if command -v pgrep >/dev/null && pgrep -af '(^|[ /])vamner\.py([ ]|$)' >&2; then
-    die "an unmanaged Vamner process is still running; stop it manually before migrating"
-  fi
-
-  if id "$legacy_user" >/dev/null 2>&1; then
-    if getent group "$legacy_group" >/dev/null 2>&1; then
-      groupmod -n linkmoth "$legacy_group"
-    fi
-    usermod -l linkmoth -d "$STATE" "$legacy_user"
-  fi
-  [ -e "$legacy_app" ] && mv "$legacy_app" "$APP"
-  [ -e "$legacy_etc" ] && mv "$legacy_etc" "$ETC"
-  [ -e "$legacy_state" ] && mv "$legacy_state" "$STATE"
-  [ -e "$legacy_lib" ] && mv "$legacy_lib" /usr/local/lib/linkmoth
-  if [ -f "$ETC/config.json" ]; then
-    sed -i 's#/etc/vamner#/etc/linkmoth#g' "$ETC/config.json"
-  fi
-  rm -f /etc/systemd/system/vamner.service \
-    /etc/systemd/system/vamner-cert-renew.service \
-    /etc/systemd/system/vamner-cert-renew.timer \
-    /etc/polkit-1/rules.d/51-vamner.rules
-  systemctl daemon-reload
-}
-
 detect_pkg_manager() {
   if command -v apt-get >/dev/null; then echo apt; return; fi
   if command -v dnf >/dev/null; then echo dnf; return; fi
@@ -175,13 +134,6 @@ except ValueError:
     raise SystemExit(1)
 raise SystemExit(0 if isinstance(address, ipaddress.IPv4Address) else 1)
 PY
-}
-
-require_no_unmanaged_legacy_processes() {
-  command -v pgrep >/dev/null || return 0
-  if pgrep -af '(^|[ /])(vamner|custos|blackbox)\.py([ ]|$)' >&2; then
-    die "an unmanaged legacy process is running; stop it manually before installing"
-  fi
 }
 
 # Return 0 if we can bind host:port right now, 1 if it is already in use.
@@ -275,7 +227,7 @@ install_ca_trust() {
     mkdir -p /usr/local/share/ca-certificates
     cp "$ca_src" /usr/local/share/ca-certificates/linkmoth-local-ca.crt
     chmod 644 /usr/local/share/ca-certificates/linkmoth-local-ca.crt
-    update-ca-certificates >/dev/null
+    update-ca-certificates >/dev/null 2>&1
     echo "installed CA into system trust store (update-ca-certificates)"
     return 0
   fi
@@ -311,7 +263,14 @@ section "Checks"
 ok "running as root"
 command -v systemctl >/dev/null || die "systemd is required"
 ok "systemd present"
-migrate_vamner_install
+if [ "$DOCTOR_ONLY" -eq 1 ]; then
+  [ -f "$APP/linkmoth.py" ] || die "Linkmoth is not installed at $APP"
+  id linkmoth >/dev/null 2>&1 || die "Linkmoth service user is missing"
+  runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME \
+    LINKMOTH_CONFIG="$ETC/config.json" LINKMOTH_STATE_DIR="$STATE" \
+    python3 "$APP/linkmoth.py" --doctor
+  exit $?
+fi
 [ -f "$SRC/linkmoth.py" ] || die "linkmoth.py not found next to install.sh"
 [ -f "$SRC/linkmoth_auth.py" ] || die "linkmoth_auth.py not found next to install.sh"
 [ -f "$SRC/linkmoth_discord.py" ] || die "linkmoth_discord.py not found next to install.sh"
@@ -405,11 +364,6 @@ IS_UPDATE=0
 [ -f "$APP/linkmoth.py" ] && IS_UPDATE=1
 PREV_ACTIVE="$(systemctl is-active linkmoth 2>/dev/null || true)"
 PREV_ENABLED="$(systemctl is-enabled linkmoth 2>/dev/null || true)"
-
-# Do not kill processes by filename: an unrelated user program may happen to
-# share a legacy name.  A visible manual-resolution error is safer than root
-# terminating a process we do not own.
-require_no_unmanaged_legacy_processes
 
 ROLLBACK_STATE=prepare   # prepare -> activating -> done
 STAGE=""
@@ -597,10 +551,6 @@ PY
   PORT="$FOUND_PORT"
 fi
 
-if [ -n "$MIGRATE_FROM" ] && [ -f "$MIGRATE_FROM/state.db" ] && [ ! -f "$STATE/state.db" ]; then
-  cp "$MIGRATE_FROM/state.db" "$STATE/state.db"
-  echo "migrated history from $MIGRATE_FROM/state.db"
-fi
 chown -R linkmoth:linkmoth "$STATE"
 chmod 750 "$STATE"
 [ ! -f "$STATE/auth.json" ] || chmod 600 "$STATE/auth.json"

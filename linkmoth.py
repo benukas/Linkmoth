@@ -46,13 +46,11 @@ DEFAULT_CONFIG_PATH = (
 DEFAULT_STATE_DIR = Path("/var/lib/linkmoth") if SYSTEM_INSTALL else BASE
 CONFIG_PATH = Path(
     os.environ.get("LINKMOTH_CONFIG")
-    or os.environ.get("VAMNER_CONFIG")
     or DEFAULT_CONFIG_PATH
 )
 STATE_DIR = Path(
     os.environ.get("STATE_DIRECTORY")
     or os.environ.get("LINKMOTH_STATE_DIR")
-    or os.environ.get("VAMNER_STATE_DIR")
     or DEFAULT_STATE_DIR
 )
 DEFAULT_TLS_DIR = Path("/etc/linkmoth/tls") if SYSTEM_INSTALL else STATE_DIR / "tls"
@@ -519,12 +517,10 @@ def db():
 def tls_paths():
     cert = Path(
         os.environ.get("LINKMOTH_TLS_CERT")
-        or os.environ.get("VAMNER_TLS_CERT")
         or CFG.get("tls_cert")
     )
     key = Path(
         os.environ.get("LINKMOTH_TLS_KEY")
-        or os.environ.get("VAMNER_TLS_KEY")
         or CFG.get("tls_key")
     )
     return cert, key
@@ -533,7 +529,6 @@ def tls_paths():
 def _ca_cert_path():
     override = (
         os.environ.get("LINKMOTH_TLS_CA")
-        or os.environ.get("VAMNER_TLS_CA")
         or CFG.get("tls_ca")
     )
     if override:
@@ -3839,19 +3834,19 @@ def doctor():
          trust_tool or "none found — clients trust the CA manually")
     report("config", CONFIG_ERROR is None, CONFIG_ERROR or str(CONFIG_PATH))
     report("state dir writable", os.access(STATE_DIR, os.W_OK), str(STATE_DIR))
-    if DB_PATH.is_file():
-        try:
-            db_info = db_maintenance_info()
-            report(
-                "database journal",
-                db_info["journal_mode"] == "WAL",
-                f"{db_info['journal_mode']}; busy timeout {db_info['busy_timeout_ms']} ms; "
-                f"lock retries {db_info['lock_retries']}",
-            )
-        except sqlite3.Error as exc:
-            report("database journal", False, str(exc))
-    else:
-        info("database journal", "database will be initialized on first start")
+    try:
+        # Doctor is also an upgrade preflight. Initialize a fresh database or
+        # persistently move an older one to WAL before checking its health.
+        init_db()
+        db_info = db_maintenance_info()
+        report(
+            "database journal",
+            db_info["journal_mode"] == "WAL",
+            f"{db_info['journal_mode']}; busy timeout {db_info['busy_timeout_ms']} ms; "
+            f"lock retries {db_info['lock_retries']}",
+        )
+    except (OSError, sqlite3.Error, RuntimeError) as exc:
+        report("database journal", False, str(exc))
     report("dashboard.html present", (BASE / "dashboard.html").exists(), str(BASE))
     report("linkmoth.svg present", ICON_PATH.is_file(), str(ICON_PATH))
     report("linkmoth-white.svg present", WHITE_LOGO_PATH.is_file(), str(WHITE_LOGO_PATH))
