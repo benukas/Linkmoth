@@ -1,84 +1,121 @@
 #!/usr/bin/env bash
-# Linkmoth verified release bootstrap installer.
-#
-# Downloads a versioned Linkmoth release archive from GitHub Releases, verifies
-# its SHA-256 checksum, extracts it, and runs the full install.sh from inside.
-#
-# Download this versioned file from a GitHub Release, verify its Sigstore
-# bundle as described in README.md, then run it locally:
-#   sudo bash linkmoth-v0.1.0-bootstrap.sh
-#
-# Environment overrides:
-#   LINKMOTH_REPO     owner/repo to fetch releases from   (default: benukas/linkmoth)
-#   LINKMOTH_VERSION  release tag to install, e.g. v0.1.0 (default: latest)
+# Linkmoth verified release bootstrap installer.  This file is versioned during
+# release construction; do not run the repository copy directly.
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-unset CDPATH ENV BASH_ENV PYTHONPATH PYTHONHOME
+unset CDPATH ENV BASH_ENV PYTHONPATH PYTHONHOME LINKMOTH_REPO LINKMOTH_VERSION
 
-REPO="${LINKMOTH_REPO:-benukas/linkmoth}"
-VERSION="${LINKMOTH_VERSION:-latest}"
+OFFICIAL_REPO="benukas/linkmoth"
+RELEASE_VERSION="@LINKMOTH_VERSION@"
+REPO="$OFFICIAL_REPO"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo bash linkmoth-<version>-bootstrap.sh"
+case "$RELEASE_VERSION" in
+  @LINKMOTH_VERSION@|"") die "use the versioned bootstrap asset from a signed release" ;;
+  v[0-9]*.[0-9]*.[0-9]*|v[0-9]*.[0-9]*.[0-9]*-*) ;;
+  *) die "embedded release version is invalid" ;;
+esac
 command -v curl >/dev/null || die "curl is required"
-command -v tar  >/dev/null || die "tar is required"
-command -v sha256sum >/dev/null || command -v shasum >/dev/null \
-  || die "sha256sum or shasum is required"
+command -v python3 >/dev/null || die "python3 is required"
+command -v sha256sum >/dev/null || command -v shasum >/dev/null || die "sha256sum or shasum is required"
 command -v cosign >/dev/null || die "cosign is required to verify a Linkmoth release"
 
-# Linkmoth is pure Python, so a single architecture-independent archive serves
-# every target (Raspberry Pi / ARM, x86 mini PCs, ...). There is deliberately
-# no per-CPU download to pick here.
-
-if [ "$VERSION" = latest ]; then
-  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-  [ -n "$VERSION" ] || die "could not determine the latest release tag for $REPO"
+# An override is deliberately noisy and opt-in: it is useful for a maintainer
+# testing a fork, but it must never silently alter an official installer.
+if [ "${1:-}" = "--allow-repository-override" ]; then
+  [ $# -ge 2 ] || die "--allow-repository-override requires owner/repository"
+  REPO="$2"
+  shift 2
+  case "$REPO" in
+    *[!A-Za-z0-9_.-]*/*|*/*/*|/*|*/|""|*".."*) die "invalid repository override" ;;
+  esac
 fi
+[ "$REPO" = "$OFFICIAL_REPO" ] || echo "WARNING: using an advanced, unofficial repository override: $REPO" >&2
 
-ASSET="linkmoth-$VERSION.tar.gz"
-BASE="https://github.com/$REPO/releases/download/$VERSION"
-IDENTITY="https://github.com/$REPO/.github/workflows/release.yml@refs/tags/$VERSION"
+ASSET="linkmoth-$RELEASE_VERSION.tar.gz"
+MANIFEST="linkmoth-$RELEASE_VERSION.manifest.json"
+BASE="https://github.com/$REPO/releases/download/$RELEASE_VERSION"
+IDENTITY="https://github.com/$REPO/.github/workflows/release.yml@refs/tags/$RELEASE_VERSION"
 ISSUER="https://token.actions.githubusercontent.com"
-
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 cd "$TMP"
 
-echo "downloading $ASSET ($REPO $VERSION)..."
-curl -fSL -o "$ASSET"        "$BASE/$ASSET"        || die "download failed: $BASE/$ASSET"
-curl -fSL -o "$ASSET.sha256" "$BASE/$ASSET.sha256" || die "checksum download failed: $BASE/$ASSET.sha256"
-curl -fSL -o "$ASSET.bundle" "$BASE/$ASSET.bundle" || die "signature bundle download failed: $BASE/$ASSET.bundle"
-curl -fSL -o "$ASSET.sha256.bundle" "$BASE/$ASSET.sha256.bundle" || die "checksum signature bundle download failed"
+download() { curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --output "$1" "$2"; }
+echo "downloading $ASSET ($REPO $RELEASE_VERSION)..."
+download "$ASSET" "$BASE/$ASSET" || die "archive download failed"
+download "$ASSET.sha256" "$BASE/$ASSET.sha256" || die "checksum download failed"
+download "$ASSET.bundle" "$BASE/$ASSET.bundle" || die "archive signature bundle download failed"
+download "$ASSET.sha256.bundle" "$BASE/$ASSET.sha256.bundle" || die "checksum signature bundle download failed"
+download "$MANIFEST" "$BASE/$MANIFEST" || die "manifest download failed"
+download "$MANIFEST.bundle" "$BASE/$MANIFEST.bundle" || die "manifest signature bundle download failed"
 
 echo "verifying Sigstore signatures..."
-cosign verify-blob --bundle "$ASSET.bundle" \
-  --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER" \
-  "$ASSET" >/dev/null || die "archive signature verification failed"
-cosign verify-blob --bundle "$ASSET.sha256.bundle" \
-  --certificate-identity "$IDENTITY" --certificate-oidc-issuer "$ISSUER" \
-  "$ASSET.sha256" >/dev/null || die "checksum signature verification failed"
+for file in "$ASSET" "$ASSET.sha256" "$MANIFEST"; do
+  cosign verify-blob --bundle "$file.bundle" --certificate-identity "$IDENTITY" \
+    --certificate-oidc-issuer "$ISSUER" "$file" >/dev/null || die "signature verification failed: $file"
+done
 
-echo "verifying SHA-256 checksum..."
-EXPECTED="$(awk '{print $1}' "$ASSET.sha256" | head -n1)"
-[ -n "$EXPECTED" ] || die "malformed checksum file"
-if command -v sha256sum >/dev/null; then
-  ACTUAL="$(sha256sum "$ASSET" | awk '{print $1}')"
-else
-  ACTUAL="$(shasum -a 256 "$ASSET" | awk '{print $1}')"
-fi
-[ "$EXPECTED" = "$ACTUAL" ] \
-  || die "checksum mismatch (expected $EXPECTED, got $ACTUAL) - refusing to install"
-echo "checksum OK"
+EXPECTED="$(awk 'NF == 2 && $2 == "'"$ASSET"'" {print $1}' "$ASSET.sha256")"
+case "$EXPECTED" in *[!0-9a-fA-F]*|"") die "malformed checksum file" ;; esac
+if command -v sha256sum >/dev/null; then ACTUAL="$(sha256sum "$ASSET" | awk '{print $1}')"; else ACTUAL="$(shasum -a 256 "$ASSET" | awk '{print $1}')"; fi
+[ "$EXPECTED" = "$ACTUAL" ] || die "archive checksum mismatch"
 
-echo "extracting..."
-tar -xzf "$ASSET"
-DIR="$(tar -tzf "$ASSET" | head -n1 | cut -d/ -f1)"
-[ -n "$DIR" ] && [ -d "$DIR" ] || die "unexpected archive layout"
-[ -f "$DIR/install.sh" ] || die "install.sh not found in downloaded archive"
+echo "validating complete archive before extraction..."
+python3 - "$ASSET" "$MANIFEST" "$RELEASE_VERSION" "$TMP/extracted" <<'PY'
+import hashlib, json, os, posixpath, stat, sys, tarfile
+
+archive, manifest_path, version, destination = sys.argv[1:]
+root = "linkmoth-" + version
+def fail(message): raise SystemExit("ERROR: unsafe release archive: " + message)
+try:
+    manifest = json.load(open(manifest_path, encoding="utf-8"))
+except (OSError, ValueError) as exc: fail("invalid manifest: " + str(exc))
+if manifest.get("version") != version or not isinstance(manifest.get("files"), list): fail("manifest version or file list is invalid")
+expected = {}
+for item in manifest["files"]:
+    if not isinstance(item, dict): fail("manifest entry is invalid")
+    path, mode, size, digest = (item.get(k) for k in ("path", "mode", "size", "sha256"))
+    if not isinstance(path, str) or not path or path.startswith("/") or ".." in path.split("/") or "\\" in path: fail("unsafe manifest path")
+    if path in expected or not isinstance(mode, int) or mode & 0o022 or not isinstance(size, int) or size < 0 or not isinstance(digest, str) or len(digest) != 64: fail("invalid manifest metadata")
+    expected[path] = (mode, size, digest)
+if not expected: fail("manifest has no files")
+try:
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()  # force a full archive scan before writing anything
+        names = set()
+        actual = {}
+        for member in members:
+            name = member.name.rstrip("/")
+            if not name or name in names or name.startswith("/") or ".." in name.split("/") or "\\" in name: fail("unsafe or duplicate member name")
+            names.add(name)
+            if name == root:
+                if not member.isdir(): fail("top-level member is not a directory")
+                continue
+            prefix = root + "/"
+            if not name.startswith(prefix): fail("unexpected top-level directory")
+            relative = name[len(prefix):]
+            if member.isdir():
+                if member.mode & 0o022: fail("unsafe directory mode")
+                continue
+            if not member.isreg(): fail("links, devices, FIFOs, and special files are not permitted")
+            if relative not in expected or member.mode != expected[relative][0] or member.size != expected[relative][1] or member.mode & 0o022: fail("member does not match manifest")
+            handle = tar.extractfile(member)
+            if handle is None: fail("unreadable archive member")
+            digest = hashlib.sha256(handle.read()).hexdigest()
+            if digest != expected[relative][2]: fail("member digest does not match manifest")
+            actual[relative] = True
+        if set(actual) != set(expected): fail("archive and manifest file sets differ")
+        os.mkdir(destination, 0o700)
+        tar.extractall(destination, members=members)
+except (OSError, tarfile.TarError) as exc: fail(str(exc))
+installed = os.path.join(destination, root)
+if not os.path.isfile(os.path.join(installed, "install.sh")): fail("install.sh is missing")
+PY
 
 echo "running installer..."
-cd "$DIR"
+cd "$TMP/extracted/linkmoth-$RELEASE_VERSION"
 exec bash install.sh "$@"
