@@ -61,6 +61,7 @@ class PublicReleaseTests(unittest.TestCase):
         bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn("cosign verify-blob", bootstrap)
+        self.assertIn('OFFICIAL_REPO="benukas/Linkmoth"', bootstrap)
         self.assertNotIn("raw.githubusercontent.com/benukas/linkmoth/main/bootstrap.sh", bootstrap)
         self.assertIn("sigstore/cosign-installer", workflow)
         self.assertIn("cosign sign-blob", workflow)
@@ -71,6 +72,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("VERSION=v0.1.0", readme)
         self.assertIn("cosign verify-blob", readme)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", readme)
+        self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", readme)
+        self.assertIn("https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION", readme)
 
     def test_installer_never_kills_processes_by_name(self):
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")

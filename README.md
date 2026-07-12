@@ -65,12 +65,12 @@ signature, and only then start the installer:
 
 ```bash
 VERSION=v0.1.0
-BASE="https://github.com/benukas/linkmoth/releases/download/$VERSION"
+BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
 cosign verify-blob \
   --bundle "linkmoth-$VERSION-bootstrap.sh.bundle" \
-  --certificate-identity "https://github.com/benukas/linkmoth/.github/workflows/release.yml@refs/tags/$VERSION" \
+  --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   "linkmoth-$VERSION-bootstrap.sh"
 sudo bash "linkmoth-$VERSION-bootstrap.sh"
