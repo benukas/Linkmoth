@@ -102,7 +102,7 @@ jobs:
             cosign verify-blob --bundle "$file.bundle" --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
           done
       - name: Create GitHub provenance and SBOM attestations
-        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.0
         with:
           subject-path: dist-release/linkmoth-*
           sbom-path: dist-release/linkmoth-${{ github.ref_name }}.spdx.json
