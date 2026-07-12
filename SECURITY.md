@@ -24,8 +24,15 @@ Include, privately:
 - whether the issue has been disclosed elsewhere; and
 - any suggested mitigation.
 
-You should receive an acknowledgement within seven days. Timelines for a fix
-and coordinated disclosure depend on severity and reproducibility.
+You should receive an acknowledgement within seven days. Target initial
+responses are 72 hours for critical/high reports, seven days for medium, and
+14 days for low/informational reports. Fix and coordinated-disclosure timelines
+depend on severity, reproducibility, and affected deployment scope.
+
+Enable GitHub private vulnerability reporting, secret-scanning alerts, and push
+protection in repository settings. Push protection complements review; never
+place release credentials, webhook bearers, private keys, or real backups in
+the repository.
 
 ## Safe research
 

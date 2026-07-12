@@ -1,0 +1,15 @@
+name: Bug report
+description: Report a reproducible Linkmoth defect (not a security vulnerability).
+body:
+  - type: textarea
+    attributes:
+      label: Environment and version
+      description: Include Linkmoth version, distribution, architecture, and install method. Do not include secrets or private addresses.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction and result
+      description: Safe steps, expected result, actual result, and sanitized logs.
+    validations:
+      required: true
