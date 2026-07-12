@@ -65,6 +65,13 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("sigstore/cosign-installer", workflow)
         self.assertIn("cosign sign-blob", workflow)
 
+    def test_quick_start_uses_a_verified_versioned_release(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
+        self.assertIn("VERSION=v0.1.0", readme)
+        self.assertIn("cosign verify-blob", readme)
+        self.assertIn("linkmoth-$VERSION-bootstrap.sh", readme)
+
     def test_installer_never_kills_processes_by_name(self):
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
         self.assertNotIn("pkill -f", installer)
