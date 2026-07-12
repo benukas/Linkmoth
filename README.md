@@ -56,37 +56,24 @@ or hostname (`hostname -I` on the box, or your router's device list). On
 **Raspberry Pi OS**, the default user is often `pi` and `raspberrypi.local`
 may work via mDNS; enable SSH in `raspi-config` if it is disabled.
 
-### 2. Get the code onto the box
+### 2. Install the signed release
 
-**Option A — clone with git** (easiest):
-
-```bash
-sudo apt install -y git      # only if git isn't installed yet
-git clone https://github.com/benukas/linkmoth.git
-cd linkmoth
-```
-
-**Option B — no git, download a ZIP**: on the repo's GitHub page click
-*Code → Download ZIP*, copy it to the Linkmoth host, then:
+Install [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/)
+once from its official instructions, then run these commands on the Linkmoth
+host. They download the versioned bootstrap script, verify its Sigstore
+signature, and only then start the installer:
 
 ```bash
-unzip linkmoth-main.zip
-cd linkmoth-main
-```
-
-**Option C — copy the folder from another computer**: run this on the
-computer that has the `linkmoth` folder (not on the Linkmoth host):
-
-```bash
-scp -r linkmoth/ user@192.168.1.50:
-```
-
-then on the host: `cd linkmoth`
-
-### 3. Run the installer
-
-```bash
-sudo bash install.sh
+VERSION=v0.1.0
+BASE="https://github.com/benukas/linkmoth/releases/download/$VERSION"
+curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
+curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
+cosign verify-blob \
+  --bundle "linkmoth-$VERSION-bootstrap.sh.bundle" \
+  --certificate-identity "https://github.com/benukas/linkmoth/.github/workflows/release.yml@refs/tags/$VERSION" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "linkmoth-$VERSION-bootstrap.sh"
+sudo bash "linkmoth-$VERSION-bootstrap.sh"
 ```
 
 Enter your password if asked. The installer checks your environment
@@ -95,7 +82,7 @@ sets up a hardened systemd service that starts on boot, and finishes by
 printing the dashboard address. If anything is wrong it says exactly what
 and stops before touching your system.
 
-### 4. Open the dashboard
+### 3. Open the dashboard
 
 From any device at home, browse to `https://<host-ip>:8686` (the installer
 printed the exact address). You should see the Linkmoth logo in the browser tab and page header once the page loads. First import and verify the CA certificate as
