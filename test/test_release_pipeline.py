@@ -26,6 +26,9 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertIn("needs: [verify-release-ref, test, checks]", publish)
         self.assertIn("actions/attest@", publish)
 
+    def test_publication_only_signs_regular_release_files(self):
+        self.assertEqual(WORKFLOW.count('[ -f "$file" ] || continue'), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

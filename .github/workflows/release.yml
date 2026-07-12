@@ -91,6 +91,7 @@ jobs:
         working-directory: dist-release
         run: |
           for file in linkmoth-*; do
+            [ -f "$file" ] || continue
             cosign sign-blob --yes --bundle "$file.bundle" "$file"
           done
       - name: Verify release assets
@@ -98,6 +99,7 @@ jobs:
         run: |
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}"
           for file in linkmoth-*; do
+            [ -f "$file" ] || continue
             case "$file" in *.bundle) continue ;; esac
             cosign verify-blob --bundle "$file.bundle" --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
           done
