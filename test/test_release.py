@@ -69,7 +69,8 @@ class PublicReleaseTests(unittest.TestCase):
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
         self.assertNotIn("pkill -f", installer)
         self.assertIn("--bind", installer)
-        self.assertIn("require_no_unmanaged_legacy_processes", installer)
+        self.assertIn("--doctor", installer)
+        self.assertNotIn("migrate_vamner_install", installer)
 
     def test_dist_contains_only_declared_release_files(self):
         actual = {

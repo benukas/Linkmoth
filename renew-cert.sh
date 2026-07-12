@@ -38,11 +38,11 @@ authorityKeyIdentifier = keyid,issuer
 EOF
 
 openssl req -newkey rsa:3072 -sha256 -nodes \
-  -subj "/CN=$HOST_SHORT" -keyout "$TMP/server.key" -out "$TMP/server.csr"
+  -subj "/CN=$HOST_SHORT" -keyout "$TMP/server.key" -out "$TMP/server.csr" >/dev/null 2>&1
 openssl x509 -req -sha256 -days 397 -in "$TMP/server.csr" \
   -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" -CAcreateserial \
-  -extfile "$TMP/server.ext" -out "$TMP/server.crt"
-openssl verify -CAfile "$TLS/ca.crt" "$TMP/server.crt"
+  -extfile "$TMP/server.ext" -out "$TMP/server.crt" >/dev/null 2>&1
+openssl verify -CAfile "$TLS/ca.crt" "$TMP/server.crt" >/dev/null
 KEY_FP="$(openssl pkey -in "$TMP/server.key" -pubout | openssl sha256)"
 CERT_FP="$(openssl x509 -in "$TMP/server.crt" -pubkey -noout | openssl sha256)"
 [ "$KEY_FP" = "$CERT_FP" ] || { echo "generated certificate/key mismatch" >&2; exit 1; }

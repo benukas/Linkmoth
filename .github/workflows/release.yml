@@ -5,19 +5,88 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
-  release:
+  verify-release-ref:
+    name: Verify protected-main ancestry
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: sigstore/cosign-installer@v3
-      - name: Run release tests
-        run: python -m unittest discover -s test -v
-      - name: Build deterministic release
-        run: bash scripts/build-release.sh "${GITHUB_REF_NAME}"
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require release commit to be reachable from main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"
+
+  test:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run complete test suite
+        run: |
+          bash scripts/build-dist.sh
+          python -m unittest discover -s test -v
+
+  checks:
+    name: Shell, distribution, and reproducibility checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14"
+      - name: Check shell syntax
+        run: bash -n install.sh uninstall.sh renew-cert.sh bootstrap.sh scripts/*.sh
+      - name: Build and verify reproducible distribution
+        run: |
+          bash scripts/build-dist.sh
+          git diff --exit-code -- dist
+      - name: Build release candidate
+        run: bash scripts/build-release.sh "$GITHUB_REF_NAME"
+      - name: Upload unsigned release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-candidate
+          path: dist-release/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Sign, attest, and publish
+    needs: [verify-release-ref, test, checks]
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download verified candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-candidate
+          path: dist-release
+      - name: Install Sigstore Cosign
+        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3.9.2
       - name: Sign release assets
         working-directory: dist-release
         run: |
@@ -30,10 +99,13 @@ jobs:
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${GITHUB_REF_NAME}"
           for file in linkmoth-*; do
             case "$file" in *.bundle) continue ;; esac
-            cosign verify-blob --bundle "$file.bundle" \
-              --certificate-identity "$identity" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
+            cosign verify-blob --bundle "$file.bundle" --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$file"
           done
+      - name: Create GitHub provenance and SBOM attestations
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4.1.0
+        with:
+          subject-path: dist-release/linkmoth-*
+          sbom-path: dist-release/linkmoth-${{ github.ref_name }}.spdx.json
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

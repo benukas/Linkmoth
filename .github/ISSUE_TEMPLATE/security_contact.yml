@@ -1,0 +1,6 @@
+name: Security contact request
+description: Request a private channel without disclosing vulnerability details.
+body:
+  - type: markdown
+    attributes:
+      value: Do not include exploit details, credentials, network information, or proof-of-concept material here. See SECURITY.md.

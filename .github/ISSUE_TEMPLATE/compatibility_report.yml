@@ -1,0 +1,15 @@
+name: Compatibility report
+description: Report a supported-platform installation or runtime compatibility issue.
+body:
+  - type: textarea
+    attributes:
+      label: Platform
+      description: Distribution release, kernel, architecture, systemd version, and Linkmoth version.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Safe reproduction
+      description: Expected/actual behaviour and sanitized diagnostic output.
+    validations:
+      required: true
