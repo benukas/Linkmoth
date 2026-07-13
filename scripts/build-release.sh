@@ -26,6 +26,14 @@ esac
 rm -rf -- "$OUT"
 mkdir -p "$OUT/$NAME"
 cp -a "$ROOT/dist/." "$OUT/$NAME/"
+COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+python3 - "$OUT/$NAME/linkmoth-build.json" "$VERSION" "$COMMIT" <<'PY'
+import json, sys
+path, version, commit = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as f:
+    json.dump({"schema": 1, "version": version, "release_commit": commit}, f, sort_keys=True)
+    f.write("\n")
+PY
 
 # This signed inventory binds the archive layout and every installable byte.
 python3 "$ROOT/scripts/generate-sbom.py" --root "$OUT/$NAME" --version "$VERSION" \

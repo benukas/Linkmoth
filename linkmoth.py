@@ -35,7 +35,15 @@ WHITE_MARK_PATH = BASE / "linkmoth-mark-white.svg"
 FAVICON_PATH = BASE / "linkmoth-white.ico"
 SW_PATH = BASE / "sw.js"
 MANIFEST_PATH = BASE / "manifest.webmanifest"
-VERSION = "1.0.0"
+def _build_version():
+    try:
+        meta = json.loads((BASE / "linkmoth-build.json").read_text(encoding="utf-8"))
+        value = meta.get("version")
+        if isinstance(value, str) and re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", value): return value.removeprefix("v")
+    except (OSError, ValueError, json.JSONDecodeError): pass
+    return "development"
+VERSION = _build_version()
+INSTALLATION_RECORD = Path("/etc/linkmoth/installation.json")
 VERIFY_COOLDOWN_SECONDS = 5
 GITHUB_REPO = "https://github.com/benukas/linkmoth"
 CHANGELOG_URL = f"{GITHUB_REPO}/blob/main/CHANGELOG.md"
@@ -67,6 +75,23 @@ RFC1918_NETWORKS = (
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
 )
+
+def installation_provenance():
+    """Read bootstrap-only provenance without inferring trust from a version."""
+    if not SYSTEM_INSTALL:
+        return {"state": "unverified-manual", "detail": "source checkout or manual installation"}
+    try:
+        st = os.lstat(INSTALLATION_RECORD)
+        if stat.S_ISLNK(st.st_mode) or st.st_uid != 0 or st.st_gid != 0 or stat.S_IMODE(st.st_mode) & 0o022:
+            raise ValueError
+        record = json.loads(INSTALLATION_RECORD.read_text(encoding="utf-8"))
+        if record.get("schema") != 1 or record.get("verification") != "sigstore-verified" or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(record.get("version", ""))):
+            raise ValueError
+        return {"state": "sigstore-verified", "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
+    except FileNotFoundError:
+        return {"state": "legacy-unavailable"}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"state": "invalid"}
 
 
 def _allowed_local_dns_address(value):
@@ -2503,6 +2528,7 @@ class Engine:
                 "version": VERSION,
                 "github": GITHUB_REPO,
                 "changelog": CHANGELOG_URL,
+                "provenance": installation_provenance(),
             },
         }
 

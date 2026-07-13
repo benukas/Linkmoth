@@ -118,4 +118,23 @@ PY
 
 echo "running installer..."
 cd "$TMP/extracted/linkmoth-$RELEASE_VERSION"
-exec bash install.sh "$@"
+if ! bash install.sh "$@"; then exit $?; fi
+python3 - "/etc/linkmoth" "linkmoth-build.json" "$RELEASE_VERSION" "$EXPECTED" <<'PY'
+import json, os, stat, sys, tempfile, time
+etc, metadata_path, version, archive_sha256 = sys.argv[1:]
+try:
+    metadata = json.load(open(metadata_path, encoding="utf-8"))
+    commit = metadata["release_commit"]
+    if metadata.get("schema") != 1 or metadata.get("version") != version or not isinstance(commit, str) or len(commit) != 40: raise ValueError
+except (OSError, ValueError, KeyError): raise SystemExit("ERROR: invalid signed build metadata")
+os.makedirs(etc, mode=0o750, exist_ok=True)
+path = os.path.join(etc, "installation.json")
+try:
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode): raise SystemExit("ERROR: installation record is a symlink")
+except FileNotFoundError: pass
+record = {"schema": 1, "version": version, "release_commit": commit, "archive_sha256": archive_sha256.lower(), "verification": "sigstore-verified", "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+fd, tmp = tempfile.mkstemp(prefix=".installation-", dir=etc)
+with os.fdopen(fd, "w", encoding="utf-8") as f: json.dump(record, f, sort_keys=True); f.write("\n")
+os.chmod(tmp, 0o644); os.replace(tmp, path); os.chown(path, 0, 0)
+PY
