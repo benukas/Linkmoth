@@ -267,6 +267,24 @@ class PresetRenderTests(unittest.TestCase):
                 json.loads(expected),
             )
 
+    def test_public_exposure_detected_event_renders_without_an_incident(self):
+        # Built exactly as Handler._reject_if_publicly_exposed does: no
+        # incident, no checks, just a bare verdict-shaped warning.
+        ctx = wh.build_event_context(
+            "public_exposure_detected",
+            verdict={
+                "title": "Linkmoth rejected a public-internet connection",
+                "explain": "Check your router's port-forwarding rules.",
+                "severity": "warn",
+            },
+        )
+        ctx = wh._finalize_context(ctx, queued_ts=time.time())
+        self.assertIn("public_exposure_detected", wh.EVENT_IDS)
+        self.assertEqual(wh.event_status("public_exposure_detected", "warn"), "info")
+        for preset in ("generic", "discord", "slack", "ntfy", "gotify"):
+            body, ct, extra = wh.render_payload({"preset": preset}, ctx)
+            self.assertTrue(body)
+
     def test_ntfy_headers(self):
         body, ct, extra = wh.render_payload({"preset": "ntfy"}, self.ctx())
         self.assertTrue(ct.startswith("text/plain"))
