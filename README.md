@@ -58,14 +58,14 @@ may work via mDNS; enable SSH in `raspi-config` if it is disabled.
 
 ### 2. Install the versioned release
 
-Run these two commands on the Linkmoth host. They download the exact v0.2.1
+Run these two commands on the Linkmoth host. They download the exact v0.2.2
 bootstrap locally, then install the matching release after checking its
 SHA-256 checksum. No Git checkout, package manager, or Cosign installation is
 needed:
 
 ```bash
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.1/linkmoth-v0.2.1-bootstrap.sh
-sudo bash linkmoth-v0.2.1-bootstrap.sh
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.2/linkmoth-v0.2.2-bootstrap.sh
+sudo bash linkmoth-v0.2.2-bootstrap.sh
 ```
 
 Enter your password if asked. The installer checks your environment
@@ -83,7 +83,7 @@ download the bootstrap bundle, verify the pinned release-workflow identity,
 and run the same bootstrap with `--sigstore-verified`:
 
 ```bash
-VERSION=v0.2.1
+VERSION=v0.2.2
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
