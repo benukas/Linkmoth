@@ -69,7 +69,7 @@ class PublicReleaseTests(unittest.TestCase):
     def test_quick_start_uses_a_verified_versioned_release(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
-        self.assertIn("VERSION=v0.1.1", readme)
+        self.assertIn("VERSION=v0.1.2", readme)
         self.assertIn("cosign verify-blob", readme)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", readme)
         self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", readme)
