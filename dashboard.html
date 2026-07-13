@@ -11,6 +11,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
+  /* Cream (default light) */
   --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
   --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
   --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
@@ -18,7 +19,7 @@
   --bad-bg: #fbe4e2; --bad-text: #a52a1e;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme="cream"]):not([data-theme="white"]) {
     --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
     --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
     --ok-bg: #1d3a24; --ok-text: #8fd39c;
@@ -33,12 +34,19 @@
   --warn-bg: #40320f; --warn-text: #f0c46a;
   --bad-bg: #46201c; --bad-text: #f2988d;
 }
-:root[data-theme="light"] {
+:root[data-theme="cream"] {
   --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
   --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
   --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
   --warn-bg: #fcf0d7; --warn-text: #8a5a00;
   --bad-bg: #fbe4e2; --bad-text: #a52a1e;
+}
+:root[data-theme="white"] {
+  --bg: #ffffff; --card: #f6f7f8; --text: #16181b; --muted: #666c72;
+  --border: #e2e5e8; --line: #2f6fc1; --line2: #b0682f;
+  --ok-bg: #e1f1e5; --ok-text: #196b2c;
+  --warn-bg: #fbedd4; --warn-text: #855400;
+  --bad-bg: #fae2e0; --bad-text: #a4291c;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -310,7 +318,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   box-shadow: 0 10px 28px rgba(30, 26, 16, 0.14); max-height: 320px; overflow-y: auto;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+  :root:not([data-theme="cream"]):not([data-theme="white"]) .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
 }
 :root[data-theme="dark"] .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
 .custom-select-menu li {
@@ -376,7 +384,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-card { position: relative; transition: border-color 150ms ease, box-shadow 150ms ease; }
 .device-card:hover { box-shadow: 0 2px 10px rgba(30, 26, 16, 0.08); }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+  :root:not([data-theme="cream"]):not([data-theme="white"]) .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
 }
 :root[data-theme="dark"] .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
 .device-card.up { border-left: 6px solid var(--ok-text); }
@@ -738,7 +746,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <label for="s-theme">Theme</label>
           <select id="s-theme">
             <option value="system">Match device</option>
-            <option value="light">Light</option>
+            <option value="cream">Cream</option>
+            <option value="white">White</option>
             <option value="dark">Dark</option>
           </select>
         </div>
@@ -959,7 +968,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 const $ = (id) => document.getElementById(id);
 
 function applyTheme(pref) {
-  if (pref === "light" || pref === "dark") {
+  if (pref === "cream" || pref === "white" || pref === "dark") {
     document.documentElement.setAttribute("data-theme", pref);
   } else {
     document.documentElement.removeAttribute("data-theme");
