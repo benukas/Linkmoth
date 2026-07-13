@@ -488,7 +488,12 @@ class TestSendTests(WebhookDbCase):
                 wh._post("https://example.test/hook", b"{}", {})
         self.assertEqual(cm.exception.code, 302)
         conn.request.assert_called_once()
-        cm.exception.close()
+        # Mirrors _send_now's own defensive close(): a mocked HTTPError on
+        # Python 3.9 can raise from an already-consumed temp file on close.
+        try:
+            cm.exception.close()
+        except Exception:
+            pass
 
     def test_send_test_uses_render_path(self):
         hook = self.make_webhook(preset="ntfy")
