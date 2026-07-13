@@ -11,6 +11,7 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
+  /* Cream (default light) */
   --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
   --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
   --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
@@ -18,13 +19,34 @@
   --bad-bg: #fbe4e2; --bad-text: #a52a1e;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="cream"]):not([data-theme="white"]) {
     --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
     --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
     --ok-bg: #1d3a24; --ok-text: #8fd39c;
     --warn-bg: #40320f; --warn-text: #f0c46a;
     --bad-bg: #46201c; --bad-text: #f2988d;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
+  --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
+  --ok-bg: #1d3a24; --ok-text: #8fd39c;
+  --warn-bg: #40320f; --warn-text: #f0c46a;
+  --bad-bg: #46201c; --bad-text: #f2988d;
+}
+:root[data-theme="cream"] {
+  --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
+  --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
+  --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
+  --warn-bg: #fcf0d7; --warn-text: #8a5a00;
+  --bad-bg: #fbe4e2; --bad-text: #a52a1e;
+}
+:root[data-theme="white"] {
+  --bg: #ffffff; --card: #f6f7f8; --text: #16181b; --muted: #666c72;
+  --border: #e2e5e8; --line: #2f6fc1; --line2: #b0682f;
+  --ok-bg: #e1f1e5; --ok-text: #196b2c;
+  --warn-bg: #fbedd4; --warn-text: #855400;
+  --bad-bg: #fae2e0; --bad-text: #a4291c;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -296,8 +318,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   box-shadow: 0 10px 28px rgba(30, 26, 16, 0.14); max-height: 320px; overflow-y: auto;
 }
 @media (prefers-color-scheme: dark) {
-  .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+  :root:not([data-theme="cream"]):not([data-theme="white"]) .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
 }
+:root[data-theme="dark"] .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
 .custom-select-menu li {
   padding: 12px 14px; border-radius: 10px; cursor: pointer;
   font-size: 17px; font-weight: 600; border: 1px solid transparent;
@@ -361,8 +384,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-card { position: relative; transition: border-color 150ms ease, box-shadow 150ms ease; }
 .device-card:hover { box-shadow: 0 2px 10px rgba(30, 26, 16, 0.08); }
 @media (prefers-color-scheme: dark) {
-  .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+  :root:not([data-theme="cream"]):not([data-theme="white"]) .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
 }
+:root[data-theme="dark"] .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
 .device-card.up { border-left: 6px solid var(--ok-text); }
 .device-card.degraded, .device-card.error { border-left: 6px solid var(--warn-text); }
 .device-card.down { border-left: 6px solid var(--bad-text); }
@@ -440,15 +464,6 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .auth-box button:active { transform: scale(0.99); }
 .auth-err { color: var(--bad-text); font-size: 16px; margin: 0 0 6px; }
 .auth-err:empty { display: none; }
-#logout-btn {
-  width: 40px; height: 34px; display: flex; align-items: center; justify-content: center;
-  flex: none; font-size: 22px; line-height: 1; color: var(--muted); background: var(--card);
-  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; padding: 0;
-  transition: border-color 150ms ease, color 150ms ease, transform 80ms ease;
-}
-#logout-btn .logout-icon { display: block; line-height: 1; transform: translateY(-1px); }
-#logout-btn:hover { color: var(--text); border-color: var(--text); }
-#logout-btn:active { transform: scale(0.97); }
 #logout-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 .inbound-example code { overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
 </style>
@@ -514,8 +529,15 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <div id="host-memory" class="host-metric"><span class="k">RAM</span><span class="v">—</span></div>
       <div id="host-disk" class="host-metric"><span class="k">DISK</span><span class="v">—</span></div>
     </div>
-    <button id="logout-btn" type="button" class="hidden" aria-label="Sign out" title="Sign out"><span class="logout-icon" aria-hidden="true">⇥</span></button>
   </header>
+
+  <div id="install-banner" class="banner hidden">
+    <p>Install Linkmoth for quick, full-screen access from your home screen.</p>
+    <div class="banner-actions">
+      <button id="install-btn" type="button" class="action-btn">Install</button>
+      <button id="install-dismiss" type="button" class="action-btn">Not now</button>
+    </div>
+  </div>
 
   <button id="nav-burger" class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="main-nav">☰ Menu</button>
   <nav id="main-nav">
@@ -708,6 +730,18 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   <div id="tab-settings" class="hidden">
     <section class="card">
       <h3>Settings</h3>
+      <div class="set-section">
+        <h4>Appearance</h4>
+        <div class="set-row">
+          <label for="s-theme">Theme</label>
+          <select id="s-theme">
+            <option value="system">Match device</option>
+            <option value="cream">Cream</option>
+            <option value="white">White</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+      </div>
       <div class="set-section" id="release-settings">
         <h4>Installation and updates</h4>
         <p id="provenance-state" class="set-hint">Checking installation provenance…</p>
@@ -841,6 +875,10 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <button type="button" id="vacuum-db" class="action-btn">Run VACUUM</button><span id="db-msg"></span>
       </div>
       <button id="save-settings" class="action-btn">Save settings</button><span id="settings-msg"></span>
+      <div class="set-section">
+        <h4>Session</h4>
+        <button id="logout-btn" type="button" class="action-btn hidden">Sign out</button>
+      </div>
     </section>
   </div>
 
@@ -922,6 +960,16 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
+
+function applyTheme(pref) {
+  if (pref === "cream" || pref === "white" || pref === "dark") {
+    document.documentElement.setAttribute("data-theme", pref);
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+}
+applyTheme(localStorage.getItem("linkmoth-theme") || "system");
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 let refreshSec = 5;
@@ -2875,7 +2923,15 @@ async function loadSecurityPosture() {
         `— a VPN/tunnel interface Linkmoth detected on this host. Set <code>"bind"</code> in ` +
         `<code>/etc/linkmoth/config.json</code> to your LAN IP instead of 0.0.0.0, then restart.</p>`
       : "";
+    const exposure = s.public_exposure_recent || {};
+    const exposureWarning = exposure.count
+      ? `<p class="device-warning"><b>Public exposure blocked:</b> Linkmoth refused ${exposure.count} ` +
+        `connection attempt(s) from a public IP address, most recently ${esc(fmtAge(Date.now() / 1000 - exposure.last_ts))}. ` +
+        `If you didn't intentionally expose Linkmoth to the internet (e.g. via a VPN or reverse proxy you configured), ` +
+        `check your router's port-forwarding rules.</p>`
+      : "";
     $("sec-posture").innerHTML =
+      exposureWarning +
       tunnelWarning +
       `<p><b>Network exposure:</b> ${esc(s.internet_note)}</p>` +
       `<p><b>HTTPS:</b> ${s.tls ? "on (encrypted)" : "off"} · listening on ${esc(String(s.bind))}</p>` +
@@ -3604,6 +3660,43 @@ $("vacuum-db").addEventListener("click", async () => {
   }
   btn.disabled = false;
   setTimeout(() => { msg.textContent = ""; }, 8000);
+});
+
+$("s-theme").value = localStorage.getItem("linkmoth-theme") || "system";
+$("s-theme").addEventListener("change", (e) => {
+  localStorage.setItem("linkmoth-theme", e.target.value);
+  applyTheme(e.target.value);
+});
+
+if ("serviceWorker" in navigator) {
+  // Registered unconditionally (not just when push is enabled) so the app
+  // shell — this page, the manifest, and icons — loads instantly and still
+  // works with no network. Live diagnostic data is never cached; see sw.js.
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+let deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  if (localStorage.getItem("linkmoth-install-dismissed") !== "1") {
+    $("install-banner").classList.remove("hidden");
+  }
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  $("install-banner").classList.add("hidden");
+});
+$("install-btn").addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  $("install-banner").classList.add("hidden");
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+});
+$("install-dismiss").addEventListener("click", () => {
+  localStorage.setItem("linkmoth-install-dismissed", "1");
+  $("install-banner").classList.add("hidden");
 });
 
 async function tick() {

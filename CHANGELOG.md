@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.2.3
+
+### Security and exposure hardening
+
+- Webhook delivery is pinned to the validated address; TLS is restricted to AEAD
+  ciphers only.
+- Connections from public IP addresses are refused, with dashboard warnings and
+  alerts when accidental exposure is detected.
+
+### Dashboard and PWA
+
+- Sign out now lives in Settings instead of the header.
+- Added a PWA install prompt, offline app-shell caching, and a theme toggle with
+  Cream, Dark, and White options.
+
+### Documentation
+
+- Simplified the main README and moved detailed guidance to `ADVANCED.md`.
+- Quick-start install docs and the Sigstore-verified path are pinned to v0.2.3.
+- Release builds fail when install docs do not match the tagged version.
+
 ### 0.2.1 feature beta: dashboard control alignment
 
 - Sign out now uses a clearly framed, centered control instead of appearing as

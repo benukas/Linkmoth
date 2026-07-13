@@ -91,5 +91,42 @@ class BindExposureTests(unittest.TestCase):
         self.assertTrue(any(i["iface"] == "wg0" for i in risk))
 
 
+class PublicExposureGuardTests(unittest.TestCase):
+    """_peer_is_trusted_local backs a request-level guard against an
+    accidental router port-forward — see Handler._reject_if_publicly_exposed.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_pubexp_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+
+    def setUp(self):
+        self.linkmoth.CFG["trusted_proxy_cidrs"] = []
+
+    def test_lan_and_loopback_are_trusted(self):
+        for ip in ("192.168.1.10", "10.0.0.5", "172.16.0.1", "127.0.0.1", "::1"):
+            self.assertTrue(self.linkmoth._peer_is_trusted_local(ip), ip)
+
+    def test_public_address_is_not_trusted_by_default(self):
+        for ip in ("8.8.8.8", "1.1.1.1", "93.184.216.34"):
+            self.assertFalse(self.linkmoth._peer_is_trusted_local(ip), ip)
+
+    def test_malformed_peer_is_not_trusted(self):
+        self.assertFalse(self.linkmoth._peer_is_trusted_local("not-an-ip"))
+
+    def test_public_address_trusted_once_configured_as_a_proxy(self):
+        self.assertFalse(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
+        self.linkmoth.CFG["trusted_proxy_cidrs"] = ["8.8.8.0/24"]
+        self.assertTrue(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
+        self.assertFalse(self.linkmoth._peer_is_trusted_local("1.1.1.1"))
+
+    def test_malformed_trusted_proxy_cidr_is_ignored_not_fatal(self):
+        self.linkmoth.CFG["trusted_proxy_cidrs"] = ["not-a-cidr"]
+        self.assertFalse(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
+
+
 if __name__ == "__main__":
     unittest.main()

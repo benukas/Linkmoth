@@ -267,6 +267,24 @@ class PresetRenderTests(unittest.TestCase):
                 json.loads(expected),
             )
 
+    def test_public_exposure_detected_event_renders_without_an_incident(self):
+        # Built exactly as Handler._reject_if_publicly_exposed does: no
+        # incident, no checks, just a bare verdict-shaped warning.
+        ctx = wh.build_event_context(
+            "public_exposure_detected",
+            verdict={
+                "title": "Linkmoth rejected a public-internet connection",
+                "explain": "Check your router's port-forwarding rules.",
+                "severity": "warn",
+            },
+        )
+        ctx = wh._finalize_context(ctx, queued_ts=time.time())
+        self.assertIn("public_exposure_detected", wh.EVENT_IDS)
+        self.assertEqual(wh.event_status("public_exposure_detected", "warn"), "info")
+        for preset in ("generic", "discord", "slack", "ntfy", "gotify"):
+            body, ct, extra = wh.render_payload({"preset": preset}, ctx)
+            self.assertTrue(body)
+
     def test_ntfy_headers(self):
         body, ct, extra = wh.render_payload({"preset": "ntfy"}, self.ctx())
         self.assertTrue(ct.startswith("text/plain"))
@@ -448,23 +466,52 @@ class QueueTests(WebhookDbCase):
 
 
 class TestSendTests(WebhookDbCase):
-    def test_http_transport_disables_proxies_and_redirects(self):
+    def test_https_delivery_pins_the_validated_address(self):
+        # Only one DNS resolution happens (the validation one) — the actual
+        # connection reuses that answer instead of re-resolving the hostname,
+        # closing the gap where a later DNS answer could redirect delivery
+        # to a different address than the one just validated.
+        fake_result = [(None, None, None, None, ("93.184.216.34", 443))]
         response = mock.MagicMock()
         response.status = 204
-        response.__enter__.return_value = response
-        opener = mock.MagicMock()
-        opener.open.return_value = response
+        response.reason = "No Content"
+        response.getheaders.return_value = []
+        response.read.return_value = b""
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
         with (
-            mock.patch.object(wh, "_validate_delivery_target"),
-            mock.patch.object(wh.urlrequest, "build_opener", return_value=opener) as build,
+            mock.patch.object(wh.socket, "getaddrinfo", return_value=fake_result) as getaddrinfo,
+            mock.patch.object(wh, "_PinnedHTTPSConnection", return_value=conn) as pinned,
         ):
             status = wh._post("https://example.test/hook", b"{}", {})
         self.assertEqual(status, 204)
-        handlers = build.call_args.args
-        self.assertTrue(any(isinstance(h, wh.urlrequest.ProxyHandler) for h in handlers))
-        self.assertTrue(any(isinstance(h, wh._NoRedirect) for h in handlers))
-        proxy = next(h for h in handlers if isinstance(h, wh.urlrequest.ProxyHandler))
-        self.assertEqual(proxy.proxies, {})
+        self.assertEqual(getaddrinfo.call_count, 1)
+        self.assertEqual(pinned.call_args.args, ("example.test", "93.184.216.34"))
+        conn.request.assert_called_once_with("POST", "/hook", body=b"{}", headers={})
+
+    def test_delivery_never_follows_a_redirect(self):
+        fake_result = [(None, None, None, None, ("93.184.216.34", 443))]
+        response = mock.MagicMock()
+        response.status = 302
+        response.reason = "Found"
+        response.getheaders.return_value = [("Location", "http://internal.example/")]
+        response.read.return_value = b""
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
+        with (
+            mock.patch.object(wh.socket, "getaddrinfo", return_value=fake_result),
+            mock.patch.object(wh, "_PinnedHTTPSConnection", return_value=conn),
+        ):
+            with self.assertRaises(wh.urlerror.HTTPError) as cm:
+                wh._post("https://example.test/hook", b"{}", {})
+        self.assertEqual(cm.exception.code, 302)
+        conn.request.assert_called_once()
+        # Mirrors _send_now's own defensive close(): a mocked HTTPError on
+        # Python 3.9 can raise from an already-consumed temp file on close.
+        try:
+            cm.exception.close()
+        except Exception:
+            pass
 
     def test_send_test_uses_render_path(self):
         hook = self.make_webhook(preset="ntfy")
