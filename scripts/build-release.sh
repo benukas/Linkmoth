@@ -26,6 +26,14 @@ esac
 rm -rf -- "$OUT"
 mkdir -p "$OUT/$NAME"
 cp -a "$ROOT/dist/." "$OUT/$NAME/"
+COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+python3 - "$OUT/$NAME/linkmoth-build.json" "$VERSION" "$COMMIT" <<'PY'
+import json, sys
+path, version, commit = sys.argv[1:]
+with open(path, "w", encoding="utf-8") as f:
+    json.dump({"schema": 1, "version": version, "release_commit": commit}, f, sort_keys=True)
+    f.write("\n")
+PY
 
 # This signed inventory binds the archive layout and every installable byte.
 python3 "$ROOT/scripts/generate-sbom.py" --root "$OUT/$NAME" --version "$VERSION" \
@@ -61,8 +69,8 @@ fi
 echo "built $OUT/$NAME.tar.gz"
 cat "$OUT/$NAME.tar.gz.sha256"
 
-# The bootstrap is a separate, versioned release asset.  It is signed alongside
-# the archive by the release workflow; users verify it before running as root.
+# The bootstrap is a separate, versioned release asset. It is signed alongside
+# the archive for users who select the optional Sigstore-verified install path.
 sed "s/@LINKMOTH_VERSION@/$VERSION/g" "$ROOT/bootstrap.sh" > "$OUT/$NAME-bootstrap.sh"
 chmod 755 "$OUT/$NAME-bootstrap.sh"
 echo "built $OUT/$NAME-bootstrap.sh"

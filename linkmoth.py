@@ -6,6 +6,7 @@ then runs a layered fault ladder several times over a few minutes and records
 the incident with a plain verdict of who is to blame.
 """
 import json
+import http.client
 import ipaddress
 import os
 import re
@@ -22,6 +23,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -35,9 +37,23 @@ WHITE_MARK_PATH = BASE / "linkmoth-mark-white.svg"
 FAVICON_PATH = BASE / "linkmoth-white.ico"
 SW_PATH = BASE / "sw.js"
 MANIFEST_PATH = BASE / "manifest.webmanifest"
-VERSION = "1.0.0"
+def _build_version():
+    try:
+        meta = json.loads((BASE / "linkmoth-build.json").read_text(encoding="utf-8"))
+        value = meta.get("version")
+        if isinstance(value, str) and re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", value): return value.removeprefix("v")
+    except (OSError, ValueError, json.JSONDecodeError): pass
+    return "development"
+VERSION = _build_version()
+INSTALLATION_RECORD = Path("/etc/linkmoth/installation.json")
 VERIFY_COOLDOWN_SECONDS = 5
 GITHUB_REPO = "https://github.com/benukas/linkmoth"
+GITHUB_API_HOST = "api.github.com"
+GITHUB_RELEASE_HOST = "github.com"
+GITHUB_RELEASE_PATH = "/repos/benukas/Linkmoth/releases/latest"
+GITHUB_UPDATE_USER_AGENT = "Linkmoth-manual-update-check/0.2"
+UPDATE_CHECK_TIMEOUT_SECONDS = 4
+UPDATE_CHECK_MAX_BYTES = 32 * 1024
 CHANGELOG_URL = f"{GITHUB_REPO}/blob/main/CHANGELOG.md"
 SYSTEM_INSTALL = BASE == Path("/opt/linkmoth")
 DEFAULT_CONFIG_PATH = (
@@ -67,6 +83,165 @@ RFC1918_NETWORKS = (
     ipaddress.ip_network("172.16.0.0/12"),
     ipaddress.ip_network("192.168.0.0/16"),
 )
+
+def installation_provenance():
+    """Read local provenance without inferring trust from a version or remote."""
+    if not SYSTEM_INSTALL:
+        return {"state": "unverified-manual", "detail": "source checkout or manual installation"}
+    try:
+        st = os.lstat(INSTALLATION_RECORD)
+        if (stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode)
+                or st.st_uid != 0 or st.st_gid != 0
+                or stat.S_IMODE(st.st_mode) & 0o022):
+            raise ValueError
+        record = json.loads(INSTALLATION_RECORD.read_text(encoding="utf-8"))
+        metadata = json.loads((BASE / "linkmoth-build.json").read_text(encoding="utf-8"))
+        if (record.get("schema") != 1
+                or record.get("verification") != "sigstore-verified"
+                or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(record.get("version", "")))
+                or not re.fullmatch(r"[0-9a-f]{40}", str(record.get("release_commit", "")))
+                or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("archive_sha256", "")))
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", str(record.get("installed_at", "")))
+                or metadata.get("schema") != 1
+                or metadata.get("version") != record.get("version")
+                or metadata.get("release_commit") != record.get("release_commit")):
+            raise ValueError
+        return {"state": "sigstore-verified", "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
+    except FileNotFoundError:
+        build_metadata = BASE / "linkmoth-build.json"
+        try:
+            metadata = json.loads(build_metadata.read_text(encoding="utf-8"))
+            if (metadata.get("schema") != 1
+                    or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(metadata.get("version", "")))
+                    or not re.fullmatch(r"[0-9a-f]{40}", str(metadata.get("release_commit", "")))):
+                raise ValueError
+            return {"state": "unverified-manual", "detail": "versioned release installed without publisher verification"}
+        except FileNotFoundError:
+            return {"state": "legacy-unavailable"}
+        except (OSError, ValueError, json.JSONDecodeError):
+            return {"state": "unverified-manual", "detail": "manual installation with unavailable build metadata"}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"state": "invalid"}
+
+
+_SEMVER_RE = re.compile(r"v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?")
+
+
+def _strict_version(value):
+    """Return a normalised semantic version, or None. No version inference."""
+    match = _SEMVER_RE.fullmatch(str(value or ""))
+    if not match:
+        return None
+    return ".".join(match.group(i) for i in range(1, 4)) + (
+        f"-{match.group(4)}" if match.group(4) else ""
+    )
+
+
+def _globally_routable(address):
+    try:
+        return ipaddress.ip_address(address).is_global
+    except ValueError:
+        return False
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that never delegates DNS or proxy choice to urllib."""
+    def __init__(self, host, address, **kwargs):
+        super().__init__(host, **kwargs)
+        self._address = address
+
+    def connect(self):
+        sock = socket.create_connection((self._address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        peer = self.sock.getpeername()[0]
+        if not _globally_routable(peer):
+            self.close()
+            raise OSError("connected peer is not globally routable")
+
+
+def manual_update_check():
+    """Fetch only the official latest-release metadata, on an admin request."""
+    installed = _strict_version(VERSION)
+    if not installed:
+        raise ValueError("installed version is not a supported release version")
+    try:
+        candidates = sorted({item[4][0] for item in socket.getaddrinfo(
+            GITHUB_API_HOST, 443, type=socket.SOCK_STREAM
+        )})
+    except OSError as exc:
+        raise ValueError("official release service could not be resolved") from exc
+    candidates = [address for address in candidates if _globally_routable(address)]
+    if not candidates:
+        raise ValueError("official release service did not resolve to a public address")
+    context = ssl.create_default_context()
+    last_error = None
+    raw = None
+    for address in candidates:
+        conn = _PinnedHTTPSConnection(
+            GITHUB_API_HOST, address, timeout=UPDATE_CHECK_TIMEOUT_SECONDS,
+            context=context,
+        )
+        try:
+            conn.request("GET", GITHUB_RELEASE_PATH, headers={
+                "Host": GITHUB_API_HOST,
+                "Accept": "application/vnd.github+json",
+                "User-Agent": GITHUB_UPDATE_USER_AGENT,
+                "Connection": "close",
+            })
+            response = conn.getresponse()
+            if response.status != 200:
+                raise ValueError("official release service returned an unexpected response")
+            length = response.getheader("Content-Length")
+            if length and (not length.isdigit() or int(length) > UPDATE_CHECK_MAX_BYTES):
+                raise ValueError("official release response was too large")
+            raw = response.read(UPDATE_CHECK_MAX_BYTES + 1)
+            if len(raw) > UPDATE_CHECK_MAX_BYTES:
+                raise ValueError("official release response was too large")
+            break
+        except (OSError, ssl.SSLError, http.client.HTTPException, ValueError) as exc:
+            last_error = exc
+        finally:
+            conn.close()
+    if raw is None:
+        raise ValueError("official release service could not be reached") from last_error
+    try:
+        source = json.loads(raw.decode("utf-8"))
+        latest = _strict_version(source.get("tag_name"))
+        release_url = source.get("html_url")
+        published_at = source.get("published_at")
+        expected_url = f"https://{GITHUB_RELEASE_HOST}/benukas/Linkmoth/releases/tag/v{latest}"
+        if (not latest or release_url != expected_url or not isinstance(published_at, str)
+                or len(published_at) > 40):
+            raise ValueError
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+        raise ValueError("official release response was invalid")
+    return {
+        "installed_version": installed,
+        "latest_version": latest,
+        "update_available": _version_tuple(latest) > _version_tuple(installed),
+        "published_at": published_at,
+        "release_url": expected_url,
+        "update_command": (
+            f"VERSION=v{latest}; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
+            f"linkmoth-$VERSION-bootstrap.sh && sudo bash linkmoth-$VERSION-bootstrap.sh"
+        ),
+        "verified_update_command": (
+            f"VERSION=v{latest}; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
+            f"linkmoth-$VERSION-bootstrap.sh; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
+            f"linkmoth-$VERSION-bootstrap.sh.bundle; cosign verify-blob --bundle "
+            f"linkmoth-$VERSION-bootstrap.sh.bundle --certificate-identity "
+            f"https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION "
+            f"--certificate-oidc-issuer https://token.actions.githubusercontent.com "
+            f"linkmoth-$VERSION-bootstrap.sh && sudo bash linkmoth-$VERSION-bootstrap.sh --sigstore-verified"
+        ),
+    }
+
+
+def _version_tuple(value):
+    parsed = _strict_version(value)
+    core, _, prerelease = parsed.partition("-")
+    # Stable releases sort after prereleases with the same numeric version.
+    return tuple(int(piece) for piece in core.split(".")) + (1 if not prerelease else 0, prerelease)
 
 
 def _allowed_local_dns_address(value):
@@ -175,6 +350,10 @@ DB_LOCK_RETRIES = 0
 DB_LOCK_RETRIES_LOCK = threading.Lock()
 HOST_STATS_LOCK = threading.Lock()
 HOST_CPU_SAMPLE = None
+HOST_CPU_VALUES = deque(maxlen=5)
+HOST_CPU_VALUE = None
+HOST_CPU_UPDATED_AT = None
+HOST_CPU_SAMPLER_STARTED = False
 AUTH_VERIFY_SLOTS = threading.BoundedSemaphore(2)
 
 CONFIG_ERROR = None
@@ -681,6 +860,21 @@ def init_db():
             )
         except sqlite3.OperationalError:
             pass
+        for column, definition in (
+            ("diagnosis_code", "TEXT"),
+            ("diagnosis_title", "TEXT"),
+            ("recovered_at", "REAL"),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE incidents ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError:
+                pass
+        # Existing records predate separate historical diagnosis fields. Their
+        # final attribution is the best evidence available, never a new claim.
+        conn.execute(
+            "UPDATE incidents SET diagnosis_code=verdict_code, diagnosis_title=verdict_title "
+            "WHERE diagnosis_code IS NULL AND verdict_code IS NOT NULL"
+        )
         backfill_incident_refs(conn)
         from linkmoth_outage import init_outage_db
         from linkmoth_push import init_push_db
@@ -822,6 +1016,52 @@ def run_cmd(args, timeout=10):
         return -2, "tool missing"
 
 
+def _cpu_totals():
+    """Read aggregate Linux CPU counters without double-counting guest time."""
+    fields = (Path("/proc/stat").read_text().splitlines()[0]).split()[1:]
+    values = [int(item) for item in fields]
+    if len(values) < 4:
+        raise ValueError("incomplete /proc/stat CPU counters")
+    # guest and guest_nice are already included in user and nice respectively.
+    total = sum(values[:8])
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
+    return total, idle
+
+
+def sample_host_cpu():
+    """Update the cached CPU figure. Called only by the one-second sampler."""
+    global HOST_CPU_SAMPLE, HOST_CPU_VALUE, HOST_CPU_UPDATED_AT
+    try:
+        total, idle = _cpu_totals()
+    except (OSError, ValueError, IndexError):
+        return None
+    with HOST_STATS_LOCK:
+        previous = HOST_CPU_SAMPLE
+        HOST_CPU_SAMPLE = (total, idle)
+        HOST_CPU_UPDATED_AT = time.monotonic()
+        if previous:
+            total_delta, idle_delta = total - previous[0], idle - previous[1]
+            if total_delta > 0:
+                instant = max(0.0, min(100.0, 100.0 * (1 - idle_delta / total_delta)))
+                HOST_CPU_VALUES.append(instant)
+                HOST_CPU_VALUE = round(sum(HOST_CPU_VALUES) / len(HOST_CPU_VALUES), 1)
+        return HOST_CPU_VALUE
+
+
+def start_host_cpu_sampler():
+    """Start one process-local sampler; API reads never reset its baseline."""
+    global HOST_CPU_SAMPLER_STARTED
+    with HOST_STATS_LOCK:
+        if HOST_CPU_SAMPLER_STARTED:
+            return
+        HOST_CPU_SAMPLER_STARTED = True
+    def loop():
+        while True:
+            sample_host_cpu()
+            time.sleep(1)
+    threading.Thread(target=loop, name="linkmoth-cpu-sampler", daemon=True).start()
+
+
 def host_stats():
     """Return cheap, best-effort health data for the Linkmoth host.
 
@@ -829,7 +1069,6 @@ def host_stats():
     Pi that is hot, memory-starved, or out of disk.  All Linux-specific probes
     are optional so the dashboard remains usable on a normal Debian host.
     """
-    global HOST_CPU_SAMPLE
     out = {
         "cpu_percent": None,
         "temperature_c": None,
@@ -843,20 +1082,12 @@ def host_stats():
         "uptime_seconds": None,
         "cpu_cores": os.cpu_count() or 1,
     }
-    try:
-        fields = (Path("/proc/stat").read_text().splitlines()[0]).split()[1:]
-        values = [int(item) for item in fields]
-        total = sum(values)
-        idle = values[3] + (values[4] if len(values) > 4 else 0)
-        with HOST_STATS_LOCK:
-            previous = HOST_CPU_SAMPLE
-            HOST_CPU_SAMPLE = (total, idle)
-        if previous:
-            total_delta, idle_delta = total - previous[0], idle - previous[1]
-            if total_delta > 0:
-                out["cpu_percent"] = round(100.0 * (1 - idle_delta / total_delta), 1)
-    except (OSError, ValueError, IndexError):
-        pass
+    with HOST_STATS_LOCK:
+        out["cpu_percent"] = HOST_CPU_VALUE
+        if HOST_CPU_UPDATED_AT is not None:
+            out["cpu_sample_age_s"] = round(max(0.0, time.monotonic() - HOST_CPU_UPDATED_AT), 1)
+        else:
+            out["cpu_sample_age_s"] = None
     try:
         mem = {}
         for line in Path("/proc/meminfo").read_text().splitlines():
@@ -902,6 +1133,98 @@ def host_stats():
     except (OSError, ValueError, IndexError):
         pass
     return out
+
+
+def observer_health_warnings(last_run_ts=None, host=None, database=None):
+    """Bounded, evidence-based limits on what this host can conclude."""
+    host = host if host is not None else host_stats()
+    database = database if database is not None else db_maintenance_info()
+    warnings = []
+    if (host.get("disk_percent") or 0) >= 90:
+        warnings.append("Disk pressure may prevent evidence or settings from being recorded.")
+    if not database.get("exists"):
+        warnings.append("Evidence database is unavailable, so persistence cannot be confirmed.")
+    if database.get("journal_mode") != "WAL":
+        warnings.append("Database journal mode is not WAL; concurrent evidence reads may be less reliable.")
+    if database.get("lock_retries", 0) > 0:
+        warnings.append("Database lock contention was observed; some persistence work may have been delayed.")
+    if CONFIG_ERROR:
+        warnings.append("Configuration persistence is uncertain because the active configuration has an error.")
+    if os.name == "posix" and not Path("/run/systemd/timesync/synchronized").exists():
+        warnings.append("Clock synchronization status is unavailable; certificate and timeline times may be uncertain.")
+    cert = Path(str(CFG.get("tls_cert") or ""))
+    if cert and not cert.is_file():
+        warnings.append("TLS certificate is unavailable; certificate renewal needs attention.")
+    elif cert.is_file():
+        try:
+            decoded = ssl._ssl._test_decode_cert(str(cert))
+            expiry = time.mktime(time.strptime(decoded["notAfter"], "%b %d %H:%M:%S %Y %Z"))
+            if expiry - time.time() < 7 * 86400:
+                warnings.append("TLS certificate expires within seven days; certificate renewal needs attention.")
+        except (AttributeError, KeyError, OSError, ValueError):
+            warnings.append("TLS certificate expiry could not be checked; certificate renewal risk is uncertain.")
+    if last_run_ts is not None:
+        stale_after = max(300, int(CFG.get("history_sample_minutes", 5) or 5) * 180)
+        if time.time() - float(last_run_ts) > stale_after:
+            warnings.append("Probe evidence is stale; a fresh diagnosis may be needed before acting.")
+    if (host.get("memory_percent") or 0) >= 92 or (host.get("cpu_percent") or 0) >= 95:
+        warnings.append("Host resource exhaustion can reduce observer reliability.")
+    if (host.get("temperature_c") or 0) >= 80:
+        warnings.append("High host temperature can reduce observer reliability.")
+    return warnings
+
+
+def _export_settings():
+    """Configuration suitable for evidence exports: credentials are omitted."""
+    forbidden = set(SETTINGS_SECRET_KEYS) | {"auth", "webhook_secret", "tls_key"}
+    return {
+        key: value for key, value in public_settings().items()
+        if key not in forbidden and not any(token in key.lower() for token in ("secret", "token", "password", "credential", "webhook"))
+    }
+
+
+class _SupportPseudonyms:
+    def __init__(self):
+        self._private_networks = {}
+        self._identifiers = {"HOST": {}, "DEVICE": {}}
+
+    def identifier(self, kind, value):
+        values = self._identifiers[kind]
+        if value not in values:
+            values[value] = f"{kind}-{len(values) + 1}"
+        return values[value]
+
+    def replace(self, value):
+        if not isinstance(value, str):
+            return value
+        def private(match):
+            address = match.group(0)
+            try:
+                is_private = ipaddress.ip_address(address).is_private
+            except ValueError:
+                is_private = False
+            if not is_private:
+                return address
+            if address not in self._private_networks:
+                self._private_networks[address] = f"PRIVATE-NET-{len(self._private_networks) + 1}"
+            return self._private_networks[address]
+        return re.sub(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", private, value)
+
+    def scrub(self, value):
+        if isinstance(value, dict):
+            out = {}
+            for key, item in value.items():
+                lowered = key.lower()
+                if isinstance(item, str) and lowered in ("host", "hostname", "host_name"):
+                    out[key] = self.identifier("HOST", item)
+                elif isinstance(item, str) and lowered in ("device", "device_name"):
+                    out[key] = self.identifier("DEVICE", item)
+                else:
+                    out[key] = self.scrub(item)
+            return out
+        if isinstance(value, list):
+            return [self.scrub(item) for item in value]
+        return self.replace(value)
 
 
 def default_route():
@@ -1788,6 +2111,16 @@ def normalize_stored_verdict(item):
         out["verdict_title"] = (
             "Local DNS resolver stopped answering — internet itself is fine"
         )
+    if out.get("diagnosis_code") == "pihole_broken":
+        out["diagnosis_code"] = "local_dns_broken"
+    if out.get("false_alarm"):
+        out["lifecycle"] = "false-alarm"
+    elif out.get("resolved") is not None:
+        out["lifecycle"] = "closed"
+    elif out.get("recovered_at") is not None:
+        out["lifecycle"] = "recovered-awaiting-confirmation"
+    else:
+        out["lifecycle"] = "active"
     return out
 
 
@@ -2192,9 +2525,9 @@ class Engine:
         }
         with db() as conn:
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, verdict_code=?, verdict_title=?"
+                "UPDATE incidents SET resolved=?, recovered_at=?"
                 " WHERE id=? AND resolved IS NULL",
-                (time.time(), recovery_verdict["code"], recovery_verdict["title"], inc_id),
+                (time.time(), time.time(), inc_id),
             )
         if cur.rowcount:
             self._emit_webhook(inc_id, "fault_closed", recovery_verdict)
@@ -2227,10 +2560,10 @@ class Engine:
                 "UPDATE incidents SET false_alarm=1 WHERE id=?", (inc_id,)
             )
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, verdict_code=?, verdict_title=?"
+                "UPDATE incidents SET resolved=?, recovered_at=?, verdict_code=?, verdict_title=?"
                 " WHERE id=? AND resolved IS NULL",
                 (
-                    time.time(), false_alarm_verdict["code"],
+                    time.time(), time.time(), false_alarm_verdict["code"],
                     false_alarm_verdict["title"], inc_id,
                 ),
             )
@@ -2391,6 +2724,12 @@ class Engine:
                 continue
             if v["severity"] == "ok":
                 consecutive_ok += 1
+                if consecutive_ok == 1:
+                    with db() as conn:
+                        conn.execute(
+                            "UPDATE incidents SET recovered_at=? WHERE id=? AND resolved IS NULL",
+                            (time.time(), inc_id),
+                        )
                 if consecutive_ok >= 2:
                     recovery_verdict = {
                         "severity": "ok",
@@ -2407,6 +2746,11 @@ class Engine:
                     break
             else:
                 consecutive_ok = 0
+                with db() as conn:
+                    conn.execute(
+                        "UPDATE incidents SET recovered_at=NULL WHERE id=? AND resolved IS NULL",
+                        (inc_id,),
+                    )
                 # Preserve the incident's strongest confirmed attribution.
                 # A later warning often means partial recovery; it must not
                 # overwrite an earlier bad WAN/router fault in the final
@@ -2418,6 +2762,12 @@ class Engine:
                     >= rank.get(worst.get("severity"), 0)
                 ):
                     worst = v
+                    with db() as conn:
+                        conn.execute(
+                            "UPDATE incidents SET diagnosis_code=?, diagnosis_title=?, verdict_code=?, verdict_title=? "
+                            "WHERE id=? AND resolved IS NULL",
+                            (v["code"], v["title"], v["code"], v["title"], inc_id),
+                        )
                 if not fault_notified:
                     fault_notified = True
                     self._discord_notify(inc_id, "fault", v)
@@ -2434,9 +2784,10 @@ class Engine:
                           "title": "Nothing wrong seen from the network side"}
         with db() as conn:
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, verdict_code=?, verdict_title=?"
+                "UPDATE incidents SET resolved=?, recovered_at=?, verdict_code=?, verdict_title=?, diagnosis_code=?, diagnosis_title=?"
                 " WHERE id=? AND resolved IS NULL",
-                (time.time(), final["code"], final["title"], inc_id),
+                (time.time(), time.time(), final["code"], final["title"],
+                 final["code"], final["title"], inc_id),
             )
         if cur.rowcount:
             self._emit_webhook(inc_id, "fault_closed", final)
@@ -2470,6 +2821,8 @@ class Engine:
             kuma_url = ""
         from linkmoth_outage import OUTAGE_TRACKER
         from linkmoth_push import list_subscriptions, push_available
+        host = host_stats()
+        database = db_maintenance_info()
         return {
             "now": time.time(),
             "diagnosing": self.run_in_progress or (
@@ -2491,8 +2844,11 @@ class Engine:
             "kuma_url": kuma_url,
             "settings": public_settings(),
             "local_dns": local_dns_runtime_info(),
-            "database": db_maintenance_info(),
-            "host": host_stats(),
+            "database": database,
+            "host": host,
+            "observer_health": {
+                "warnings": observer_health_warnings(last_d.get("ts") if last_d else None, host, database),
+            },
             "outage_active": OUTAGE_TRACKER.summary(db),
             "push": {
                 "available": push_available(STATE_DIR),
@@ -2503,6 +2859,7 @@ class Engine:
                 "version": VERSION,
                 "github": GITHUB_REPO,
                 "changelog": CHANGELOG_URL,
+                "provenance": installation_provenance(),
             },
         }
 
@@ -2513,7 +2870,8 @@ class Engine:
             first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
             inc = [dict(r) for r in conn.execute(
                 "SELECT * FROM incidents WHERE started > ?", (cutoff,))]
-        period = max(now - max(first_run or now, cutoff), 3600)
+        monitoring_started = max(float(first_run), cutoff) if first_run else None
+        period = max(0.0, now - monitoring_started) if monitoring_started else 0.0
         downtime = 0.0
         blame = {}
         false_alarms = 0
@@ -2530,7 +2888,11 @@ class Engine:
             "incidents_30d": len(inc),
             "false_alarms_30d": false_alarms,
             "downtime_s": round(downtime),
-            "uptime_pct": round(max(0.0, 100.0 * (1 - downtime / period)), 2),
+            "monitoring_interval_s": round(period),
+            "uptime_pct": (
+                round(max(0.0, 100.0 * (1 - downtime / period)), 2)
+                if period > 0 else None
+            ),
             "blame": blame,
         }
 
@@ -2642,8 +3004,8 @@ class Engine:
                 return None
             inc = normalize_stored_verdict(dict(row))
             inc_id = inc["id"]
-            runs = [dict(r) for r in conn.execute(
-                "SELECT * FROM runs WHERE incident_id=? ORDER BY id", (inc_id,))]
+            runs = list(reversed([dict(r) for r in conn.execute(
+                "SELECT * FROM runs WHERE incident_id=? ORDER BY id DESC LIMIT 100", (inc_id,))]))
             base = conn.execute(
                 "SELECT * FROM runs WHERE ts < ? AND severity='ok' ORDER BY id DESC LIMIT 1",
                 (inc["started"],),
@@ -2740,6 +3102,52 @@ class Engine:
             "pattern": self.patterns(sim_code) if sim_code else None,
             "similar": similar,
         }
+
+    def evidence_export(self, tier="detailed"):
+        """Build a bounded, credential-free local evidence package."""
+        if tier not in ("detailed", "readable", "support-safe"):
+            raise ValueError("unknown export tier")
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT id FROM incidents ORDER BY id DESC LIMIT 50"
+            ).fetchall()
+            last = conn.execute("SELECT ts FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        incidents = [self.incident_detail(inc_id=row["id"]) for row in reversed(rows)]
+        host = host_stats()
+        database = db_maintenance_info()
+        package = {
+            "schema": 1,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "tier": tier,
+            "scope": "Observed from this Linkmoth host; evidence can narrow possible causes but cannot distinguish every cause.",
+            "configuration": _export_settings(),
+            "observer_health": {
+                "warnings": observer_health_warnings(last["ts"] if last else None, host, database),
+                "host": host,
+                "database": database,
+            },
+            "incidents": incidents,
+        }
+        if tier == "support-safe":
+            package = _SupportPseudonyms().scrub(package)
+            package["scope"] = "Support-safe export. Identifiers are pseudonymized consistently within this export."
+        if tier == "readable":
+            lines = ["Linkmoth local evidence export", package["scope"], ""]
+            for detail in incidents:
+                incident = detail["incident"]
+                lines.append(
+                    f"{incident.get('ref') or incident['id']} | {incident.get('lifecycle')} | "
+                    f"{incident.get('diagnosis_title') or incident.get('verdict_title') or 'No confirmed diagnosis'}"
+                )
+                lines.append("  " + detail["comparison_summary"])
+                if detail.get("confidence_reason"):
+                    lines.append("  Confidence limit: " + detail["confidence_reason"])
+            if package["observer_health"]["warnings"]:
+                lines.extend(["", "Observer-health warnings:"] + [
+                    "- " + warning for warning in package["observer_health"]["warnings"]
+                ])
+            return "\n".join(lines) + "\n"
+        return package
 
     def history(self, limit=144):
         with db() as conn:
@@ -3370,6 +3778,18 @@ class Handler(BaseHTTPRequestHandler):
                 limit = 50
             limit = max(20, min(200, limit))  # aggressive clamp; newest-first in the query
             self._send(200, {"events": auth.audit_events(limit)})
+        elif url.path == "/api/evidence-export":
+            tier = str(qs.get("tier", ["detailed"])[0])
+            try:
+                exported = ENGINE.evidence_export(tier)
+            except ValueError:
+                self._send(400, {"error": "tier must be detailed, readable, or support-safe"})
+                return
+            auth.audit_event("evidence_export", self._hdrs(), tier)
+            if tier == "readable":
+                self._send(200, exported, "text/plain; charset=utf-8")
+            else:
+                self._send(200, exported)
         elif url.path == "/api/auth/security":
             self._send(200, self._security_posture(auth))
         elif url.path == "/api/devices":
@@ -3588,6 +4008,17 @@ class Handler(BaseHTTPRequestHandler):
                     ENGINE.trigger("dashboard", f"manual run found: {v['code']}")
             threading.Thread(target=one_shot, daemon=True).start()
             self._send(200, {"started": True})
+        elif path == "/api/update/check":
+            try:
+                result = manual_update_check()
+            except ValueError as exc:
+                # The audit deliberately records no response content or network
+                # identifiers: it is only evidence that a manual check was tried.
+                auth.audit_event("manual_update_check", self._hdrs(), "failed")
+                self._send(503, {"error": str(exc)})
+            else:
+                auth.audit_event("manual_update_check", self._hdrs(), "update" if result["update_available"] else "current")
+                self._send(200, result)
         elif path == "/api/verify":
             remaining = ENGINE.verify_cooldown_remaining()
             if remaining > 0:
@@ -4142,6 +4573,7 @@ def main():
             time.sleep(max(60, sample_m * 60))
     from linkmoth_webhooks import drain_loop, migrate_legacy_webhook
     migrate_legacy_webhook(CFG, db, SETTINGS_PATH)
+    start_host_cpu_sampler()
     threading.Thread(target=baseline_loop, daemon=True).start()
     threading.Thread(target=janitor_loop, daemon=True).start()
     threading.Thread(target=DEVICES.scheduler_loop, daemon=True).start()

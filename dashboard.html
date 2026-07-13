@@ -176,6 +176,8 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
 details.inc { border-top: 1px solid var(--border); padding: 10px 0; }
 details.inc:first-of-type { border-top: none; }
 details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.inc-summary-title { flex: 1 1 260px; font-weight: 600; }
+.inc-summary-meta { color: var(--muted); font-size: 15px; white-space: nowrap; }
 .when { color: var(--muted); font-size: 16px; font-variant-numeric: tabular-nums; }
 .pill { font-size: 15px; padding: 2px 12px; border-radius: 999px; font-weight: 600; }
 .pill.open { background: var(--bad-bg); color: var(--bad-text); }
@@ -203,6 +205,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .packet { margin-top: 12px; font-size: 17px; font-variant-numeric: tabular-nums; }
 .packet p { margin: 6px 0; }
 .packet .k { color: var(--muted); }
+.packet-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+.packet-actions .action-btn { flex: 1 1 180px; }
+.packet-actions .verify-result { flex-basis: 100%; margin: 0; }
+.packet-section { margin: 12px 0; border-top: 1px solid var(--border); padding-top: 10px; }
+.packet-section > summary { cursor: pointer; font-weight: 700; }
 .diffbox { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin: 10px 0; }
 .diffbox .d-row { padding: 6px 0; font-size: 16px; }
 .diffbox .d-row b { display: block; font-size: 17px; }
@@ -429,10 +436,13 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .auth-err { color: var(--bad-text); font-size: 16px; margin: 0 0 6px; }
 .auth-err:empty { display: none; }
 #logout-btn {
-  font-size: 16px; color: var(--muted); background: none; border: none;
-  cursor: pointer; padding: 0;
+  width: 32px; height: 32px; display: grid; place-items: center;
+  font-size: 23px; line-height: 1; color: var(--muted); background: none;
+  border: 1px solid transparent; border-radius: 8px; cursor: pointer; padding: 0;
 }
 #logout-btn:hover { color: var(--text); }
+#logout-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+.inbound-example code { overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
 </style>
 </head>
 <body>
@@ -496,7 +506,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <div id="host-memory" class="host-metric"><span class="k">RAM</span><span class="v">—</span></div>
       <div id="host-disk" class="host-metric"><span class="k">DISK</span><span class="v">—</span></div>
     </div>
-    <button id="logout-btn" type="button" class="hidden">Sign out</button>
+    <button id="logout-btn" type="button" class="hidden" aria-label="Sign out" title="Sign out">⇥</button>
   </header>
 
   <button id="nav-burger" class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="main-nav">☰ Menu</button>
@@ -690,6 +700,20 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   <div id="tab-settings" class="hidden">
     <section class="card">
       <h3>Settings</h3>
+      <div class="set-section" id="release-settings">
+        <h4>Installation and updates</h4>
+        <p id="provenance-state" class="set-hint">Checking installation provenance…</p>
+        <button type="button" id="update-check" class="action-btn">Check for update</button>
+        <p id="update-result" class="set-hint hidden" aria-live="polite"></p>
+        <p class="set-hint">This only runs when you press the button. GitHub receives this host’s public IP, request time, ordinary TLS/HTTP metadata, and Linkmoth’s generic User-Agent. Linkmoth sends no identifier, configuration, incident data, diagnostics, credentials, or usage telemetry.</p>
+      </div>
+      <div class="set-section">
+        <h4>Evidence exports</h4>
+        <p class="set-hint">Exports are created locally from bounded evidence. Detailed JSON is for administrators; readable local is a plain-text handoff; support-safe JSON removes credentials and pseudonymizes private-network identifiers consistently within that export.</p>
+        <button type="button" id="export-detailed" class="action-btn">Download detailed JSON</button>
+        <button type="button" id="export-readable" class="action-btn">Download readable local</button>
+        <button type="button" id="export-support" class="action-btn">Download support-safe JSON</button>
+      </div>
       <div class="set-row"><label for="s-kuma">Uptime Kuma link</label><input id="s-kuma" placeholder="auto"></div>
       <p class="set-hint">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</p>
       <div class="set-row"><label for="s-refresh">Auto-refresh (seconds)</label><input id="s-refresh" type="number" min="2" max="120" step="1"></div>
@@ -794,7 +818,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <p class="set-hint"><b>Another app sends an alert into Linkmoth.</b> Copy the URL and bearer token below into Uptime Kuma, Grafana, Zabbix, or your script. Linkmoth then runs a diagnosis.</p>
           <div class="set-row"><label for="wh-inbound-url">Linkmoth inbound URL</label><input id="wh-inbound-url" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
           <div class="set-row"><label for="wh-inbound-secret">Bearer token</label><input id="wh-inbound-secret" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
-          <p class="set-hint">Send a JSON <code>POST</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Example body: <code>{"source":"grafana","event":"down","monitor":"WAN"}</code>.</p>
+          <p class="set-hint inbound-example">Send a JSON <code>POST</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Example body: <code>{"source":"grafana","event":"down","monitor":"WAN"}</code>.</p>
           <div class="device-form-actions">
             <button type="button" id="wh-copy-url" class="action-btn">Copy inbound URL</button>
             <button type="button" id="wh-copy-token" class="action-btn">Copy bearer token</button>
@@ -1118,6 +1142,13 @@ function fmtAge(sec) {
   if (sec < 5400) return Math.round(sec / 60) + " min ago";
   if (sec < 172800) return (sec / 3600).toFixed(1) + " h ago";
   return Math.round(sec / 86400) + " d ago";
+}
+function fmtFreshness(sec) {
+  if (sec < 60) return "now";
+  if (sec < 300) return "<5m";
+  if (sec < 600) return "<10m";
+  if (sec < 3600) return Math.round(sec / 60) + "m";
+  return Math.round(sec / 3600) + "h";
 }
 function fmtTs(ts) {
   return new Date(ts * 1000).toLocaleString([], {
@@ -1638,8 +1669,9 @@ function renderHostHealth(host) {
   if (!host || typeof host !== "object") { panel.classList.add("hidden"); return; }
   panel.classList.remove("hidden");
   const cpu = host.cpu_percent;
-  renderHostMetric("host-cpu", cpu === null ? "—" : `${Math.round(cpu)}%`,
-    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% · load: ${host.load_1m ?? "—"} · ${host.cpu_cores || 1} core(s)`,
+  const cpuText = cpu === null ? "—" : (cpu < 10 ? `${cpu.toFixed(1)}%` : `${Math.round(cpu)}%`);
+  renderHostMetric("host-cpu", cpuText,
+    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% (5-second average) · load: ${host.load_1m ?? "—"} · ${host.cpu_cores || 1} core(s)`,
     cpu >= 95 ? "bad" : cpu >= 80 ? "warn" : "");
   const temp = host.temperature_c;
   renderHostMetric("host-temp", temp === null ? "—" : `${Math.round(temp)}°`,
@@ -1681,6 +1713,14 @@ async function refresh() {
     if (s.app.github) $("meta-github").href = s.app.github;
     if (s.app.changelog) $("meta-changelog").href = s.app.changelog;
     $("site-meta").classList.remove("hidden");
+    const provenance = s.app.provenance || {};
+    const provenanceText = {
+      "sigstore-verified": "Sigstore-verified release",
+      "unverified-manual": "Unverified/manual installation",
+      "legacy-unavailable": "Legacy installation — provenance unavailable",
+      "invalid": "Installation record invalid",
+    }[provenance.state] || "Installation record invalid";
+    $("provenance-state").textContent = provenanceText;
   }
   renderHostHealth(s.host);
   if (s.local_dns) localDnsRuntime = s.local_dns;
@@ -1746,10 +1786,13 @@ async function refresh() {
       vPat.textContent = "";
       vPat.classList.add("hidden");
     }
-    $("age").textContent = (s.diagnosing ? "diagnosing… · " : "") + "last check " + fmtAge(s.now - run.ts);
+    const age = s.now - run.ts;
+    $("age").textContent = s.diagnosing ? "Checking" : fmtFreshness(age);
+    $("age").title = "Last check " + fmtAge(age);
     $("ladder").innerHTML = renderLadder(run.checks);
   } else {
-    $("age").textContent = s.diagnosing ? "diagnosing…" : "idle — no data yet";
+    $("age").textContent = s.diagnosing ? "Checking" : "No data";
+    $("age").title = s.diagnosing ? "A diagnosis is running" : "No diagnosis has run yet";
     $("v-evidence").classList.add("hidden");
     $("copy-diagnosis").classList.add("hidden");
   }
@@ -1776,7 +1819,7 @@ async function refresh() {
     const blameEntries = Object.entries(st.blame || {});
     const top = blameEntries.sort((a, b) => b[1] - a[1])[0];
     $("stats").innerHTML = `
-      <div class="stat"><div class="k">Uptime, 30 days</div><div class="v">${st.uptime_pct}%</div></div>
+      <div class="stat"><div class="k">Uptime, recorded interval</div><div class="v">${st.uptime_pct === null ? "—" : st.uptime_pct + "%"}</div><small>${st.monitoring_interval_s ? fmtDur(st.monitoring_interval_s) + " monitored" : "no recorded interval"}</small></div>
       <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d} <small>${st.false_alarms_30d} false</small></div></div>
       <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div></div>
       <div class="stat"><div class="k">Top offender</div><div class="v v-compact">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "—"}</div></div>`;
@@ -1830,6 +1873,7 @@ function renderPacket(d) {
   const inc = d.incident;
   const lines = [];
   const conf = d.confidence ? `<span class="pill conf" title="${esc(d.confidence_reason || "")}">confidence: ${esc(d.confidence)}</span>` : "";
+  lines.push(`<p><span class="k">Incident:</span> ${fmtTs(inc.started)} · ${d.runs.length} recorded run(s)</p>`);
   lines.push(`<p><span class="k">Trigger:</span> ${esc(inc.detail || inc.source)}</p>`);
   if (inc.ref) {
     lines.push(`<p><span class="k">Reference:</span> <span class="inc-ref">${esc(inc.ref)}</span></p>`);
@@ -1846,53 +1890,63 @@ function renderPacket(d) {
   const pbRun = firstBad || d.runs[d.runs.length - 1];
   const pbSteps = pbCode ? playbookSteps(pbCode, pbRun ? pbRun.checks : []) : [];
   if (pbSteps.length) {
-    const btnLabel = inc.resolved ? "Run a fresh diagnosis" : "I tried this — check again";
     lines.push(`<details class="playbook"><summary>What to do next — safest steps first</summary>
       <p class="playbook-note">Start with safe checks. Stop when the linked rung turns green, and avoid a factory reset unless you have a configuration backup.</p>
-      <ol>${playbookHtml(pbSteps)}</ol>
-      <button type="button" class="action-btn verify-fix-btn">${esc(btnLabel)}</button>
-      <p class="verify-result packet-verify-result hidden"></p></details>`);
+      <ol>${playbookHtml(pbSteps)}</ol></details>`);
   }
-  lines.push(`<button type="button" class="action-btn copy-packet-btn">Copy this incident for support</button>`);
+  const verifyAction = pbSteps.length
+    ? `<button type="button" class="action-btn verify-fix-btn">${esc(inc.resolved ? "Run fresh diagnosis" : "Check again")}</button>`
+    : "";
+  lines.push(`<div class="packet-actions">${verifyAction}<button type="button" class="action-btn copy-packet-btn">Copy support summary</button><p class="verify-result packet-verify-result hidden"></p></div>`);
   if (d.similar && d.similar.length) {
-    lines.push(`<p class="k mt12">Similar incidents</p><ul class="similar-inc">`
+    lines.push(`<details class="packet-section"><summary>Similar incidents (${d.similar.length})</summary><ul class="similar-inc">`
       + d.similar.map((s) =>
         `<li><span class="inc-ref">${esc(s.ref || "—")}</span> ${fmtTs(s.started)} · ${fmtDur(s.duration_s || 0)}</li>`
-      ).join("") + `</ul>`);
+      ).join("") + `</ul></details>`);
   }
   const recurrence = formatIncidentPattern(d.pattern);
   if (recurrence) {
-    lines.push(`<div class="diffbox"><span class="k">Repeat evidence:</span><b>${esc(recurrence)}</b><p>Keep this incident reference and the copied support summary. Repeated faults are evidence for a router vendor, DNS operator, or ISP—not a reason to repeatedly reboot things.</p></div>`);
+    lines.push(`<details class="packet-section"><summary>Repeat evidence</summary><div class="diffbox"><b>${esc(recurrence)}</b><p>Repeated faults are evidence for a router vendor, DNS operator, or ISP—not a reason to repeatedly reboot things.</p></div></details>`);
   }
   if (d.diff.length) {
-    lines.push(`<div class="diffbox"><span class="k">What changed vs last healthy check${d.baseline_before ? " (" + fmtTs(d.baseline_before.ts) + ")" : ""}:</span>`
+    lines.push(`<details class="packet-section"><summary>Compared with last healthy check</summary><div class="diffbox">`
       + (d.comparison_summary ? `<p><b>${esc(d.comparison_summary)}</b></p>` : "")
       + d.diff.map((x) =>
         `<div class="d-row ${x.flipped ? "flipped" : ""}"><b>${esc(x.label)}</b>
          ${esc(x.before)} <span class="arrow">→</span> ${esc(x.after)}</div>`).join("")
-      + `</div>`);
+      + `</div></details>`);
   } else if (d.comparison_summary) {
-    lines.push(`<p><span class="k">Before/after:</span> ${esc(d.comparison_summary)}</p>`);
+    lines.push(`<details class="packet-section"><summary>Compared with last healthy check</summary><p>${esc(d.comparison_summary)}</p></details>`);
   }
   if (d.stayed_healthy.length) {
-    lines.push(`<p><span class="k">Stayed healthy:</span> ${d.stayed_healthy.map(esc).join(", ")}</p>`);
+    lines.push(`<details class="packet-section"><summary>What stayed healthy</summary><p>${d.stayed_healthy.map(esc).join(", ")}</p></details>`);
   }
-  lines.push(`<p class="k mt10">Diagnosis timeline ${conf}</p>`);
-  lines.push(`<ul class="timeline">` + d.runs.map((r) =>
-    `<li><details><summary><span class="dot ${r.severity}"></span>${fmtTime(r.ts)} — ${esc(r.title)}</summary>
-     <div class="rawruns">` + r.checks.map((c) => {
-       const state = checkState(c);
-       const mark = state === "skipped" ? "–" : state === "failed" ? "✕" : ["partial", "degraded"].includes(state) ? "~" : "✓";
-       const head = `${mark} ${esc(c.label)}: ${esc(c.detail)}${c.ms != null ? ` (${Math.round(c.ms)} ms)` : ""}`;
-       const probes = (c.probes || []).map((probe) =>
-         `<br>&nbsp;&nbsp;↳ ${probe.ok ? "✓" : "✕"} ${esc(probe.target)}: ${esc(probe.detail)}`
-       ).join("");
-       const micro = (c.micro || []).map((m) =>
-         `<br>&nbsp;&nbsp;↳ ${m.ok === null ? "–" : m.ok ? "✓" : "✕"} ${esc(m.label)}: ${esc(m.detail)}`
-       ).join("");
-       return head + probes + micro;
-     }).join("<br>") + `</div></details></li>`).join("") + `</ul>`);
+  lines.push(`<details class="packet-section"><summary>Diagnosis timeline (${d.runs.length} runs) ${conf}</summary><ul class="timeline">` + d.runs.map((r, index) =>
+    `<li><details class="timeline-run" data-run-index="${index}"><summary><span class="dot ${r.severity}"></span>${fmtTime(r.ts)} — ${esc(r.title)}</summary><div class="rawruns"></div></details></li>`
+  ).join("") + `</ul></details>`);
   return `<div class="packet">${lines.join("")}</div>`;
+}
+
+function renderRunEvidence(run) {
+  return (run.checks || []).map((c) => {
+    const state = checkState(c);
+    const mark = state === "skipped" ? "–" : state === "failed" ? "✕" : ["partial", "degraded"].includes(state) ? "~" : "✓";
+    const head = `${mark} ${esc(c.label)}: ${esc(c.detail)}${c.ms != null ? ` (${Math.round(c.ms)} ms)` : ""}`;
+    const probes = (c.probes || []).map((probe) => `<br>&nbsp;&nbsp;↳ ${probe.ok ? "✓" : "✕"} ${esc(probe.target)}: ${esc(probe.detail)}`).join("");
+    const micro = (c.micro || []).map((m) => `<br>&nbsp;&nbsp;↳ ${m.ok === null ? "–" : m.ok ? "✓" : "✕"} ${esc(m.label)}: ${esc(m.detail)}`).join("");
+    return head + probes + micro;
+  }).join("<br>");
+}
+
+function incidentSummaryHtml(inc) {
+  const open = !inc.resolved;
+  const pill = open ? '<span class="pill open">open</span>'
+    : '<span class="pill done">' + fmtDur(inc.resolved - inc.started) + "</span>";
+  const title = inc.lifecycle === "recovered-awaiting-confirmation" ? "Recovered awaiting confirmation"
+    : inc.lifecycle === "false-alarm" ? "False alarm"
+    : open ? "Active — diagnosing" : (inc.diagnosis_title || inc.verdict_title || inc.verdict_code || "Closed");
+  const ref = inc.ref ? `<span class="inc-ref">${esc(inc.ref)}</span>` : "";
+  return `<summary><span class="inc-summary-title">${ref}${esc(title)}</span><span class="inc-summary-meta"><span class="when">${fmtTs(inc.started)} · </span>${pill}</span></summary>`;
 }
 
 async function loadHistory() {
@@ -1921,17 +1975,10 @@ async function loadHistory() {
     $("hist-list").innerHTML = `<p class="empty">Nothing here. Either it never broke, or the filter is too picky.</p>`;
     return;
   }
-  $("hist-list").innerHTML = list.map((i) => {
-    const open = !i.resolved;
-    const pill = open ? '<span class="pill open">open</span>'
-                      : '<span class="pill done">' + fmtDur(i.resolved - i.started) + "</span>";
-    const faPill = i.false_alarm ? ' <span class="pill conf">false alarm</span>' : "";
-    const title = open ? "Ongoing — diagnosing" : (i.verdict_title || i.verdict_code || "resolved");
-    const ref = i.ref ? `<span class="inc-ref">${esc(i.ref)}</span>` : "";
-    return `<details class="inc" data-id="${i.id}"${i.ref ? ` data-ref="${esc(i.ref)}"` : ""}><summary>${ref}<span class="when">${fmtTs(i.started)}</span>
-      ${pill}${faPill} ${esc(title)} <span class="when">· ${i.run_count} run(s)</span></summary>
-      <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`;
-  }).join("");
+  $("hist-list").innerHTML = list.map((i) =>
+    `<details class="inc" data-id="${i.id}"${i.ref ? ` data-ref="${esc(i.ref)}"` : ""}>${incidentSummaryHtml(i)}
+      <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`
+  ).join("");
   document.querySelectorAll("details.inc").forEach((el) => {
     el.addEventListener("toggle", async () => {
       if (!el.open) return;
@@ -3039,15 +3086,8 @@ async function openIncidentByRef(ref) {
     const packet = await pr.json();
     packetCache[packet.incident.id] = packet;
     const inc = packet.incident;
-    const open = !inc.resolved;
-    const pill = open ? '<span class="pill open">open</span>'
-                      : '<span class="pill done">' + fmtDur(inc.resolved - inc.started) + "</span>";
-    const faPill = inc.false_alarm ? ' <span class="pill conf">false alarm</span>' : "";
-    const title = open ? "Ongoing — diagnosing" : (inc.verdict_title || inc.verdict_code || "resolved");
-    const refHtml = inc.ref ? `<span class="inc-ref">${esc(inc.ref)}</span>` : "";
     $("hist-list").innerHTML =
-      `<details class="inc" data-id="${inc.id}" open><summary>${refHtml}<span class="when">${fmtTs(inc.started)}</span>
-        ${pill}${faPill} ${esc(title)}</summary>
+      `<details class="inc" data-id="${inc.id}" open>${incidentSummaryHtml(inc)}
         <div class="packet-slot">${renderPacket(packet)}${falseAlarmActionHtml(inc)}</div></details>`;
   } catch (e) {
     $("hist-list").innerHTML = `<p class="empty">Could not load incident.</p>`;
@@ -3072,6 +3112,69 @@ $("diagnose").addEventListener("click", async () => {
   }, 4000);
 });
 
+$("update-check").addEventListener("click", async () => {
+  const button = $("update-check");
+  const result = $("update-result");
+  button.disabled = true;
+  result.classList.remove("hidden");
+  result.textContent = "Checking the official release…";
+  try {
+    const response = await fetch("/api/update/check", {
+      method: "POST", headers: authHeaders({}), body: "{}",
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Update check failed");
+    if (!data.update_available) {
+      result.textContent = `Version ${data.installed_version} is current (latest: ${data.latest_version}).`;
+      return;
+    }
+    result.textContent = `Version ${data.latest_version} is available (published ${data.published_at}). Copy the versioned update command below; it checks the archive checksum and does not run automatically. Sigstore verification remains optional.`;
+    const command = document.createElement("textarea");
+    command.readOnly = true;
+    command.value = data.update_command;
+    command.setAttribute("aria-label", "Versioned update command");
+    result.appendChild(command);
+    const link = document.createElement("a");
+    link.href = data.release_url;
+    link.textContent = "View official release";
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    result.appendChild(document.createTextNode(" "));
+    result.appendChild(link);
+  } catch (error) {
+    result.textContent = error.message || "Update check failed";
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function downloadEvidenceExport(tier, filename) {
+  const response = await fetch(`/api/evidence-export?tier=${encodeURIComponent(tier)}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Could not create export");
+  }
+  const blob = await response.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+[["export-detailed", "detailed", "linkmoth-evidence.json"],
+ ["export-readable", "readable", "linkmoth-evidence.txt"],
+ ["export-support", "support-safe", "linkmoth-support-safe.json"]]
+  .forEach(([id, tier, filename]) => {
+    $(id).addEventListener("click", async () => {
+      const button = $(id);
+      button.disabled = true;
+      try { await downloadEvidenceExport(tier, filename); }
+      catch (error) { alert(error.message || "Could not create export"); }
+      finally { button.disabled = false; }
+    });
+  });
+
 $("copy-diagnosis").addEventListener("click", async () => {
   const button = $("copy-diagnosis");
   try {
@@ -3085,7 +3188,9 @@ $("copy-diagnosis").addEventListener("click", async () => {
 
 async function runVerifyFix(resultEl) {
   const msg = resultEl || $("verify-result");
-  const btn = resultEl ? resultEl.previousElementSibling : $("verify-fix-btn");
+  const btn = resultEl
+    ? resultEl.closest(".packet-actions")?.querySelector(".verify-fix-btn")
+    : $("verify-fix-btn");
   if (btn) btn.disabled = true;
   msg.textContent = "Running verification…";
   msg.className = resultEl ? "verify-result packet-verify-result" : "verify-result";
@@ -3142,6 +3247,19 @@ document.addEventListener("click", (ev) => {
   if (msg) runVerifyFix(msg);
 });
 
+document.addEventListener("toggle", (ev) => {
+  const item = ev.target;
+  if (!item.matches(".timeline-run") || !item.open) return;
+  const raw = item.querySelector(".rawruns");
+  if (!raw || raw.dataset.loaded === "true") return;
+  const incidentEl = item.closest(".inc");
+  const packet = incidentEl ? packetCache[incidentEl.dataset.id] : null;
+  const run = packet && packet.runs && packet.runs[Number(item.dataset.runIndex)];
+  if (!run) return;
+  raw.innerHTML = renderRunEvidence(run);
+  raw.dataset.loaded = "true";
+}, true);
+
 document.addEventListener("click", async (ev) => {
   const btn = ev.target.closest(".copy-packet-btn");
   if (!btn) return;
@@ -3153,7 +3271,7 @@ document.addEventListener("click", async (ev) => {
   } catch (e) {
     btn.textContent = "Copy failed";
   }
-  setTimeout(() => { btn.textContent = "Copy this incident for support"; }, 1800);
+  setTimeout(() => { btn.textContent = "Copy support summary"; }, 1800);
 });
 
 $("save-settings").addEventListener("click", async () => {
@@ -3259,10 +3377,16 @@ function renderTodayBanner(s) {
     if (last && last.severity === "ok" && s.last_run && s.last_run.severity === "ok") {
       lines.push(`Live ladder is green; incident closes after two consecutive healthy loop runs (up to ~10 min apart).`);
     }
+  } else if ((s.observer_health && s.observer_health.warnings || []).length) {
+    el.className = "banner";
   } else {
     el.className = "banner hidden";
     el.innerHTML = "";
     return;
+  }
+  const warnings = (s.observer_health && s.observer_health.warnings) || [];
+  if (warnings.length) {
+    lines.push(`<b>Observer-health limit:</b> ${esc(warnings.join(" "))}`);
   }
   el.innerHTML = lines.join("<br>");
   el.classList.remove("hidden");

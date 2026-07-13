@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### 0.2.0 feature beta: provenance and manual updates
+
+- Signed release builds now embed their exact source commit. The normal,
+  checksum-checked bootstrap needs no Cosign and is reported honestly as an
+  unverified/manual installation. Optional `--sigstore-verified` mode verifies
+  the pinned workflow identity and is the only path that writes the root-owned,
+  atomic verified-provenance record.
+- Settings now reports installation provenance and provides a strictly manual,
+  authenticated, CSRF-protected update check. It connects only to the fixed
+  official GitHub endpoint over verified HTTPS, rejects redirects and proxies,
+  limits DNS/peer addresses to public routes, and exposes a validated,
+  version-pinned update command with no Cosign dependency. The verified command
+  remains available as an optional advanced path. No automatic update actions
+  occur.
+- Incident lifecycle now preserves historical diagnosis independently of
+  recovery and exposes Active, Recovered awaiting confirmation, Closed, and
+  False alarm states. Uptime now uses the actual recorded monitoring interval.
+- Added authenticated local evidence exports: bounded detailed JSON, readable
+  text, and support-safe JSON. Support-safe exports omit secret classes and
+  pseudonymize private-network identifiers consistently within each export.
+
 ### Evidence-aware ladder and safer response playbooks
 
 - Redundant upstream-DNS, ping, HTTPS, and Wi-Fi-witness probes now retain
@@ -43,9 +64,10 @@
   confirmation.
 - Added a global SQLite-backed password-verification budget alongside per-IP
   lockouts, WAL journal mode, a busy timeout, and visible database health data.
-- Versioned release assets are signed with Sigstore; bootstrap verifies archive
-  and checksum bundles before installation. The documented install path no
-  longer pipes an unversioned branch script into root.
+- Versioned release assets are signed with Sigstore. Verification remains
+  available without making Cosign an installation dependency; the normal path
+  checks the exact release archive against its SHA-256 and never pipes an
+  unversioned branch script into root.
 - CA enrollment UI now requires fingerprint comparison from a trusted path and
   explicitly rejects guest/shared/untrusted network use.
 - Webhook URLs and legacy Discord URLs are now masked in API/UI responses;

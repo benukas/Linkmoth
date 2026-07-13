@@ -13,7 +13,7 @@
 #   sudo bash install.sh --advanced         also ask about every install-time choice
 #   sudo bash install.sh --non-interactive --bind 192.168.1.50
 #                                            unattended install with an explicit bind
-# Extra flags: [--doctor] [--no-polkit] [--with-push] [--bind IPv4]
+# Extra flags: [--doctor] [--with-push] [--bind IPv4]
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -30,7 +30,6 @@ RENEW_SCRIPT=/usr/local/lib/linkmoth/renew-cert.sh
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
 DOCTOR_ONLY=0
-NO_POLKIT=0
 WITH_PUSH=0
 WITH_PUSH_SET=0
 BIND_OVERRIDE=""
@@ -38,7 +37,6 @@ MODE=guided            # guided | advanced | noninteractive
 while [ $# -gt 0 ]; do
   case "$1" in
     --doctor) DOCTOR_ONLY=1; shift ;;
-    --no-polkit) NO_POLKIT=1; shift ;;
     --with-push) WITH_PUSH=1; WITH_PUSH_SET=1; shift ;;
     --bind) BIND_OVERRIDE="${2:-}"; [ -n "$BIND_OVERRIDE" ] || { echo "--bind requires an IPv4 address" >&2; exit 2; }; shift 2 ;;
     --advanced) MODE=advanced; shift ;;
@@ -474,6 +472,7 @@ linkmoth_outage.py linkmoth_push.py linkmoth_notify.py linkmoth_devices.py
 linkmoth_webhooks.py dashboard.html linkmoth.svg linkmoth-white.svg
 linkmoth-mark-white.svg linkmoth-white.ico sw.js
 manifest.webmanifest"
+[ -f "$SRC/linkmoth-build.json" ] && APP_FILES="$APP_FILES linkmoth-build.json"
 step "staging application files..."
 STAGE="$(mktemp -d)"
 chmod 755 "$STAGE"
@@ -638,18 +637,9 @@ ONBOARD_TOKEN="$(runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME LINKMOTH
 WEBHOOK_SECRET="$(runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME LINKMOTH_CONFIG="$ETC/config.json" \
   LINKMOTH_STATE_DIR="$STATE" python3 "$APP/linkmoth.py" --auth-show-webhook)"
 
-if [ "$NO_POLKIT" -eq 0 ] && [ -d /etc/polkit-1/rules.d ]; then
-  cat > /etc/polkit-1/rules.d/51-linkmoth.rules <<'EOF'
-polkit.addRule(function(action, subject) {
-    if (action.id == "org.freedesktop.systemd1.manage-units" &&
-        action.lookup("unit") == "linkmoth.service" &&
-        subject.isInGroup("sudo")) {
-        return polkit.Result.YES;
-    }
-});
-EOF
-  note "polkit: sudo-group users can restart linkmoth.service without a password (skip with --no-polkit)"
-fi
+# Remove the legacy convenience rule on upgrade. Linkmoth never needs a
+# passwordless privilege grant; service administration remains a sudo action.
+rm -f /etc/polkit-1/rules.d/51-linkmoth.rules
 
 step "starting the service..."
 systemctl daemon-reload

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Linkmoth verified release bootstrap installer.  This file is versioned during
+# Linkmoth versioned release bootstrap installer. This file is generated during
 # release construction; do not run the repository copy directly.
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -16,24 +16,40 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 command -v curl >/dev/null || die "curl is required"
 command -v python3 >/dev/null || die "python3 is required"
 command -v sha256sum >/dev/null || command -v shasum >/dev/null || die "sha256sum or shasum is required"
-command -v cosign >/dev/null || die "cosign is required to verify a Linkmoth release"
 python3 - "$RELEASE_VERSION" <<'PY' || die "use a generated bootstrap with a strict semantic release version"
 import re, sys
 raise SystemExit(not bool(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", sys.argv[1])))
 PY
 
-# An override is deliberately noisy and opt-in: it is useful for a maintainer
-# testing a fork, but it must never silently alter an official installer.
-if [ "${1:-}" = "--allow-repository-override" ]; then
-  [ $# -ge 2 ] || die "--allow-repository-override requires owner/repository"
-  REPO="$2"
-  shift 2
-  python3 - "$REPO" <<'PY' || die "invalid repository override"
+VERIFY_SIGSTORE=0
+INSTALL_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --sigstore-verified)
+      VERIFY_SIGSTORE=1
+      shift
+      ;;
+    # An override is deliberately noisy and opt-in: it is useful for a
+    # maintainer testing a fork, but must never silently alter an installer.
+    --allow-repository-override)
+      [ $# -ge 2 ] || die "--allow-repository-override requires owner/repository"
+      REPO="$2"
+      shift 2
+      python3 - "$REPO" <<'PY' || die "invalid repository override"
 import re, sys
 raise SystemExit(not bool(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99}[A-Za-z0-9])?", sys.argv[1])))
 PY
-fi
+      ;;
+    *)
+      INSTALL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
 [ "$REPO" = "$OFFICIAL_REPO" ] || echo "WARNING: using an advanced, unofficial repository override: $REPO" >&2
+if [ "$VERIFY_SIGSTORE" -eq 1 ]; then
+  command -v cosign >/dev/null || die "cosign is required only for --sigstore-verified"
+fi
 
 ASSET="linkmoth-$RELEASE_VERSION.tar.gz"
 MANIFEST="linkmoth-$RELEASE_VERSION.manifest.json"
@@ -48,16 +64,19 @@ download() { curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --outpu
 echo "downloading $ASSET ($REPO $RELEASE_VERSION)..."
 download "$ASSET" "$BASE/$ASSET" || die "archive download failed"
 download "$ASSET.sha256" "$BASE/$ASSET.sha256" || die "checksum download failed"
-download "$ASSET.bundle" "$BASE/$ASSET.bundle" || die "archive signature bundle download failed"
-download "$ASSET.sha256.bundle" "$BASE/$ASSET.sha256.bundle" || die "checksum signature bundle download failed"
 download "$MANIFEST" "$BASE/$MANIFEST" || die "manifest download failed"
-download "$MANIFEST.bundle" "$BASE/$MANIFEST.bundle" || die "manifest signature bundle download failed"
-
-echo "verifying Sigstore signatures..."
-for file in "$ASSET" "$ASSET.sha256" "$MANIFEST"; do
-  cosign verify-blob --bundle "$file.bundle" --certificate-identity "$IDENTITY" \
-    --certificate-oidc-issuer "$ISSUER" "$file" >/dev/null || die "signature verification failed: $file"
-done
+if [ "$VERIFY_SIGSTORE" -eq 1 ]; then
+  download "$ASSET.bundle" "$BASE/$ASSET.bundle" || die "archive signature bundle download failed"
+  download "$ASSET.sha256.bundle" "$BASE/$ASSET.sha256.bundle" || die "checksum signature bundle download failed"
+  download "$MANIFEST.bundle" "$BASE/$MANIFEST.bundle" || die "manifest signature bundle download failed"
+  echo "verifying Sigstore publisher identity and signatures..."
+  for file in "$ASSET" "$ASSET.sha256" "$MANIFEST"; do
+    cosign verify-blob --bundle "$file.bundle" --certificate-identity "$IDENTITY" \
+      --certificate-oidc-issuer "$ISSUER" "$file" >/dev/null || die "signature verification failed: $file"
+  done
+else
+  echo "checking release integrity (publisher identity not cryptographically verified)..."
+fi
 
 EXPECTED="$(awk 'NF == 2 && $2 == "'"$ASSET"'" {print $1}' "$ASSET.sha256")"
 case "$EXPECTED" in *[!0-9a-fA-F]*|"") die "malformed checksum file" ;; esac
@@ -118,4 +137,47 @@ PY
 
 echo "running installer..."
 cd "$TMP/extracted/linkmoth-$RELEASE_VERSION"
-exec bash install.sh "$@"
+if ! bash install.sh "${INSTALL_ARGS[@]}"; then exit $?; fi
+VERIFICATION="unverified-manual"
+[ "$VERIFY_SIGSTORE" -eq 1 ] && VERIFICATION="sigstore-verified"
+python3 - "/etc/linkmoth" "linkmoth-build.json" "$RELEASE_VERSION" "$EXPECTED" "$VERIFICATION" <<'PY'
+import json, os, re, stat, sys, tempfile, time
+etc, metadata_path, version, archive_sha256, verification = sys.argv[1:]
+try:
+    metadata = json.load(open(metadata_path, encoding="utf-8"))
+    commit = metadata["release_commit"]
+    if metadata.get("schema") != 1 or metadata.get("version") != version or not re.fullmatch(r"[0-9a-f]{40}", str(commit)): raise ValueError
+except (OSError, ValueError, KeyError): raise SystemExit("ERROR: invalid signed build metadata")
+os.makedirs(etc, mode=0o750, exist_ok=True)
+etc_stat = os.lstat(etc)
+if (stat.S_ISLNK(etc_stat.st_mode) or not stat.S_ISDIR(etc_stat.st_mode)
+        or etc_stat.st_uid != 0 or etc_stat.st_mode & 0o022):
+    raise SystemExit("ERROR: unsafe installation record directory")
+path = os.path.join(etc, "installation.json")
+try:
+    st = os.lstat(path)
+    if stat.S_ISDIR(st.st_mode): raise SystemExit("ERROR: installation record path is a directory")
+except FileNotFoundError: pass
+if verification != "sigstore-verified":
+    try: os.unlink(path)
+    except FileNotFoundError: pass
+    raise SystemExit(0)
+try:
+    st = os.lstat(path)
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
+        raise SystemExit("ERROR: installation record is not a regular file")
+except FileNotFoundError: pass
+record = {"schema": 1, "version": version, "release_commit": commit, "archive_sha256": archive_sha256.lower(), "verification": "sigstore-verified", "installed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+fd, tmp = tempfile.mkstemp(prefix=".installation-", dir=etc)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
+    json.dump(record, f, sort_keys=True); f.write("\n"); f.flush(); os.fsync(f.fileno())
+os.chown(tmp, 0, 0); os.chmod(tmp, 0o644); os.replace(tmp, path)
+directory_fd = os.open(etc, os.O_RDONLY | os.O_DIRECTORY)
+try: os.fsync(directory_fd)
+finally: os.close(directory_fd)
+PY
+if [ "$VERIFY_SIGSTORE" -eq 1 ]; then
+  echo "installation provenance: Sigstore-verified release"
+else
+  echo "installation provenance: Unverified/manual installation"
+fi

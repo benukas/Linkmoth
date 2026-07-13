@@ -56,15 +56,34 @@ or hostname (`hostname -I` on the box, or your router's device list). On
 **Raspberry Pi OS**, the default user is often `pi` and `raspberrypi.local`
 may work via mDNS; enable SSH in `raspi-config` if it is disabled.
 
-### 2. Install the signed release
+### 2. Install the versioned release
 
-Install [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/)
-once from its official instructions, then run these commands on the Linkmoth
-host. They download the versioned bootstrap script, verify its Sigstore
-signature, and only then start the installer:
+Run these two commands on the Linkmoth host. They download the exact v0.2.0
+bootstrap locally, then install the matching release after checking its
+SHA-256 checksum. No Git checkout, package manager, or Cosign installation is
+needed:
 
 ```bash
-VERSION=v0.1.2
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.0/linkmoth-v0.2.0-bootstrap.sh
+sudo bash linkmoth-v0.2.0-bootstrap.sh
+```
+
+Enter your password if asked. The installer checks your environment
+(`--doctor`), installs any missing tools, creates a dedicated service user,
+sets up a hardened systemd service that starts on boot, and finishes by
+printing the dashboard address. If anything is wrong it says exactly what
+and stops before touching your system.
+
+This normal path trusts GitHub and HTTPS. The checksum detects a damaged or
+mismatched download, but does not independently authenticate the publisher;
+Linkmoth therefore reports **Unverified/manual installation**. Users who want
+cryptographic build provenance can optionally install
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/),
+download the bootstrap bundle, verify the pinned release-workflow identity,
+and run the same bootstrap with `--sigstore-verified`:
+
+```bash
+VERSION=v0.2.0
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
@@ -73,14 +92,8 @@ cosign verify-blob \
   --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   "linkmoth-$VERSION-bootstrap.sh"
-sudo bash "linkmoth-$VERSION-bootstrap.sh"
+sudo bash "linkmoth-$VERSION-bootstrap.sh" --sigstore-verified
 ```
-
-Enter your password if asked. The installer checks your environment
-(`--doctor`), installs any missing tools, creates a dedicated service user,
-sets up a hardened systemd service that starts on boot, and finishes by
-printing the dashboard address. If anything is wrong it says exactly what
-and stops before touching your system.
 
 ### 3. Open the dashboard
 
@@ -129,6 +142,53 @@ the failure begin, and what evidence supports that?"**
   after recovery.
 - **Local-first operation:** the core is standard-library Python, has no cloud
   account or telemetry, and keeps diagnosis history on the appliance.
+
+## Installation provenance and manual updates
+
+Release builds carry immutable metadata for the exact source commit. The
+normal bootstrap checks the archive checksum and installs without Cosign; it
+does not claim publisher verification. When `--sigstore-verified` is selected,
+the bootstrap verifies the signed archive, checksum, and manifest against the
+pinned release-workflow identity, then writes a root-owned installation record
+containing the release version, commit, archive digest, verification state, and
+installation time. The dashboard reports exactly one state:
+**Sigstore-verified release**, **Unverified/manual installation**, **Legacy
+installation - provenance unavailable**, or **Installation record invalid**.
+It never guesses verified provenance from GitHub, a tag, or version matching.
+
+**Check for update** in Settings is an authenticated, CSRF-protected manual
+action; Linkmoth never checks, downloads, installs, restarts, or polls for
+updates automatically. The request goes directly over verified HTTPS to the
+fixed official GitHub API hostname, refuses redirects and proxy configuration,
+validates both DNS candidates and the connected peer as public addresses, and
+uses short time and response-size limits. It displays only validated release
+metadata and a short, version-pinned update command. That command uses the
+normal checksum-checked path; the optional Sigstore flow above remains
+available for users who want authenticated provenance.
+
+GitHub receives this host's public IP, request time, ordinary TLS/HTTP
+metadata, and Linkmoth's documented generic User-Agent. Linkmoth sends no
+unique identifier, configuration, incidents, diagnostics, credentials, or
+usage telemetry. The local audit log records only the request time and outcome
+category, never GitHub's response body.
+
+## Evidence limits and exports
+
+Linkmoth reports what it observed from this host. Its language is intentionally
+uncertainty-first: evidence can be most consistent with a fault and identify
+possible causes, but it cannot distinguish every cause. A lone silent Wi-Fi
+witness is a warning, not proof that the access point or radio failed; degraded
+Ethernet is rendered amber. Incident history keeps the historical diagnosis
+separate from recovery and explicitly records **Active**, **Recovered awaiting
+confirmation**, **Closed**, or **False alarm**.
+
+Settings provides three authenticated local exports: detailed JSON, readable
+local text, and support-safe JSON. They include bounded raw evidence, lifecycle,
+confidence limits, observer health, sanitized settings, baseline comparisons,
+and recovery history. Credentials and secret classes are omitted. The
+support-safe export replaces private-network identifiers consistently within one
+export (for example, `PRIVATE-NET-1`) so relationships remain useful without
+exposing topology. Remote witnesses remain deferred for this feature beta.
 
 ## How it works
 
@@ -733,9 +793,8 @@ timeouts, and store no device credentials, headers, or executable content.
   `NoNewPrivileges` and filesystem protections; `CAP_NET_RAW` is granted so
   `ping` works despite the sandbox.
 
-The installer also adds a polkit rule letting sudo-group users restart
-`linkmoth.service` without a password (deploy convenience); pass
-`--no-polkit` to skip it.
+Linkmoth installs no polkit rules. Service administration remains an explicit
+local `sudo systemctl` action.
 
 ## License, attribution, and official development
 

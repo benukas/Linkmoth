@@ -109,9 +109,11 @@ from the final merged commit on `main`.
 
 - The public quick start must install a versioned GitHub Release, not clone
   `main` or pipe an unversioned remote script into `sudo`.
-- The documented bootstrap must be downloaded locally, its Sigstore bundle
-  verified against the pinned release workflow identity, and only then run with
-  `sudo bash`.
+- The normal bootstrap must be downloaded locally and only then run with
+  `sudo bash`. It checks the release archive's SHA-256 but is documented
+  honestly as unverified/manual provenance. Keep Sigstore verification against
+  the pinned release workflow identity as an optional `--sigstore-verified`
+  path; only that path may write a verified installation record.
 - Update the quick-start version when publishing a newer stable release.
 
 ## Final handoff
