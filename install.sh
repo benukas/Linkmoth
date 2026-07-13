@@ -407,6 +407,11 @@ if ! id linkmoth >/dev/null 2>&1; then
 fi
 
 mkdir -p "$APP" "$ETC" "$STATE" "$TLS"
+# Older installs may have created the application directory without execute
+# permission for the service account. Repair the directory itself on every
+# install/update; application files remain root-owned and non-writable.
+chown root:root "$APP"
+chmod 755 "$APP"
 chown root:linkmoth "$ETC"
 chmod 750 "$ETC"
 

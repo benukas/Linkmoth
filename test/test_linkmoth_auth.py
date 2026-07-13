@@ -1040,6 +1040,8 @@ class AuthCryptoTests(unittest.TestCase):
 
     def test_installer_protects_configuration_secrets(self):
         installer = (REPO_ROOT / "install.sh").read_text()
+        self.assertIn('chown root:root "$APP"', installer)
+        self.assertIn('chmod 755 "$APP"', installer)
         self.assertIn('chown root:linkmoth "$ETC"', installer)
         self.assertIn('chown root:linkmoth "$ETC/config.json"', installer)
         self.assertIn('chmod 750 "$ETC"', installer)
