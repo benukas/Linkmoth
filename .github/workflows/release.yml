@@ -60,6 +60,17 @@ jobs:
         run: |
           bash scripts/build-dist.sh
           git diff --exit-code -- dist
+      - name: Verify quick-start docs reference this release
+        run: |
+          tag="$GITHUB_REF_NAME"
+          grep -qF "releases/download/$tag/linkmoth-$tag-bootstrap.sh" README.md || {
+            echo "::error::README.md quick start download link is not updated for $tag" >&2
+            exit 1
+          }
+          grep -qF "VERSION=$tag" ADVANCED.md || {
+            echo "::error::ADVANCED.md Sigstore path is not updated for $tag (expected VERSION=$tag)" >&2
+            exit 1
+          }
       - name: Build release candidate
         run: bash scripts/build-release.sh "$GITHUB_REF_NAME"
       - name: Upload unsigned release candidate

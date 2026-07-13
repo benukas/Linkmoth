@@ -107,12 +107,17 @@ class PublicReleaseTests(unittest.TestCase):
     def test_quick_start_uses_a_versioned_release_without_cosign_by_default(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
-        self.assertIn("sudo bash linkmoth-v0.2.2-bootstrap.sh", readme)
+        self.assertNotIn("cosign verify-blob", readme)
+        self.assertIn("sudo bash linkmoth-v0.2.3-bootstrap.sh", readme)
+        self.assertIn(
+            "releases/download/v0.2.3/linkmoth-v0.2.3-bootstrap.sh",
+            readme,
+        )
         self.assertIn("No Git checkout, package manager, or Cosign installation is", readme)
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.2.2", advanced)
+        self.assertIn("VERSION=v0.2.3", advanced)
         self.assertIn("cosign verify-blob", advanced)
         self.assertIn("--sigstore-verified", advanced)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", advanced)

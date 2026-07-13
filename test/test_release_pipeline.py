@@ -33,6 +33,14 @@ class ReleasePipelineTests(unittest.TestCase):
     def test_release_file_loops_skip_directories(self):
         self.assertEqual(WORKFLOW.count('[ -f "$file" ] || continue'), 3)
 
+    def test_checks_job_fails_release_if_install_docs_are_stale(self):
+        checks = WORKFLOW.split("  checks:\n", 1)[1].split("  publish:\n", 1)[0]
+        self.assertIn('grep -qF "VERSION=$tag" ADVANCED.md', checks)
+        self.assertIn(
+            'grep -qF "releases/download/$tag/linkmoth-$tag-bootstrap.sh" README.md',
+            checks,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

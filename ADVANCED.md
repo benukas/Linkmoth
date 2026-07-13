@@ -18,7 +18,7 @@ download the bootstrap bundle, verify the pinned release-workflow identity,
 and run the same bootstrap with `--sigstore-verified`:
 
 ```bash
-VERSION=v0.2.2
+VERSION=v0.2.3
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
