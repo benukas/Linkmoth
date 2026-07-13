@@ -724,6 +724,9 @@ def build_tls_context():
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.options |= ssl.OP_NO_COMPRESSION
+    # AEAD ciphers only: excludes CBC-mode TLS 1.2 suites (Lucky13-class
+    # padding-oracle risk). TLS 1.3 is unaffected — it has no CBC suites.
+    context.set_ciphers("ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20")
     try:
         context.load_cert_chain(certfile=cert, keyfile=key)
     except (OSError, ssl.SSLError) as e:

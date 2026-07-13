@@ -448,23 +448,47 @@ class QueueTests(WebhookDbCase):
 
 
 class TestSendTests(WebhookDbCase):
-    def test_http_transport_disables_proxies_and_redirects(self):
+    def test_https_delivery_pins_the_validated_address(self):
+        # Only one DNS resolution happens (the validation one) — the actual
+        # connection reuses that answer instead of re-resolving the hostname,
+        # closing the gap where a later DNS answer could redirect delivery
+        # to a different address than the one just validated.
+        fake_result = [(None, None, None, None, ("93.184.216.34", 443))]
         response = mock.MagicMock()
         response.status = 204
-        response.__enter__.return_value = response
-        opener = mock.MagicMock()
-        opener.open.return_value = response
+        response.reason = "No Content"
+        response.getheaders.return_value = []
+        response.read.return_value = b""
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
         with (
-            mock.patch.object(wh, "_validate_delivery_target"),
-            mock.patch.object(wh.urlrequest, "build_opener", return_value=opener) as build,
+            mock.patch.object(wh.socket, "getaddrinfo", return_value=fake_result) as getaddrinfo,
+            mock.patch.object(wh, "_PinnedHTTPSConnection", return_value=conn) as pinned,
         ):
             status = wh._post("https://example.test/hook", b"{}", {})
         self.assertEqual(status, 204)
-        handlers = build.call_args.args
-        self.assertTrue(any(isinstance(h, wh.urlrequest.ProxyHandler) for h in handlers))
-        self.assertTrue(any(isinstance(h, wh._NoRedirect) for h in handlers))
-        proxy = next(h for h in handlers if isinstance(h, wh.urlrequest.ProxyHandler))
-        self.assertEqual(proxy.proxies, {})
+        self.assertEqual(getaddrinfo.call_count, 1)
+        self.assertEqual(pinned.call_args.args, ("example.test", "93.184.216.34"))
+        conn.request.assert_called_once_with("POST", "/hook", body=b"{}", headers={})
+
+    def test_delivery_never_follows_a_redirect(self):
+        fake_result = [(None, None, None, None, ("93.184.216.34", 443))]
+        response = mock.MagicMock()
+        response.status = 302
+        response.reason = "Found"
+        response.getheaders.return_value = [("Location", "http://internal.example/")]
+        response.read.return_value = b""
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
+        with (
+            mock.patch.object(wh.socket, "getaddrinfo", return_value=fake_result),
+            mock.patch.object(wh, "_PinnedHTTPSConnection", return_value=conn),
+        ):
+            with self.assertRaises(wh.urlerror.HTTPError) as cm:
+                wh._post("https://example.test/hook", b"{}", {})
+        self.assertEqual(cm.exception.code, 302)
+        conn.request.assert_called_once()
+        cm.exception.close()
 
     def test_send_test_uses_render_path(self):
         hook = self.make_webhook(preset="ntfy")

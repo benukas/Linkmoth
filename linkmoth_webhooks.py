@@ -6,19 +6,20 @@ thread, which renders the payload at send time so late deliveries can be
 annotated. During a global outage nothing is attempted — rows wait for WAN
 recovery.
 """
+import http.client
 import json
 import ipaddress
 import os
 import re
 import secrets
 import socket
+import ssl
 import sys
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from urllib import error as urlerror
-from urllib import request as urlrequest
 from urllib.parse import urlparse
 
 MAX_WEBHOOKS = 20
@@ -237,36 +238,49 @@ def _clean_url(value):
     return url
 
 
-def _validate_delivery_target(url):
-    """Reject unsafe destinations again immediately before every delivery.
+def _resolve_pinned_target(url):
+    """Validate a delivery URL and return the exact address the request must use.
 
     Hostnames are HTTPS-only and must currently resolve entirely to global IPs;
     local delivery is limited to an explicit private or loopback IPv4 literal.
+    Returns (scheme, host, port, path, address) — callers must connect to
+    `address` directly rather than re-resolving `host`, or a DNS answer that
+    changes between this check and the actual delivery could redirect the
+    request to a different address than the one just validated.
     """
     parsed = urlparse(url)
     host = parsed.hostname or ""
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    scheme = parsed.scheme
+    port = parsed.port or (443 if scheme == "https" else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
         try:
             addresses = {
-                ipaddress.ip_address(info[4][0])
+                info[4][0]
                 for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
             }
         except OSError as exc:
             raise ValueError("webhook host could not be resolved safely") from exc
-        if not addresses or any(not address.is_global for address in addresses):
+        parsed_addresses = {ipaddress.ip_address(a) for a in addresses}
+        if not parsed_addresses or any(not a.is_global for a in parsed_addresses):
             raise ValueError("webhook hostname resolved to a non-public address")
-        return
+        return scheme, host, port, path, sorted(addresses)[0]
     is_local = (
         isinstance(address, ipaddress.IPv4Address)
         and (address.is_loopback or any(address in network for network in RFC1918_NETWORKS))
     )
-    if is_local:
-        return
-    if not address.is_global:
+    if not is_local and not address.is_global:
         raise ValueError("webhook address is not permitted")
+    return scheme, host, port, path, str(address)
+
+
+def _validate_delivery_target(url):
+    """Reject unsafe destinations again immediately before every delivery."""
+    _resolve_pinned_target(url)
 
 
 def _clean_bool(value, field):
@@ -773,18 +787,52 @@ def render_payload(webhook, ctx):
     return _render_generic(ctx)  # generic, home_assistant, n8n
 
 
-class _NoRedirect(urlrequest.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that connects to a pre-validated address only.
+
+    Never re-resolves the hostname at connect time, so a DNS answer that
+    changes between validation and delivery cannot redirect the request to a
+    different address than the one `_resolve_pinned_target` just checked.
+    """
+    def __init__(self, host, address, **kwargs):
+        super().__init__(host, **kwargs)
+        self._address = address
+
+    def connect(self):
+        sock = socket.create_connection((self._address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
 def _post(url, body, headers, timeout=HTTP_TIMEOUT):
-    """POST bytes; returns the HTTP status. Raises on network errors."""
-    _validate_delivery_target(url)
-    req = urlrequest.Request(url, data=body, headers=headers, method="POST")
-    opener = urlrequest.build_opener(urlrequest.ProxyHandler({}), _NoRedirect())
-    with opener.open(req, timeout=timeout) as resp:
-        return int(resp.status)
+    """POST bytes to a pinned address; returns the HTTP status. Raises on network errors.
+
+    Never follows redirects (the response is returned as-is, Location is not
+    read) and never consults environment proxies (a raw socket connection is
+    made directly to the validated address).
+    """
+    scheme, host, port, path, address = _resolve_pinned_target(url)
+    if scheme == "https":
+        conn = _PinnedHTTPSConnection(
+            host, address, port=port, timeout=timeout,
+            context=ssl.create_default_context(),
+        )
+    else:
+        conn = http.client.HTTPConnection(address, port=port, timeout=timeout)
+    try:
+        conn.request("POST", path, body=body, headers=headers)
+        response = conn.getresponse()
+        try:
+            response.read()
+        finally:
+            response.close()
+        if not (200 <= response.status < 300):
+            raise urlerror.HTTPError(
+                url, response.status, response.reason,
+                dict(response.getheaders()), None,
+            )
+        return int(response.status)
+    finally:
+        conn.close()
 
 
 def _safe_network_error(exc):
