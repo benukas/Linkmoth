@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### 0.2.1 feature beta: dashboard control alignment
+
+- Sign out now uses a clearly framed, centered control instead of appearing as
+  a detached arrow in the dashboard header.
+- History recheck and support-summary actions now use matching height,
+  padding, and label alignment.
+
 ### 0.2.0 feature beta: provenance and manual updates
 
 - Signed release builds now embed their exact source commit. The normal,
