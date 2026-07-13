@@ -60,17 +60,19 @@ class PublicReleaseTests(unittest.TestCase):
     def test_dashboard_utility_controls_stay_aligned(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(
-            "width: 40px; height: 34px; display: flex; align-items: center; justify-content: center;",
-            dashboard,
-        )
-        self.assertIn(
-            '<span class="logout-icon" aria-hidden="true">⇥</span>',
-            dashboard,
-        )
-        self.assertIn(
             ".packet-actions .action-btn {\n"
             "  min-height: 48px; width: auto; margin-top: 0; padding: 12px 18px;",
             dashboard,
+        )
+
+    def test_sign_out_lives_in_settings_not_the_header(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        header = dashboard.split("<header>", 1)[1].split("</header>", 1)[0]
+        self.assertNotIn("logout-btn", header)
+        settings_tab = dashboard.split('id="tab-settings"', 1)[1].split("</section>", 1)[0]
+        self.assertIn(
+            '<button id="logout-btn" type="button" class="action-btn hidden">Sign out</button>',
+            settings_tab,
         )
 
     def test_release_bootstrap_keeps_sigstore_optional_and_is_not_pipe_to_root(self):

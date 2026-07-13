@@ -440,15 +440,6 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .auth-box button:active { transform: scale(0.99); }
 .auth-err { color: var(--bad-text); font-size: 16px; margin: 0 0 6px; }
 .auth-err:empty { display: none; }
-#logout-btn {
-  width: 40px; height: 34px; display: flex; align-items: center; justify-content: center;
-  flex: none; font-size: 22px; line-height: 1; color: var(--muted); background: var(--card);
-  border: 1px solid var(--border); border-radius: 8px; cursor: pointer; padding: 0;
-  transition: border-color 150ms ease, color 150ms ease, transform 80ms ease;
-}
-#logout-btn .logout-icon { display: block; line-height: 1; transform: translateY(-1px); }
-#logout-btn:hover { color: var(--text); border-color: var(--text); }
-#logout-btn:active { transform: scale(0.97); }
 #logout-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 .inbound-example code { overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
 </style>
@@ -514,7 +505,6 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <div id="host-memory" class="host-metric"><span class="k">RAM</span><span class="v">—</span></div>
       <div id="host-disk" class="host-metric"><span class="k">DISK</span><span class="v">—</span></div>
     </div>
-    <button id="logout-btn" type="button" class="hidden" aria-label="Sign out" title="Sign out"><span class="logout-icon" aria-hidden="true">⇥</span></button>
   </header>
 
   <button id="nav-burger" class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="main-nav">☰ Menu</button>
@@ -841,6 +831,10 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <button type="button" id="vacuum-db" class="action-btn">Run VACUUM</button><span id="db-msg"></span>
       </div>
       <button id="save-settings" class="action-btn">Save settings</button><span id="settings-msg"></span>
+      <div class="set-section">
+        <h4>Session</h4>
+        <button id="logout-btn" type="button" class="action-btn hidden">Sign out</button>
+      </div>
     </section>
   </div>
 
