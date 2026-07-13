@@ -57,6 +57,22 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("MIT-licensed Project Nayuki", dashboard)
         self.assertIn("Copyright © 2025 Project Nayuki", notices)
 
+    def test_dashboard_utility_controls_stay_aligned(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn(
+            "width: 40px; height: 34px; display: flex; align-items: center; justify-content: center;",
+            dashboard,
+        )
+        self.assertIn(
+            '<span class="logout-icon" aria-hidden="true">⇥</span>',
+            dashboard,
+        )
+        self.assertIn(
+            ".packet-actions .action-btn {\n"
+            "  min-height: 48px; width: auto; margin-top: 0; padding: 12px 18px;",
+            dashboard,
+        )
+
     def test_release_bootstrap_keeps_sigstore_optional_and_is_not_pipe_to_root(self):
         bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
