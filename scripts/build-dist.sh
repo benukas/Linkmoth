@@ -26,6 +26,7 @@ FILES=(
   manifest.webmanifest
   config.example.json
   README.md
+  ADVANCED.md
   CHANGELOG.md
   CONTRIBUTING.md
   TRADEMARKS.md
