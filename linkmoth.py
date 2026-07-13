@@ -144,6 +144,43 @@ def _globally_routable(address):
         return False
 
 
+def _peer_is_trusted_local(peer_ip):
+    """True if a request's direct TCP peer is LAN/loopback, or an explicitly
+    configured trusted-proxy address.
+
+    Linkmoth is LAN-only by design; this backs a request-level guard against
+    an accidental router port-forward, not just documentation. A configured
+    `trusted_proxy_cidrs` entry is the opt-in for a deliberate reverse-proxy
+    or remote-access setup (e.g. a VPN overlay) — anything else reaching a
+    public/global address is refused outright.
+    """
+    try:
+        peer = ipaddress.ip_address(peer_ip)
+    except ValueError:
+        return False
+    if not peer.is_global:
+        return True
+    for cidr in CFG.get("trusted_proxy_cidrs", []) or []:
+        try:
+            if peer in ipaddress.ip_network(str(cidr), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _public_exposure_notify_allowed():
+    """At most one proactive alert per cooldown window, so a port scan or
+    internet-wide sweep can't turn into a notification flood."""
+    global _LAST_PUBLIC_EXPOSURE_NOTIFY_MONO
+    with _PUBLIC_EXPOSURE_NOTIFY_LOCK:
+        now = time.monotonic()
+        if now - _LAST_PUBLIC_EXPOSURE_NOTIFY_MONO < PUBLIC_EXPOSURE_NOTIFY_COOLDOWN_SECONDS:
+            return False
+        _LAST_PUBLIC_EXPOSURE_NOTIFY_MONO = now
+        return True
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """HTTPS connection that never delegates DNS or proxy choice to urllib."""
     def __init__(self, host, address, **kwargs):
@@ -355,6 +392,10 @@ HOST_CPU_VALUE = None
 HOST_CPU_UPDATED_AT = None
 HOST_CPU_SAMPLER_STARTED = False
 AUTH_VERIFY_SLOTS = threading.BoundedSemaphore(2)
+
+PUBLIC_EXPOSURE_NOTIFY_COOLDOWN_SECONDS = 3600
+_PUBLIC_EXPOSURE_NOTIFY_LOCK = threading.Lock()
+_LAST_PUBLIC_EXPOSURE_NOTIFY_MONO = 0.0
 
 CONFIG_ERROR = None
 
@@ -3257,6 +3298,49 @@ class Handler(BaseHTTPRequestHandler):
             self.headers.get("Authorization")
         )
 
+    def _reject_if_publicly_exposed(self):
+        """Refuse any request whose direct peer isn't LAN/loopback/trusted-proxy.
+
+        Linkmoth is documented as LAN-only, but an accidental router
+        port-forward would otherwise still be served normally. This is a
+        second, independent guard: every request is checked, before routing,
+        against the actual TCP peer address. True means the request was
+        rejected and the caller must return immediately.
+        """
+        if _peer_is_trusted_local(self.client_address[0]):
+            return False
+        auth = get_auth()
+        auth.audit_event(
+            "public_exposure_blocked", self._hdrs(), self.client_address[0],
+        )
+        if _public_exposure_notify_allowed():
+            try:
+                from linkmoth_webhooks import build_event_context, emit_event
+                ctx = build_event_context(
+                    "public_exposure_detected",
+                    verdict={
+                        "title": "Linkmoth rejected a public-internet connection",
+                        "explain": (
+                            "Linkmoth is a LAN-only tool and just refused a "
+                            "request from a public IP address. If this wasn't "
+                            "intentional, check your router's port-forwarding "
+                            "rules."
+                        ),
+                        "severity": "warn",
+                    },
+                )
+                emit_event(db, "public_exposure_detected", ctx)
+            except Exception:
+                pass
+        self._send(403, {
+            "error": (
+                "Linkmoth is a LAN-only tool and does not accept connections "
+                "from the public internet. If this wasn't intentional, check "
+                "your router's port-forwarding rules."
+            ),
+        })
+        return True
+
     def _begin_auth_verification(self):
         """Reject excess expensive-hash work without queueing handler threads."""
         if AUTH_VERIFY_SLOTS.acquire(blocking=False):
@@ -3668,6 +3752,10 @@ class Handler(BaseHTTPRequestHandler):
         tunnels = [
             i for i in bind_exposure_risk(bind_addr) if i["kind"] == "tunnel"
         ]
+        recent_public = [
+            e for e in auth.audit_events(limit=200)
+            if e["event"] == "public_exposure_blocked"
+        ]
         return {
             "totp_enabled": auth.totp_enabled,
             "recovery_codes_remaining": auth.recovery_codes_remaining(),
@@ -3678,6 +3766,10 @@ class Handler(BaseHTTPRequestHandler):
             "tunnel_exposure": [
                 {"iface": i["iface"], "address": i["address"]} for i in tunnels
             ],
+            "public_exposure_recent": {
+                "count": len(recent_public),
+                "last_ts": recent_public[0]["ts"] if recent_public else None,
+            },
             "internet_note": (
                 "Linkmoth does not create cloud access, tunnels, or router "
                 "port forwards. It is intended for local-network access "
@@ -3687,6 +3779,8 @@ class Handler(BaseHTTPRequestHandler):
         }
 
     def do_GET(self):
+        if self._reject_if_publicly_exposed():
+            return
         url = urlparse(self.path)
         qs = parse_qs(url.query)
         auth = get_auth()
@@ -3882,6 +3976,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
+        if self._reject_if_publicly_exposed():
+            return
         body = self._read_body()
         if body is None:
             return
@@ -4144,6 +4240,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_PUT(self):
+        if self._reject_if_publicly_exposed():
+            return
         body = self._read_body()
         if body is None:
             return
@@ -4196,6 +4294,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_device_exception(exc)
 
     def do_DELETE(self):
+        if self._reject_if_publicly_exposed():
+            return
         path = urlparse(self.path).path
         ok, session = self._require_auth()
         if not ok:

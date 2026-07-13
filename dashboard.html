@@ -2875,7 +2875,15 @@ async function loadSecurityPosture() {
         `— a VPN/tunnel interface Linkmoth detected on this host. Set <code>"bind"</code> in ` +
         `<code>/etc/linkmoth/config.json</code> to your LAN IP instead of 0.0.0.0, then restart.</p>`
       : "";
+    const exposure = s.public_exposure_recent || {};
+    const exposureWarning = exposure.count
+      ? `<p class="device-warning"><b>Public exposure blocked:</b> Linkmoth refused ${exposure.count} ` +
+        `connection attempt(s) from a public IP address, most recently ${esc(fmtAge(Date.now() / 1000 - exposure.last_ts))}. ` +
+        `If you didn't intentionally expose Linkmoth to the internet (e.g. via a VPN or reverse proxy you configured), ` +
+        `check your router's port-forwarding rules.</p>`
+      : "";
     $("sec-posture").innerHTML =
+      exposureWarning +
       tunnelWarning +
       `<p><b>Network exposure:</b> ${esc(s.internet_note)}</p>` +
       `<p><b>HTTPS:</b> ${s.tls ? "on (encrypted)" : "off"} · listening on ${esc(String(s.bind))}</p>` +

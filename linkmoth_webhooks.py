@@ -61,6 +61,7 @@ EVENT_TYPES = (
     ("false_alarm_marked", "False alarm marked"),
     ("device_down", "Device down"),
     ("device_recovered", "Device recovered"),
+    ("public_exposure_detected", "Public exposure detected"),
 )
 EVENT_IDS = tuple(ev for ev, _ in EVENT_TYPES)
 EVENT_LABELS = dict(EVENT_TYPES)

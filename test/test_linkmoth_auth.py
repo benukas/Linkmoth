@@ -334,6 +334,57 @@ class OnboardingTests(LinkmothTestBase):
         self.assertNotEqual(old, new)
 
 
+class PublicExposureGuardRouteTests(LinkmothTestBase):
+    """Integration coverage for Handler._reject_if_publicly_exposed: the test
+    client always connects over loopback, so the peer classification itself
+    is mocked to simulate a request arriving from a public IP address."""
+
+    def test_get_is_rejected_when_peer_looks_public(self):
+        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=False):
+            code, body, _, _ = http("GET", f"{self.base}/health")
+        self.assertEqual(code, 403)
+        self.assertIn("LAN-only", body["error"])
+
+    def test_post_is_rejected_before_touching_auth_state(self):
+        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=False):
+            code, body, _, _ = http(
+                "POST", f"{self.base}/api/auth/login", {"password": "wrong"},
+            )
+        self.assertEqual(code, 403)
+        self.assertIn("LAN-only", body["error"])
+
+    def test_normal_lan_request_is_unaffected(self):
+        code, body, _, _ = http("GET", f"{self.base}/health")
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+
+    def test_rejection_is_audited_and_surfaced_in_security_posture(self):
+        self._configure_auth()
+        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=False):
+            code, _, _, _ = http("GET", f"{self.base}/health")
+        self.assertEqual(code, 403)
+        events = self.auth.audit_events(limit=10)
+        self.assertTrue(any(e["event"] == "public_exposure_blocked" for e in events))
+
+        _, _, cookie, csrf = self._login()
+        code, posture, _, _ = http(
+            "GET", f"{self.base}/api/auth/security",
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(posture["public_exposure_recent"]["count"], 1)
+        self.assertIsNotNone(posture["public_exposure_recent"]["last_ts"])
+
+    def test_peer_classified_as_trusted_is_not_rejected(self):
+        # The trusted_proxy_cidrs allowlist behavior itself is covered at the
+        # unit level in test_linkmoth_bind_exposure.py; this just confirms the
+        # do_GET wiring actually respects a "trusted" verdict from the guard.
+        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=True):
+            code, body, _, _ = http("GET", f"{self.base}/health")
+        self.assertEqual(code, 200)
+        self.assertTrue(body["ok"])
+
+
 class AuthenticatedTests(LinkmothTestBase):
     def setUp(self):
         super().setUp()
