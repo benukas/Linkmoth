@@ -57,20 +57,42 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("MIT-licensed Project Nayuki", dashboard)
         self.assertIn("Copyright © 2025 Project Nayuki", notices)
 
-    def test_release_bootstrap_requires_sigstore_and_is_not_pipe_to_root(self):
+    def test_release_bootstrap_keeps_sigstore_optional_and_is_not_pipe_to_root(self):
         bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn("cosign verify-blob", bootstrap)
+        self.assertIn("VERIFY_SIGSTORE=0", bootstrap)
+        self.assertIn("--sigstore-verified", bootstrap)
+        self.assertIn('command -v cosign >/dev/null || die "cosign is required only for --sigstore-verified"', bootstrap)
         self.assertIn('OFFICIAL_REPO="benukas/Linkmoth"', bootstrap)
         self.assertNotIn("raw.githubusercontent.com/benukas/linkmoth/main/bootstrap.sh", bootstrap)
         self.assertIn("sigstore/cosign-installer", workflow)
         self.assertIn("cosign sign-blob", workflow)
 
-    def test_quick_start_uses_a_verified_versioned_release(self):
+    def test_bootstrap_record_is_root_owned_atomic_and_rejects_symlinks(self):
+        bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
+        self.assertIn('"installation.json"', bootstrap)
+        self.assertIn("os.lstat(etc)", bootstrap)
+        self.assertIn("stat.S_ISLNK", bootstrap)
+        self.assertIn("tempfile.mkstemp", bootstrap)
+        self.assertIn("os.fsync(f.fileno())", bootstrap)
+        self.assertIn("os.replace(tmp, path)", bootstrap)
+        self.assertIn("os.chown(tmp, 0, 0)", bootstrap)
+        self.assertIn("os.chmod(tmp, 0o644)", bootstrap)
+        self.assertIn('if verification != "sigstore-verified"', bootstrap)
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        self.assertIn('chown root:linkmoth "$ETC"', installer)
+        self.assertIn('chmod 750 "$ETC"', installer)
+        self.assertIn('APP_FILES="$APP_FILES linkmoth-build.json"', installer)
+
+    def test_quick_start_uses_a_versioned_release_without_cosign_by_default(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertIn("VERSION=v0.2.0", readme)
         self.assertIn("cosign verify-blob", readme)
+        self.assertIn("sudo bash linkmoth-v0.2.0-bootstrap.sh", readme)
+        self.assertIn("No Git checkout, package manager, or Cosign installation is", readme)
+        self.assertIn("--sigstore-verified", readme)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", readme)
         self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", readme)
         self.assertIn("https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION", readme)
@@ -81,6 +103,9 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("--bind", installer)
         self.assertIn("--doctor", installer)
         self.assertNotIn("migrate_vamner_install", installer)
+        self.assertNotIn("polkit.addRule", installer)
+        self.assertNotIn("--no-polkit", installer)
+        self.assertIn("rm -f /etc/polkit-1/rules.d/51-linkmoth.rules", installer)
 
     def test_dist_contains_only_declared_release_files(self):
         actual = {

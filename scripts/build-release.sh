@@ -69,8 +69,8 @@ fi
 echo "built $OUT/$NAME.tar.gz"
 cat "$OUT/$NAME.tar.gz.sha256"
 
-# The bootstrap is a separate, versioned release asset.  It is signed alongside
-# the archive by the release workflow; users verify it before running as root.
+# The bootstrap is a separate, versioned release asset. It is signed alongside
+# the archive for users who select the optional Sigstore-verified install path.
 sed "s/@LINKMOTH_VERSION@/$VERSION/g" "$ROOT/bootstrap.sh" > "$OUT/$NAME-bootstrap.sh"
 chmod 755 "$OUT/$NAME-bootstrap.sh"
 echo "built $OUT/$NAME-bootstrap.sh"

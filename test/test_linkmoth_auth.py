@@ -476,6 +476,44 @@ class AuthenticatedTests(LinkmothTestBase):
         self.assertEqual(code, 200)
         self.assertTrue(body.get("started"))
 
+    def test_manual_update_check_requires_admin_session_and_csrf(self):
+        code, _, _, _ = http("POST", f"{self.base}/api/update/check", {})
+        self.assertEqual(code, 401)
+        _, _, cookie, _ = self._login()
+        code, _, _, _ = http(
+            "POST", f"{self.base}/api/update/check", {},
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 403)
+        _, _, cookie, csrf = self._login()
+        result = {
+            "installed_version": "0.2.0", "latest_version": "0.2.1",
+            "update_available": True, "published_at": "2026-07-13T00:00:00Z",
+            "release_url": "https://github.com/benukas/Linkmoth/releases/tag/v0.2.1",
+            "update_command": "VERSION=v0.2.1",
+            "verified_update_command": "VERSION=v0.2.1",
+        }
+        with patch.object(self.linkmoth, "manual_update_check", return_value=result):
+            code, body, _, _ = http(
+                "POST", f"{self.base}/api/update/check", {},
+                headers={"X-CSRF-Token": csrf},
+                cookies={"__Host-linkmoth_session": cookie},
+            )
+        self.assertEqual(code, 200)
+        self.assertEqual(body["latest_version"], "0.2.1")
+
+    def test_evidence_exports_require_auth_but_not_csrf(self):
+        code, _, _, _ = http("GET", f"{self.base}/api/evidence-export?tier=detailed")
+        self.assertEqual(code, 401)
+        _, _, cookie, _ = self._login()
+        code, body, _, _ = http(
+            "GET", f"{self.base}/api/evidence-export?tier=support-safe",
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(body["tier"], "support-safe")
+        self.assertNotIn("discord_webhook_url", body["configuration"])
+
     def test_csrf_rejected_without_token(self):
         _, _, cookie, _ = self._login()
         code, _, _, _ = http(
