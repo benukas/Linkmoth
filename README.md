@@ -64,7 +64,7 @@ host. They download the versioned bootstrap script, verify its Sigstore
 signature, and only then start the installer:
 
 ```bash
-VERSION=v0.1.2
+VERSION=v0.2.0
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
