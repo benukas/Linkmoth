@@ -24,6 +24,7 @@ DIST_FILES = {
     "manifest.webmanifest",
     "config.example.json",
     "README.md",
+    "ADVANCED.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "TRADEMARKS.md",
@@ -104,14 +105,17 @@ class PublicReleaseTests(unittest.TestCase):
     def test_quick_start_uses_a_versioned_release_without_cosign_by_default(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
-        self.assertIn("VERSION=v0.2.1", readme)
-        self.assertIn("cosign verify-blob", readme)
-        self.assertIn("sudo bash linkmoth-v0.2.1-bootstrap.sh", readme)
+        self.assertIn("sudo bash linkmoth-v0.2.2-bootstrap.sh", readme)
         self.assertIn("No Git checkout, package manager, or Cosign installation is", readme)
-        self.assertIn("--sigstore-verified", readme)
-        self.assertIn("linkmoth-$VERSION-bootstrap.sh", readme)
-        self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", readme)
-        self.assertIn("https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION", readme)
+
+    def test_advanced_docs_cover_sigstore_verified_install(self):
+        advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
+        self.assertIn("VERSION=v0.2.2", advanced)
+        self.assertIn("cosign verify-blob", advanced)
+        self.assertIn("--sigstore-verified", advanced)
+        self.assertIn("linkmoth-$VERSION-bootstrap.sh", advanced)
+        self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", advanced)
+        self.assertIn("https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION", advanced)
 
     def test_installer_never_kills_processes_by_name(self):
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
