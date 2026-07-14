@@ -95,7 +95,7 @@ nav button.active { color: var(--text); border-color: var(--text); }
 .hint-block { display: block; margin-top: 2px; }
 .wlan-hint { margin: 4px 0 10px 58px; font-size: 14px; color: var(--muted); }
 .v-compact {
-  font-size: 16px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere;
+  font-size: 26px; line-height: 1.22; font-weight: 600; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }
 .card {
@@ -130,10 +130,11 @@ nav button.active { color: var(--text); border-color: var(--text); }
 .action-bar.hidden { display: none; }
 .action-bar .action-btn { flex: 1; min-width: 140px; padding: 16px 18px; font-size: 18px; }
 .statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+.stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; }
 .stat .k { font-size: 15px; color: var(--muted); }
-.stat .v { font-size: 28px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
-.stat .v small { font-size: 16px; color: var(--muted); font-weight: 400; }
+.stat .v { min-height: 40px; margin-top: 2px; font-size: 30px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.stat .v.v-compact { min-height: 0; }
+.stat > small { margin-top: 4px; font-size: 16px; color: var(--muted); }
 h3 { font-size: 18px; color: var(--muted); font-weight: 600; margin: 0 0 6px; }
 .spark-label { display: flex; justify-content: space-between; font-size: 16px; color: var(--muted); margin-top: 6px; }
 .spark-label b { color: var(--text); font-weight: 600; }
@@ -389,15 +390,17 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .set-section h4 .info-tip { font-size: 12px; }
 
 /* Settings inner sub-tab bar. */
-.subnav { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.subnav { display: flex; gap: 8px; margin: 4px 0 18px; }
 .subnav-btn {
-  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
-  padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--muted);
-  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  flex: 1; min-width: 0; min-height: 51px; padding: 10px 8px;
+  font: inherit; font-size: 19px; font-weight: 600; line-height: 1.2; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--card); color: var(--muted);
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 80ms ease;
 }
 .subnav-btn:hover { color: var(--text); border-color: var(--muted); }
-.subnav-btn.active { color: var(--text); border-color: var(--text); background: var(--card); }
+.subnav-btn:active { transform: scale(0.98); }
+.subnav-btn.active { color: var(--text); border-color: var(--text); }
 .subnav-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 .set-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
 .set-section h4 { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--text); }
@@ -1986,8 +1989,8 @@ async function refresh() {
     const top = blameEntries.sort((a, b) => b[1] - a[1])[0];
     $("stats").innerHTML = `
       <div class="stat"><div class="k">Uptime, recorded interval</div><div class="v">${st.uptime_pct === null ? "–" : st.uptime_pct + "%"}</div><small>${st.monitoring_interval_s ? fmtDur(st.monitoring_interval_s) + " monitored" : "no recorded interval"}</small></div>
-      <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d} <small>${st.false_alarms_30d} false</small></div></div>
-      <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div></div>
+      <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d}</div><small>${st.false_alarms_30d} false alarm${st.false_alarms_30d === 1 ? "" : "s"}</small></div>
+      <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div><small>last 30 days</small></div>
       <div class="stat"><div class="k">Top offender</div><div class="v v-compact" title="${top ? esc(BLAME_NAMES[top[0]] || top[0]) : ""}">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "–"}</div></div>`;
     const maxN = Math.max(...blameEntries.map((e) => e[1]), st.false_alarms_30d, 1);
     const total = blameEntries.reduce((acc, e) => acc + e[1], 0) + st.false_alarms_30d;
