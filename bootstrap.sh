@@ -21,12 +21,17 @@ import re, sys
 raise SystemExit(not bool(re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", sys.argv[1])))
 PY
 
-VERIFY_SIGSTORE=0
+VERIFY_SIGSTORE=1
 INSTALL_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --sigstore-verified)
       VERIFY_SIGSTORE=1
+      shift
+      ;;
+    --insecure-skip-verify)
+      VERIFY_SIGSTORE=0
+      echo "WARNING: --insecure-skip-verify disables publisher identity verification; installation is unverified." >&2
       shift
       ;;
     # An override is deliberately noisy and opt-in: it is useful for a
@@ -48,7 +53,7 @@ PY
 done
 [ "$REPO" = "$OFFICIAL_REPO" ] || echo "WARNING: using an advanced, unofficial repository override: $REPO" >&2
 if [ "$VERIFY_SIGSTORE" -eq 1 ]; then
-  command -v cosign >/dev/null || die "cosign is required only for --sigstore-verified"
+  command -v cosign >/dev/null || die "cosign is required unless --insecure-skip-verify is used"
 fi
 
 ASSET="linkmoth-$RELEASE_VERSION.tar.gz"

@@ -389,6 +389,9 @@ SETTINGS_PATH = STATE_DIR / "settings.json"
 MAX_REQUEST_BODY = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 TLS_HANDSHAKE_TIMEOUT_SECONDS = 5
+REQUEST_HEADER_DEADLINE_SECONDS = 10
+MAX_HTTP_HEADER_BYTES = 32 * 1024
+MAX_HTTP_HEADER_COUNT = 64
 MAX_HTTP_CONNECTIONS = 16
 DB_BUSY_TIMEOUT_MS = 10_000
 DB_LOCK_RETRIES = 0
@@ -400,6 +403,76 @@ HOST_CPU_VALUE = None
 HOST_CPU_UPDATED_AT = None
 HOST_CPU_SAMPLER_STARTED = False
 AUTH_VERIFY_SLOTS = threading.BoundedSemaphore(2)
+
+
+class _HeaderReadError(Exception):
+    response = b""
+
+
+class _HeaderReadTimeout(_HeaderReadError):
+    response = (
+        b"HTTP/1.1 408 Request Timeout\r\n"
+        b"Connection: close\r\nContent-Length: 0\r\n\r\n"
+    )
+
+
+class _HeaderLimitExceeded(_HeaderReadError):
+    response = (
+        b"HTTP/1.1 431 Request Header Fields Too Large\r\n"
+        b"Connection: close\r\nContent-Length: 0\r\n\r\n"
+    )
+
+
+class _BoundedHeaderReader:
+    """Apply an accept-to-headers deadline and independent header caps."""
+
+    def __init__(self, reader, connection, deadline):
+        self._reader = reader
+        self._connection = connection
+        self._deadline = deadline
+        self._active = True
+        self._bytes = 0
+        self._lines = 0
+        self._saw_request_line = False
+
+    def readline(self, size=-1):
+        if not self._active:
+            return self._reader.readline(size)
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise _HeaderReadTimeout()
+        self._connection.settimeout(
+            max(0.001, min(REQUEST_TIMEOUT_SECONDS, remaining))
+        )
+        capacity = MAX_HTTP_HEADER_BYTES - self._bytes
+        bounded_size = capacity + 1
+        if size is not None and size >= 0:
+            bounded_size = min(size, bounded_size)
+        try:
+            line = self._reader.readline(bounded_size)
+        except TimeoutError as exc:
+            raise _HeaderReadTimeout() from exc
+        if time.monotonic() > self._deadline:
+            raise _HeaderReadTimeout()
+        self._bytes += len(line)
+        if self._bytes > MAX_HTTP_HEADER_BYTES:
+            raise _HeaderLimitExceeded()
+        if self._saw_request_line:
+            if line not in (b"", b"\n", b"\r\n"):
+                self._lines += 1
+                if self._lines > MAX_HTTP_HEADER_COUNT:
+                    raise _HeaderLimitExceeded()
+        else:
+            self._saw_request_line = True
+        return line
+
+    def finish_headers(self):
+        self._active = False
+        self._connection.settimeout(REQUEST_TIMEOUT_SECONDS)
+
+    def __getattr__(self, name):
+        return getattr(self._reader, name)
+
 
 PUBLIC_EXPOSURE_NOTIFY_COOLDOWN_SECONDS = 3600
 _PUBLIC_EXPOSURE_NOTIFY_LOCK = threading.Lock()
@@ -822,6 +895,7 @@ class BoundedTLSServer(HTTPServer):
 
     def __init__(self, address, handler_class, tls_context):
         self.tls_context = tls_context
+        self._request_context = threading.local()
         self._slots = threading.BoundedSemaphore(MAX_HTTP_CONNECTIONS)
         self._workers = ThreadPoolExecutor(
             max_workers=MAX_HTTP_CONNECTIONS,
@@ -830,19 +904,27 @@ class BoundedTLSServer(HTTPServer):
         super().__init__(address, handler_class)
 
     def process_request(self, request, client_address):
+        accepted_at = time.monotonic()
         if not self._slots.acquire(blocking=False):
             try:
                 request.close()
             except OSError:
                 pass
             return
-        self._workers.submit(self._handle_tls_request, request, client_address)
+        self._workers.submit(
+            self._handle_tls_request, request, client_address, accepted_at,
+        )
 
-    def _handle_tls_request(self, request, client_address):
+    def _handle_tls_request(self, request, client_address, accepted_at):
         tls_request = None
         try:
-            request.settimeout(TLS_HANDSHAKE_TIMEOUT_SECONDS)
+            deadline = accepted_at + REQUEST_HEADER_DEADLINE_SECONDS
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            request.settimeout(min(TLS_HANDSHAKE_TIMEOUT_SECONDS, remaining))
             tls_request = self.tls_context.wrap_socket(request, server_side=True)
+            self._request_context.header_deadline = deadline
             self.finish_request(tls_request, client_address)
         except (OSError, ssl.SSLError, socket.timeout):
             pass
@@ -852,6 +934,9 @@ class BoundedTLSServer(HTTPServer):
             except OSError:
                 pass
             self._slots.release()
+
+    def current_header_deadline(self):
+        return getattr(self._request_context, "header_deadline", None)
 
     def server_close(self):
         super().server_close()
@@ -3309,7 +3394,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def setup(self):
         super().setup()
-        self.connection.settimeout(REQUEST_TIMEOUT_SECONDS)
+        deadline_getter = getattr(self.server, "current_header_deadline", None)
+        deadline = deadline_getter() if deadline_getter else None
+        if deadline is None:
+            deadline = time.monotonic() + REQUEST_HEADER_DEADLINE_SECONDS
+        self.rfile = _BoundedHeaderReader(self.rfile, self.connection, deadline)
+
+    def handle(self):
+        try:
+            super().handle()
+        except _HeaderReadError as exc:
+            self.close_connection = True
+            try:
+                self.wfile.write(exc.response)
+                self.wfile.flush()
+            except (OSError, ssl.SSLError):
+                pass
+
+    def parse_request(self):
+        try:
+            return super().parse_request()
+        finally:
+            self.rfile.finish_headers()
 
     def log_message(self, *a):
         pass

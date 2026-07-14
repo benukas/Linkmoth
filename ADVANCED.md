@@ -9,13 +9,11 @@ layout, updating, uninstalling, and troubleshooting.
 
 ## Sigstore-verified installation
 
-The normal quick-start path trusts GitHub and HTTPS: the bootstrap checks the
-release archive's SHA-256 but does not independently authenticate the
-publisher, so Linkmoth reports **Unverified/manual installation**. If you
-want cryptographic build provenance instead, install
+The normal quick-start path is Sigstore-verified by default. Install
 [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/),
-download the bootstrap bundle, verify the pinned release-workflow identity,
-and run the same bootstrap with `--sigstore-verified`:
+download the bootstrap and its bundle, verify the pinned release-workflow
+identity before using `sudo`, and run the bootstrap. It then verifies the
+archive, checksum, and manifest against that same identity:
 
 ```bash
 VERSION=v0.2.8
@@ -27,23 +25,32 @@ cosign verify-blob \
   --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   "linkmoth-$VERSION-bootstrap.sh"
-sudo bash "linkmoth-$VERSION-bootstrap.sh" --sigstore-verified
+sudo bash "linkmoth-$VERSION-bootstrap.sh"
 ```
 
 This writes a root-owned installation record and the dashboard will report
-**Sigstore-verified release** instead. No Git checkout, package manager, or
-Cosign installation is needed for the normal (non-verified) path — see
-[Quick start](README.md#quick-start).
+**Sigstore-verified release**. No Git checkout or package manager is needed —
+see [Quick start](README.md#quick-start).
+
+Only when verification is impossible, the explicitly insecure recovery path
+can bypass Sigstore while retaining the archive checksum check:
+
+```bash
+sudo bash "linkmoth-$VERSION-bootstrap.sh" --insecure-skip-verify
+```
+
+The bootstrap prints a warning to stderr and records the result as
+**Unverified/manual installation**. Do not use this as the normal install path.
 
 ## Installation provenance and manual updates
 
-Release builds carry immutable metadata for the exact source commit. The
-normal bootstrap checks the archive checksum and installs without Cosign; it
-does not claim publisher verification. When `--sigstore-verified` is selected,
-the bootstrap verifies the signed archive, checksum, and manifest against the
-pinned release-workflow identity, then writes a root-owned installation record
-containing the release version, commit, archive digest, verification state, and
-installation time. The dashboard reports exactly one state:
+Release builds carry immutable metadata for the exact source commit. By
+default, the bootstrap verifies the signed archive, checksum, and manifest
+against the pinned release-workflow identity, then writes a root-owned
+installation record containing the release version, commit, archive digest,
+verification state, and installation time. Only
+`--insecure-skip-verify` produces an unverified/manual installation. The
+dashboard reports exactly one state:
 **Sigstore-verified release**, **Unverified/manual installation**, **Legacy
 installation - provenance unavailable**, or **Installation record invalid**.
 It never guesses verified provenance from GitHub, a tag, or version matching.
