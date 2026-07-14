@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.6
+
 ### Installer
 
 - Browser-push setup now installs its pinned source-only `http-ece` dependency
@@ -13,6 +15,10 @@
   restart-safe SQLite deferral and one morning digest after quiet hours end.
 - Morning digests wait through global outages, while outbound webhooks continue
   using their normal retry queue.
+
+### Documentation
+
+- Quick-start and Advanced installation commands now install v0.2.6.
 
 ## 0.2.5
 
