@@ -7,6 +7,13 @@
 - Browser-push setup now installs its pinned source-only `http-ece` dependency
   while keeping every other Python dependency wheel-only and unprivileged.
 
+### Notifications
+
+- Added configurable local-time quiet hours for Discord and browser push, with
+  restart-safe SQLite deferral and one morning digest after quiet hours end.
+- Morning digests wait through global outages, while outbound webhooks continue
+  using their normal retry queue.
+
 ## 0.2.5
 
 ### Dashboard

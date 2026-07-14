@@ -248,6 +248,13 @@ requires **both** steps of CA trust (profile install **and** Certificate Trust
 Settings); desktop browsers are often more forgiving, which is why push can
 work on a laptop but fail on a phone with the same hostname.
 
+**Quiet hours** (Settings → Quiet hours) hold Discord and browser-push alerts
+between the configured start and end times, using the Linkmoth host's local
+clock. Alert summaries are stored in SQLite, survive restarts, and become one
+morning digest after quiet hours end. If a global outage is still active, the
+digest waits until the network recovers. Outbound webhooks are not silenced by
+quiet hours; their own persistent retry queue continues normally.
+
 ### Outbound webhooks
 
 **Settings → Outbound webhooks** manages up to 20 outbound integrations, each
@@ -336,6 +343,9 @@ into one **Generic JSON** webhook subscribed to the events it used to receive.
 | `discord_webhook_url` | `""` | Discord webhook for fault/recovery alerts (optional) |
 | `discord_notifications_enabled` | `false` | Enable Discord alerts (requires valid webhook URL) |
 | `push_notifications_enabled` | `true` | Enable browser push notifications |
+| `quiet_hours_enabled` | `false` | Hold Discord and browser-push alerts during the configured local-time window |
+| `quiet_hours_start` | `22:00` | Quiet-hours start in 24-hour Linkmoth host local time |
+| `quiet_hours_end` | `07:00` | Quiet-hours end and morning-digest time in 24-hour Linkmoth host local time |
 | `notify_webhook_url` | `""` | Legacy single-webhook URL — migrated once into Settings → Outbound webhooks, then unused |
 | `notify_webhook_enabled` | `false` | Legacy flag for the above (kept so old configs stay valid) |
 
@@ -390,7 +400,7 @@ query. Legacy `"local_dns": "auto"` and `false` values remain accepted.
 **Most settings don't need the file at all**: the dashboard **Settings** tab
 covers the Uptime Kuma link, auto-refresh vs history sampling, baseline
 interval, retention, Local DNS, upstream targets, Wi-Fi client IPs, Discord integration, and
-**database maintenance** (file size, `AUTO_VACUUM` mode, manual **VACUUM**
+quiet hours, and **database maintenance** (file size, `AUTO_VACUUM` mode, manual **VACUUM**
 button). Changes save privately (`0600`) to `/var/lib/linkmoth/settings.json`, override the config
 file, and apply immediately — no restart. Network binding and authentication
 options require editing `/etc/linkmoth/config.json` by hand and restarting

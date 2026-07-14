@@ -83,6 +83,26 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn('reg.pushManager.getSubscription()', dashboard)
         self.assertIn('disableBtn.classList.toggle("hidden", !sub);', dashboard)
 
+    def test_quiet_hours_controls_and_settings_are_wired(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        source = (ROOT / "linkmoth.py").read_text(encoding="utf-8")
+        config = (ROOT / "config.example.json").read_text(encoding="utf-8")
+        for control in (
+            'id="s-quiet-enabled"',
+            'id="s-quiet-start"',
+            'id="s-quiet-end"',
+            'id="s-quiet-status"',
+        ):
+            self.assertIn(control, dashboard)
+        for setting in (
+            "quiet_hours_enabled",
+            "quiet_hours_start",
+            "quiet_hours_end",
+        ):
+            self.assertIn(setting, dashboard)
+            self.assertIn(setting, source)
+            self.assertIn(setting, config)
+
     def test_ladder_keeps_probe_details_compact_and_nonduplicative(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('.row.with-probes { padding-bottom: 6px; border-bottom: 1px solid var(--border); }', dashboard)

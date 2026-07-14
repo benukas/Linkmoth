@@ -198,6 +198,19 @@ class KumaProxyHandlerTests(unittest.TestCase):
         self.assertEqual(len(self.discord_sent), 1)
         trig.assert_called_once()
 
+    def test_quiet_hours_defer_healthy_kuma_forward(self):
+        self._seed_run("all_clear", "ok")
+        with mock.patch.object(self.engine, "trigger", return_value=1), mock.patch(
+            "linkmoth_notify.defer_notification_if_quiet", return_value=True,
+        ):
+            result = self.proxy.handle_kuma_webhook(
+                KUMA_DOWN, self.engine, self.config, self.linkmoth.db,
+            )
+        self.assertEqual(result["action"], "deferred")
+        self.assertTrue(result["quiet_hours_deferred"])
+        self.assertFalse(result["forwarded_discord"])
+        self.assertEqual(self.discord_sent, [])
+
     def test_forwards_pihole_fault_not_global_outage(self):
         self._seed_run("pihole_broken", "bad")
         with mock.patch.object(self.engine, "trigger", return_value=1):

@@ -585,6 +585,31 @@ class AuthenticatedTests(LinkmothTestBase):
         self.assertEqual(code, 200)
         self.assertTrue(body.get("saved"))
 
+    def test_quiet_hours_settings_validate_and_apply(self):
+        _, _, cookie, csrf = self._login()
+        auth = {"X-CSRF-Token": csrf}
+        code, body, _, _ = http(
+            "POST", f"{self.base}/api/settings",
+            {
+                "quiet_hours_enabled": True,
+                "quiet_hours_start": "22:30",
+                "quiet_hours_end": "06:45",
+            },
+            headers=auth,
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(body["settings"]["quiet_hours_enabled"])
+        self.assertEqual(body["settings"]["quiet_hours_start"], "22:30")
+        code, body, _, _ = http(
+            "POST", f"{self.base}/api/settings",
+            {"quiet_hours_start": "22:00", "quiet_hours_end": "22:00"},
+            headers=auth,
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 400)
+        self.assertIn("quiet_hours_end", body["errors"])
+
     def test_device_api_requires_auth_and_csrf(self):
         payload = {
             "name": "Printer",

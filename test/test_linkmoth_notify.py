@@ -3,11 +3,13 @@ import importlib
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import threading
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -16,6 +18,124 @@ REPO_ROOT = BASE.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 import linkmoth_notify
+
+
+def local_stamp(hour, minute=0):
+    return time.mktime((2026, 7, 14, hour, minute, 0, -1, -1, -1))
+
+
+class QuietHoursTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="linkmoth_quiet_")
+        self.path = Path(self.tmp) / "state.db"
+        with self.db() as conn:
+            linkmoth_notify.init_notification_db(conn)
+            conn.execute(
+                "CREATE TABLE network_outage("
+                "id INTEGER PRIMARY KEY, active INTEGER NOT NULL DEFAULT 0)"
+            )
+            conn.execute("INSERT INTO network_outage(id, active) VALUES(1, 0)")
+        self.cfg = {
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": "22:00",
+            "quiet_hours_end": "07:00",
+            "push_notifications_enabled": True,
+            "discord_notifications_enabled": False,
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @contextmanager
+    def db(self):
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_overnight_window_and_validation(self):
+        self.assertTrue(linkmoth_notify.quiet_hours_active(
+            self.cfg, local_stamp(23),
+        ))
+        self.assertTrue(linkmoth_notify.quiet_hours_active(
+            self.cfg, local_stamp(6, 59),
+        ))
+        self.assertFalse(linkmoth_notify.quiet_hours_active(
+            self.cfg, local_stamp(7),
+        ))
+        self.assertEqual(linkmoth_notify.validate_quiet_time("09:05"), "09:05")
+        with self.assertRaises(ValueError):
+            linkmoth_notify.validate_quiet_time("9:05")
+
+    def test_deferred_push_survives_and_flushes_once(self):
+        deferred = linkmoth_notify.defer_notification_if_quiet(
+            self.cfg, self.db, "Printer is down", "No response",
+            push=True, now=local_stamp(23),
+        )
+        self.assertTrue(deferred)
+        status = linkmoth_notify.quiet_hours_status(
+            self.cfg, self.db, local_stamp(23),
+        )
+        self.assertTrue(status["active"])
+        self.assertEqual(status["pending"], 1)
+        with mock.patch("linkmoth_push.send_push_async") as push:
+            self.assertTrue(linkmoth_notify.flush_quiet_hours_digest(
+                self.cfg, Path(self.tmp), self.db, local_stamp(8),
+            ))
+            self.assertFalse(linkmoth_notify.flush_quiet_hours_digest(
+                self.cfg, Path(self.tmp), self.db, local_stamp(8),
+            ))
+        push.assert_called_once()
+        self.assertEqual(
+            linkmoth_notify.quiet_hours_status(self.cfg, self.db)["pending"],
+            0,
+        )
+
+    def test_global_outage_keeps_morning_digest_queued(self):
+        self.assertTrue(linkmoth_notify.defer_notification_if_quiet(
+            self.cfg, self.db, "WAN down", push=True, now=local_stamp(23),
+        ))
+        with self.db() as conn:
+            conn.execute("UPDATE network_outage SET active=1 WHERE id=1")
+        with mock.patch("linkmoth_push.send_push_async") as push:
+            self.assertFalse(linkmoth_notify.flush_quiet_hours_digest(
+                self.cfg, Path(self.tmp), self.db, local_stamp(8),
+            ))
+        push.assert_not_called()
+        self.assertEqual(
+            linkmoth_notify.quiet_hours_status(self.cfg, self.db)["pending"],
+            1,
+        )
+
+    def test_network_fault_is_queued_instead_of_sent(self):
+        incident = {"id": 4, "ref": "INC-20260714-0004"}
+        verdict = {
+            "severity": "bad",
+            "code": "wan_down",
+            "title": "WAN down",
+            "explain": "No internet response",
+            "hint": "Check the router",
+        }
+        with mock.patch.object(
+            linkmoth_notify, "quiet_hours_active", return_value=True,
+        ), mock.patch(
+            "linkmoth_discord.send_discord_alert",
+        ) as discord, mock.patch(
+            "linkmoth_push.send_push_async",
+        ) as push:
+            self.assertTrue(linkmoth_notify.notify_fault(
+                self.cfg, Path(self.tmp), self.db,
+                incident, verdict, [],
+            ))
+        discord.assert_not_called()
+        push.assert_not_called()
+        self.assertEqual(
+            linkmoth_notify.quiet_hours_status(self.cfg, self.db)["pending"],
+            1,
+        )
 
 
 class NotifyRecoveryDedupeTests(unittest.TestCase):

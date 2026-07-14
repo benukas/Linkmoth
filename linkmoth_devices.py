@@ -417,10 +417,16 @@ def notify_device_event(cfg, state_dir, db_connect, device, result, event):
         else f"🔴 {device['name']} is {state}"
     )
     body = f"{device['address']} · {result.get('summary') or state}"
-    if alerts.get("discord"):
+    from linkmoth_notify import defer_notification_if_quiet
+    deferred = defer_notification_if_quiet(
+        cfg, db_connect, title, body,
+        discord=bool(alerts.get("discord")),
+        push=bool(alerts.get("push")),
+    )
+    if alerts.get("discord") and not deferred:
         from linkmoth_discord import send_device_discord_alert
         send_device_discord_alert(device, result, recovery, cfg)
-    if alerts.get("push"):
+    if alerts.get("push") and not deferred:
         from linkmoth_push import send_push_async
         send_push_async(
             state_dir, db_connect, cfg, title, body,
