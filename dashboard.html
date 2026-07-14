@@ -94,7 +94,10 @@ nav button.active { color: var(--text); border-color: var(--text); }
 .mt12 { margin-top: 12px; }
 .hint-block { display: block; margin-top: 2px; }
 .wlan-hint { margin: 4px 0 10px 58px; font-size: 14px; color: var(--muted); }
-.v-compact { font-size: 20px; }
+.v-compact {
+  font-size: 16px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
 .card {
   background: var(--card); border: 1px solid var(--border);
   border-radius: 14px; padding: 20px 22px; margin-bottom: 16px;
@@ -151,8 +154,11 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
 .q-stats span { display: flex; flex-direction: column; line-height: 1.2; }
 .q-stats b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .q-stats small { color: var(--muted); font-size: 13px; }
-.row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--border); }
-.row:first-child { border-top: none; }
+.row { display: flex; align-items: center; gap: 14px; padding: 12px 0; }
+/* One divider per check, above each check block (not between a check and its
+   own evidence, and never trailing after the last check). */
+.ladder-check { border-top: 1px solid var(--border); }
+.ladder-check:first-child, .ladder-group + .ladder-check { border-top: none; }
 .badge {
   min-width: 44px; height: 44px; border-radius: 50%; flex: none;
   display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700;
@@ -168,8 +174,7 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
   font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
 }
 .ladder-group:first-child { margin-top: 0; }
-.ladder-group + .row { border-top: none; }
-.row.with-probes { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.row.with-probes { padding-bottom: 6px; }
 .probe-summary {
   display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
   background: var(--warn-bg); color: var(--warn-text); font-size: 13px; font-weight: 700;
@@ -178,7 +183,6 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
 .probe-evidence summary { cursor: pointer; }
 .probe-evidence ul { margin: 5px 0 8px; padding-left: 20px; }
 .probe-evidence li { margin: 3px 0; }
-.probe-evidence + .row { border-top: none; }
 .row.micro-row { padding: 4px 0 4px 28px; border-top: none; }
 .row.micro-row .label { font-size: 15px; font-weight: 500; }
 .row.micro-row .detail { font-size: 14px; }
@@ -361,6 +365,40 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 #wh-msg.bad, #wh-curl-msg.bad { color: var(--bad-text); }
 #wh-curl-msg { margin-left: 12px; font-size: 16px; }
 .push-cmd { display: inline-block; margin: 6px 0; padding: 6px 10px; font-family: ui-monospace, monospace; font-size: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; user-select: all; }
+/* Info tooltip: a small "i" badge that reveals its explanation on hover,
+   tap, or keyboard focus — so explanations don't clutter the page. */
+.info-tip {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; margin-left: 7px; border-radius: 50%; vertical-align: middle;
+  border: 1px solid var(--border); color: var(--muted);
+  font: italic 700 12px/1 Georgia, "Times New Roman", serif; cursor: help; user-select: none;
+  flex: none; transition: color 120ms ease, border-color 120ms ease;
+}
+.info-tip::after { content: "i"; }
+.info-tip:hover, .info-tip:focus-visible, .info-tip.open { color: var(--text); border-color: var(--text); outline: none; }
+.info-pop {
+  display: none; position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
+  width: max-content; max-width: min(320px, 80vw);
+  background: var(--card); color: var(--text); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 13px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+  font: 400 14px/1.5 system-ui, sans-serif; font-style: normal; white-space: normal; text-align: left;
+}
+.info-pop.pop-right { left: auto; right: 0; }
+.info-tip:hover .info-pop, .info-tip:focus .info-pop, .info-tip:focus-within .info-pop, .info-tip.open .info-pop { display: block; }
+.info-pop code { font-size: 13px; background: var(--bg); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.set-section h4 .info-tip { font-size: 12px; }
+
+/* Settings inner sub-tab bar. */
+.subnav { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 8px; }
+.subnav-btn {
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--muted);
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+.subnav-btn:hover { color: var(--text); border-color: var(--muted); }
+.subnav-btn.active { color: var(--text); border-color: var(--text); background: var(--card); }
+.subnav-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 .set-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
 .set-section h4 { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--text); }
 #save-settings { margin-top: 14px; }
@@ -417,7 +455,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .sec-audit-row { padding: 7px 0; border-top: 1px solid var(--border); font-size: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
 .sec-audit-row .when { color: var(--muted); min-width: 150px; }
 .sec-audit-row .ev { font-weight: 600; }
-#tab-security .set-section .action-btn { margin-right: 10px; margin-top: 4px; }
+#subtab-security .set-section .action-btn { margin-right: 10px; margin-top: 4px; }
 #auth-gate {
   position: fixed; inset: 0; background: var(--bg); z-index: 100;
   display: flex; align-items: center; justify-content: center; padding: 24px;
@@ -537,7 +575,6 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <button id="nav-devices">Devices</button>
     <button id="nav-history">History</button>
     <button id="nav-settings">Settings</button>
-    <button id="nav-security">Security</button>
   </nav>
 
   <div id="tab-today">
@@ -722,239 +759,249 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   <div id="tab-settings" class="hidden">
     <section class="card">
       <h3>Settings</h3>
-      <div class="set-section">
-        <h4>Appearance</h4>
-        <div class="set-row">
-          <label for="s-theme">Theme</label>
-          <select id="s-theme">
-            <option value="default">Default</option>
-            <option value="dark">Dark</option>
-            <option value="white">White</option>
-          </select>
-        </div>
-      </div>
-      <div class="set-section" id="release-settings">
-        <h4>Installation and updates</h4>
-        <p id="provenance-state" class="set-hint">Checking installation provenance…</p>
-        <button type="button" id="update-check" class="action-btn">Check for update</button>
-        <p id="update-result" class="set-hint hidden" aria-live="polite"></p>
-        <p class="set-hint">This only runs when you press the button. GitHub receives this host’s public IP, request time, ordinary TLS/HTTP metadata, and Linkmoth’s generic User-Agent. Linkmoth sends no identifier, configuration, incident data, diagnostics, credentials, or usage telemetry.</p>
-      </div>
-      <div class="set-section">
-        <h4>Evidence exports</h4>
-        <p class="set-hint">Exports are created locally from bounded evidence. Detailed JSON is for administrators; readable local is a plain-text handoff; support-safe JSON removes credentials and pseudonymizes private-network identifiers consistently within that export.</p>
-        <div class="export-actions">
-          <button type="button" id="export-detailed" class="action-btn">Download detailed JSON</button>
-          <button type="button" id="export-readable" class="action-btn">Download readable local</button>
-          <button type="button" id="export-support" class="action-btn">Download support-safe JSON</button>
-        </div>
-      </div>
-      <div class="set-row"><label for="s-kuma">Uptime Kuma link</label><input id="s-kuma" placeholder="auto"></div>
-      <p class="set-hint">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</p>
-      <div class="set-row"><label for="s-refresh">Auto-refresh (seconds)</label><input id="s-refresh" type="number" min="2" max="120" step="1"></div>
-      <p class="set-hint">How often the dashboard re-fetches data. Does not run new network checks by itself.</p>
-      <div class="set-row"><label for="s-history">Latency history (minutes)</label><input id="s-history" type="number" min="0" max="1440" step="1"></div>
-      <p class="set-hint">Background diagnosis interval that feeds the sparkline graphs. 0 = use baseline interval only.</p>
-      <div class="set-row"><label for="s-baseline">Baseline check (minutes)</label><input id="s-baseline" type="number" min="0" max="1440" step="1"></div>
-      <p class="set-hint">How often Linkmoth may auto-open an incident when a background check finds a fault. 0 turns it off.</p>
-      <div class="set-row"><label for="s-retention">Keep history (days)</label><input id="s-retention" type="number" min="1" max="3650" step="1"></div>
-      <div class="set-row"><label for="s-domain">DNS test domain</label><input id="s-domain" placeholder="gstatic.com"></div>
-      <div class="set-section">
-        <h4>Local DNS resolver</h4>
-        <div class="set-row">
-          <label for="s-local-dns-mode">Check mode</label>
-          <select id="s-local-dns-mode">
-            <option value="auto">Auto-detect same-host resolver</option>
-            <option value="enabled">Always check</option>
-            <option value="disabled">Disabled</option>
-          </select>
-        </div>
-        <div class="set-row"><label for="s-local-dns-address">Resolver IPv4 address</label><input id="s-local-dns-address" inputmode="decimal" placeholder="127.0.0.1"></div>
-        <div class="set-row">
-          <label for="s-local-dns-provider">Same-host provider</label>
-          <select id="s-local-dns-provider">
-            <option value="auto">Auto</option>
-            <option value="generic">Generic</option>
-            <option value="pihole">Pi-hole</option>
-            <option value="unbound">Unbound</option>
-            <option value="dnsmasq">dnsmasq</option>
-          </select>
-        </div>
-        <p id="s-local-dns-note" class="set-hint">Provider-specific checks are available only when the resolver runs on the Linkmoth host. Remote resolvers always use generic DNS-response checks.</p>
-      </div>
-      <div class="set-row"><label for="s-upstream">Upstream DNS servers</label><input id="s-upstream" placeholder="1.1.1.1, 8.8.8.8"></div>
-      <div class="set-row"><label for="s-ping">Ping targets</label><input id="s-ping" placeholder="1.1.1.1, 8.8.8.8"></div>
-      <div class="set-row"><label for="s-wifi-clients">Wi-Fi client IPs</label><input id="s-wifi-clients" placeholder="192.168.1.50, 192.168.1.51"></div>
-      <p class="set-hint">Always-on devices on router Wi-Fi. Linkmoth pings them after the router LAN check; if the router answers but every client is silent, the WLAN rung fails.</p>
-      <div class="set-section">
-        <h4>Notification Integrations</h4>
-        <div class="set-row">
-          <label for="s-discord-enabled">Enable Discord alerts</label>
-          <input id="s-discord-enabled" type="checkbox">
-        </div>
-        <div class="set-row">
-          <label for="s-discord-url">Discord webhook URL</label>
-          <input id="s-discord-url" type="url" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
-        </div>
-        <p class="set-hint">Create a webhook in Discord channel settings. Alerts fire on confirmed faults and recoveries only. During WAN outages, Discord alerts are deferred until the link returns.</p>
-      </div>
-      <div class="set-section">
-        <h4>Browser push</h4>
-        <div class="set-row">
-          <label for="s-push-enabled">Enable push notifications</label>
-          <input id="s-push-enabled" type="checkbox">
-        </div>
-        <p id="push-status" class="set-hint">Loading push status…</p>
-        <button type="button" id="push-enable" class="action-btn">Enable push on this device</button>
-        <button type="button" id="push-disable" class="action-btn hidden">Disable push on this device</button>
-        <p class="set-hint">Works on desktop and Android in the browser. On iPhone/iPad you must add Linkmoth to the Home Screen first (Share → Add to Home Screen), open it from the icon, then enable push – Safari tabs cannot subscribe. The Linkmoth CA must be fully trusted on iOS (profile install <em>and</em> Settings → General → About → Certificate Trust Settings). Global outages defer push until the network recovers.</p>
-      </div>
-      <div class="set-section">
-        <h4>Quiet hours</h4>
-        <div class="set-row">
-          <label for="s-quiet-enabled">Hold Discord and push alerts overnight</label>
-          <input id="s-quiet-enabled" type="checkbox">
-        </div>
-        <div class="set-row">
-          <label for="s-quiet-start">Starts</label>
-          <input id="s-quiet-start" type="time" value="22:00">
-        </div>
-        <div class="set-row">
-          <label for="s-quiet-end">Ends</label>
-          <input id="s-quiet-end" type="time" value="07:00">
-        </div>
-        <p id="s-quiet-status" class="set-hint">Uses the Linkmoth host's local time. Outbound webhooks continue normally.</p>
-      </div>
-      <div class="set-section">
-        <h4>Outbound webhooks</h4>
-        <p class="set-hint"><b>Linkmoth sends events out to another app.</b> Create an inbound webhook in that app first, then paste the URL it gives you below. There is no Linkmoth URL to copy for this direction. Failed deliveries, and events during an outage, are queued and retried after recovery.</p>
-        <div id="wh-list"><p class="empty">Loading webhooks…</p></div>
-        <button type="button" id="wh-add" class="action-btn">Add webhook</button>
+      <nav class="subnav" role="tablist" aria-label="Settings sections">
+        <button type="button" class="subnav-btn active" data-subtab="general">General</button>
+        <button type="button" class="subnav-btn" data-subtab="network">Network checks</button>
+        <button type="button" class="subnav-btn" data-subtab="notifications">Notifications</button>
+        <button type="button" class="subnav-btn" data-subtab="data">Data</button>
+        <button type="button" class="subnav-btn" data-subtab="security">Security</button>
+      </nav>
 
-        <div id="wh-form" class="hidden">
-          <h4 id="wh-form-title">Add webhook</h4>
-          <div class="set-row"><label for="wh-name">Name</label><input id="wh-name" maxlength="64" placeholder="Phone alerts (ntfy)"></div>
+      <div class="subtab-panel" id="subtab-general">
+        <div class="set-section">
+          <h4>Appearance</h4>
           <div class="set-row">
-            <label for="wh-preset">Preset</label>
-            <select id="wh-preset"></select>
+            <label for="s-theme">Theme</label>
+            <select id="s-theme">
+              <option value="default">Default</option>
+              <option value="dark">Dark</option>
+              <option value="white">White</option>
+            </select>
           </div>
-          <div class="set-row"><label for="wh-url">Destination URL</label><input id="wh-url" type="url" autocomplete="off"></div>
-          <p id="wh-url-hint" class="set-hint">Paste the receiving app's webhook URL here.</p>
-          <div class="set-row"><label for="wh-enabled">Enabled</label><input id="wh-enabled" type="checkbox" checked></div>
-          <div class="set-section">
-            <h4>Events to send</h4>
-            <div id="wh-events"></div>
+        </div>
+        <div class="set-section">
+          <h4>Dashboard</h4>
+          <div class="set-row"><label for="s-refresh">Auto-refresh (seconds)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">How often the dashboard re-fetches data. Does not run new network checks by itself.</span></span></label><input id="s-refresh" type="number" min="2" max="120" step="1"></div>
+          <div class="set-row"><label for="s-kuma">Uptime Kuma link<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</span></span></label><input id="s-kuma" placeholder="auto"></div>
+        </div>
+        <div class="set-section" id="release-settings">
+          <h4>Installation and updates<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">The update check only runs when you press the button. GitHub receives this host's public IP, request time, ordinary TLS/HTTP metadata, and Linkmoth's generic User-Agent. Linkmoth sends no identifier, configuration, incident data, diagnostics, credentials, or usage telemetry.</span></span></h4>
+          <p id="provenance-state" class="set-hint">Checking installation provenance…</p>
+          <button type="button" id="update-check" class="action-btn">Check for update</button>
+          <p id="update-result" class="set-hint hidden" aria-live="polite"></p>
+        </div>
+        <div class="set-section">
+          <h4>Session</h4>
+          <button id="logout-btn" type="button" class="action-btn hidden">Sign out</button>
+        </div>
+      </div>
+
+      <div class="subtab-panel hidden" id="subtab-network">
+        <div class="set-section">
+          <h4>Check intervals</h4>
+          <div class="set-row"><label for="s-baseline">Baseline check (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">How often Linkmoth may auto-open an incident when a background check finds a fault. 0 turns it off.</span></span></label><input id="s-baseline" type="number" min="0" max="1440" step="1"></div>
+          <div class="set-row"><label for="s-history">Latency history (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Background diagnosis interval that feeds the sparkline graphs. 0 = use baseline interval only.</span></span></label><input id="s-history" type="number" min="0" max="1440" step="1"></div>
+          <div class="set-row"><label for="s-retention">Keep history (days)</label><input id="s-retention" type="number" min="1" max="3650" step="1"></div>
+        </div>
+        <div class="set-section">
+          <h4>Targets</h4>
+          <div class="set-row"><label for="s-domain">DNS test domain</label><input id="s-domain" placeholder="gstatic.com"></div>
+          <div class="set-row"><label for="s-upstream">Upstream DNS servers</label><input id="s-upstream" placeholder="1.1.1.1, 8.8.8.8"></div>
+          <div class="set-row"><label for="s-ping">Ping targets</label><input id="s-ping" placeholder="1.1.1.1, 8.8.8.8"></div>
+          <div class="set-row"><label for="s-wifi-clients">Wi-Fi client IPs<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Always-on devices on router Wi-Fi. Linkmoth pings them after the router LAN check; if the router answers but every client is silent, the WLAN rung fails.</span></span></label><input id="s-wifi-clients" placeholder="192.168.1.50, 192.168.1.51"></div>
+        </div>
+        <div class="set-section">
+          <h4>Local DNS resolver</h4>
+          <div class="set-row">
+            <label for="s-local-dns-mode">Check mode</label>
+            <select id="s-local-dns-mode">
+              <option value="auto">Auto-detect same-host resolver</option>
+              <option value="enabled">Always check</option>
+              <option value="disabled">Disabled</option>
+            </select>
           </div>
-          <div class="set-row wh-headers-row">
-            <label for="wh-headers">Custom headers</label>
-            <textarea id="wh-headers" rows="2" spellcheck="false" placeholder="Authorization: Bearer xxx&#10;X-Linkmoth-Token: xxx"></textarea>
+          <div class="set-row"><label for="s-local-dns-address">Resolver IPv4 address</label><input id="s-local-dns-address" inputmode="decimal" placeholder="127.0.0.1"></div>
+          <div class="set-row">
+            <label for="s-local-dns-provider">Same-host provider</label>
+            <select id="s-local-dns-provider">
+              <option value="auto">Auto</option>
+              <option value="generic">Generic</option>
+              <option value="pihole">Pi-hole</option>
+              <option value="unbound">Unbound</option>
+              <option value="dnsmasq">dnsmasq</option>
+            </select>
           </div>
-          <p class="set-hint">One <code>Name: value</code> per line. Values are stored as secrets – after saving they show masked (<code>••••••••abcd</code>); leave the masked value untouched to keep it.</p>
-          <div id="wh-template-wrap" class="hidden">
-            <div class="set-row wh-headers-row">
-              <label for="wh-template">Payload template</label>
-              <textarea id="wh-template" rows="6" spellcheck="false"></textarea>
+          <p id="s-local-dns-note" class="set-hint">Provider-specific checks are available only when the resolver runs on the Linkmoth host. Remote resolvers always use generic DNS-response checks.</p>
+        </div>
+      </div>
+
+      <div class="subtab-panel hidden" id="subtab-notifications">
+        <div class="set-section">
+          <h4>Notification Integrations<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Create a webhook in Discord channel settings. Alerts fire on confirmed faults and recoveries only. During WAN outages, Discord alerts are deferred until the link returns.</span></span></h4>
+          <div class="set-row">
+            <label for="s-discord-enabled">Enable Discord alerts</label>
+            <input id="s-discord-enabled" type="checkbox">
+          </div>
+          <div class="set-row">
+            <label for="s-discord-url">Discord webhook URL</label>
+            <input id="s-discord-url" type="url" placeholder="https://discord.com/api/webhooks/…" autocomplete="off">
+          </div>
+        </div>
+        <div class="set-section">
+          <h4>Browser push<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Works on desktop and Android in the browser. On iPhone/iPad you must add Linkmoth to the Home Screen first (Share → Add to Home Screen), open it from the icon, then enable push – Safari tabs cannot subscribe. The Linkmoth CA must be fully trusted on iOS (profile install <em>and</em> Settings → General → About → Certificate Trust Settings). Global outages defer push until the network recovers.</span></span></h4>
+          <div class="set-row">
+            <label for="s-push-enabled">Enable push notifications</label>
+            <input id="s-push-enabled" type="checkbox">
+          </div>
+          <p id="push-status" class="set-hint">Loading push status…</p>
+          <button type="button" id="push-enable" class="action-btn">Enable push on this device</button>
+          <button type="button" id="push-disable" class="action-btn hidden">Disable push on this device</button>
+        </div>
+        <div class="set-section">
+          <h4>Quiet hours</h4>
+          <div class="set-row">
+            <label for="s-quiet-enabled">Hold Discord and push alerts overnight</label>
+            <input id="s-quiet-enabled" type="checkbox">
+          </div>
+          <div class="set-row">
+            <label for="s-quiet-start">Starts</label>
+            <input id="s-quiet-start" type="time" value="22:00">
+          </div>
+          <div class="set-row">
+            <label for="s-quiet-end">Ends</label>
+            <input id="s-quiet-end" type="time" value="07:00">
+          </div>
+          <p id="s-quiet-status" class="set-hint">Uses the Linkmoth host's local time. Outbound webhooks continue normally.</p>
+        </div>
+        <div class="set-section">
+          <h4>Outbound webhooks<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop"><b>Linkmoth sends events out to another app.</b> Create an inbound webhook in that app first, then paste the URL it gives you below. There is no Linkmoth URL to copy for this direction. Failed deliveries, and events during an outage, are queued and retried after recovery.</span></span></h4>
+          <div id="wh-list"><p class="empty">Loading webhooks…</p></div>
+          <button type="button" id="wh-add" class="action-btn">Add webhook</button>
+
+          <div id="wh-form" class="hidden">
+            <h4 id="wh-form-title">Add webhook</h4>
+            <div class="set-row"><label for="wh-name">Name</label><input id="wh-name" maxlength="64" placeholder="Phone alerts (ntfy)"></div>
+            <div class="set-row">
+              <label for="wh-preset">Preset</label>
+              <select id="wh-preset"></select>
             </div>
-            <p class="set-hint">Placeholders only – no logic: <code id="wh-template-vars"></code></p>
+            <div class="set-row"><label for="wh-url">Destination URL</label><input id="wh-url" type="url" autocomplete="off"></div>
+            <p id="wh-url-hint" class="set-hint">Paste the receiving app's webhook URL here.</p>
+            <div class="set-row"><label for="wh-enabled">Enabled</label><input id="wh-enabled" type="checkbox" checked></div>
+            <div class="set-section">
+              <h4>Events to send</h4>
+              <div id="wh-events"></div>
+            </div>
+            <div class="set-row wh-headers-row">
+              <label for="wh-headers">Custom headers<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">One <code>Name: value</code> per line. Values are stored as secrets – after saving they show masked (<code>••••••••abcd</code>); leave the masked value untouched to keep it.</span></span></label>
+              <textarea id="wh-headers" rows="2" spellcheck="false" placeholder="Authorization: Bearer xxx&#10;X-Linkmoth-Token: xxx"></textarea>
+            </div>
+            <div id="wh-template-wrap" class="hidden">
+              <div class="set-row wh-headers-row">
+                <label for="wh-template">Payload template</label>
+                <textarea id="wh-template" rows="6" spellcheck="false"></textarea>
+              </div>
+              <p class="set-hint">Placeholders only – no logic: <code id="wh-template-vars"></code></p>
+            </div>
+            <p id="wh-msg"></p>
+            <div class="device-form-actions">
+              <button type="button" id="wh-save" class="action-btn">Save webhook</button>
+              <button type="button" id="wh-cancel" class="action-btn">Cancel</button>
+            </div>
           </div>
-          <p id="wh-msg"></p>
-          <div class="device-form-actions">
-            <button type="button" id="wh-save" class="action-btn">Save webhook</button>
-            <button type="button" id="wh-cancel" class="action-btn">Cancel</button>
+
+          <div class="set-section">
+            <h4>Inbound webhook<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop"><b>Another app sends an alert into Linkmoth.</b> Copy the URL and bearer token below into Uptime Kuma, Grafana, Zabbix, or your script. Linkmoth then runs a diagnosis. Send a JSON <code>POST</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Example body: <code>{"source":"grafana","event":"down","monitor":"WAN"}</code>.</span></span></h4>
+            <div class="set-row"><label for="wh-inbound-url">Linkmoth inbound URL</label><input id="wh-inbound-url" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
+            <div class="set-row"><label for="wh-inbound-secret">Bearer token</label><input id="wh-inbound-secret" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
+            <div class="device-form-actions">
+              <button type="button" id="wh-copy-url" class="action-btn">Copy inbound URL</button>
+              <button type="button" id="wh-copy-token" class="action-btn">Copy bearer token</button>
+              <button type="button" id="wh-copy-curl" class="action-btn">Copy curl test</button>
+            </div>
+            <span id="wh-curl-msg" aria-live="polite"></span>
           </div>
+        </div>
+      </div>
+
+      <div class="subtab-panel hidden" id="subtab-data">
+        <div class="set-section">
+          <h4>Evidence exports<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Exports are created locally from bounded evidence. Detailed JSON is for administrators; readable local is a plain-text handoff; support-safe JSON removes credentials and pseudonymizes private-network identifiers consistently within that export.</span></span></h4>
+          <div class="export-actions">
+            <button type="button" id="export-detailed" class="action-btn">Download detailed JSON</button>
+            <button type="button" id="export-readable" class="action-btn">Download readable local</button>
+            <button type="button" id="export-support" class="action-btn">Download support-safe JSON</button>
+          </div>
+        </div>
+        <div class="set-section">
+          <h4>Database maintenance</h4>
+          <p id="db-status" class="set-hint">Loading database info…</p>
+          <button type="button" id="vacuum-db" class="action-btn">Run VACUUM</button><span id="db-msg"></span>
+        </div>
+      </div>
+
+      <div class="subtab-panel hidden" id="subtab-security">
+        <div class="set-section">
+          <h4>Change password<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">At least 12 characters. Changing your password signs you out of all sessions on every device – you'll log back in.</span></span></h4>
+          <div class="set-row"><label for="sec-cur-pw">Current password</label>
+            <input id="sec-cur-pw" type="password" autocomplete="current-password"></div>
+          <div class="set-row"><label for="sec-new-pw">New password</label>
+            <input id="sec-new-pw" type="password" autocomplete="new-password" minlength="12"></div>
+          <div class="set-row"><label for="sec-new-pw2">Confirm new password</label>
+            <input id="sec-new-pw2" type="password" autocomplete="new-password" minlength="12"></div>
+          <button type="button" id="sec-change-pw" class="action-btn">Change password</button>
+          <span id="sec-pw-msg"></span>
         </div>
 
         <div class="set-section">
-          <h4>Inbound webhook</h4>
-          <p class="set-hint"><b>Another app sends an alert into Linkmoth.</b> Copy the URL and bearer token below into Uptime Kuma, Grafana, Zabbix, or your script. Linkmoth then runs a diagnosis.</p>
-          <div class="set-row"><label for="wh-inbound-url">Linkmoth inbound URL</label><input id="wh-inbound-url" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
-          <div class="set-row"><label for="wh-inbound-secret">Bearer token</label><input id="wh-inbound-secret" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
-          <p class="set-hint inbound-example">Send a JSON <code>POST</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Example body: <code>{"source":"grafana","event":"down","monitor":"WAN"}</code>.</p>
-          <div class="device-form-actions">
-            <button type="button" id="wh-copy-url" class="action-btn">Copy inbound URL</button>
-            <button type="button" id="wh-copy-token" class="action-btn">Copy bearer token</button>
-            <button type="button" id="wh-copy-curl" class="action-btn">Copy curl test</button>
+          <h4>Two-factor authentication (2FA)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Add an authenticator app (TOTP) as a second factor. Enabling or disabling 2FA, or regenerating recovery codes, signs you out of all sessions – you'll log back in.</span></span></h4>
+          <p id="sec-totp-status" class="set-hint">Loading…</p>
+
+          <div id="sec-totp-off">
+            <button type="button" id="sec-totp-begin" class="action-btn">Set up 2FA</button>
           </div>
-          <span id="wh-curl-msg" aria-live="polite"></span>
-        </div>
-      </div>
-      <div class="set-section">
-        <h4>Database maintenance</h4>
-        <p id="db-status" class="set-hint">Loading database info…</p>
-        <button type="button" id="vacuum-db" class="action-btn">Run VACUUM</button><span id="db-msg"></span>
-      </div>
-      <button id="save-settings" class="action-btn">Save settings</button><span id="settings-msg"></span>
-      <div class="set-section">
-        <h4>Session</h4>
-        <button id="logout-btn" type="button" class="action-btn hidden">Sign out</button>
-      </div>
-    </section>
-  </div>
 
-  <div id="tab-security" class="hidden">
-    <section class="card">
-      <h3>Security</h3>
+          <div id="sec-totp-enroll" class="hidden">
+            <p class="set-hint">1. Scan this QR code with your authenticator app (or enter the secret manually), then enter a 6-digit code to activate. Your recovery codes appear after you activate.</p>
+            <div id="sec-totp-qr" class="sec-qr" aria-label="TOTP setup QR code"></div>
+            <div class="set-row"><label>Secret</label><code id="sec-totp-secret" class="sec-copy"></code></div>
+            <div class="set-row"><label>Setup link</label><code id="sec-totp-uri" class="sec-copy"></code></div>
+            <div class="set-row"><label for="sec-totp-code">Enter a code to activate</label>
+              <input id="sec-totp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+            <button type="button" id="sec-totp-activate" class="action-btn">Activate 2FA</button>
+            <button type="button" id="sec-totp-cancel" class="action-btn">Cancel</button>
+          </div>
 
-      <div class="set-section">
-        <h4>Change password</h4>
-        <div class="set-row"><label for="sec-cur-pw">Current password</label>
-          <input id="sec-cur-pw" type="password" autocomplete="current-password"></div>
-        <div class="set-row"><label for="sec-new-pw">New password</label>
-          <input id="sec-new-pw" type="password" autocomplete="new-password" minlength="12"></div>
-        <div class="set-row"><label for="sec-new-pw2">Confirm new password</label>
-          <input id="sec-new-pw2" type="password" autocomplete="new-password" minlength="12"></div>
-        <p class="set-hint">At least 12 characters. Changing your password signs you out of all sessions on every device – you'll log back in.</p>
-        <button type="button" id="sec-change-pw" class="action-btn">Change password</button>
-        <span id="sec-pw-msg"></span>
-      </div>
+          <div id="sec-totp-activated" class="hidden">
+            <p class="device-warning"><b>2FA is on. Save your recovery codes now.</b> Each works once if you lose your authenticator – they are shown only this once.</p>
+            <pre id="sec-totp-codes" class="sec-codes"></pre>
+            <p class="set-hint">After signing in with your password, use the next authenticator code if your app still shows the code you just entered.</p>
+            <button type="button" id="sec-totp-done" class="action-btn">I've saved my codes – sign in</button>
+          </div>
 
-      <div class="set-section">
-        <h4>Two-factor authentication (2FA)</h4>
-        <p id="sec-totp-status" class="set-hint">Loading…</p>
-
-        <div id="sec-totp-off">
-          <p class="set-hint">Add an authenticator app (TOTP) as a second factor. Enabling 2FA signs you out of all sessions – you'll log back in with a code.</p>
-          <button type="button" id="sec-totp-begin" class="action-btn">Set up 2FA</button>
+          <div id="sec-totp-on" class="hidden">
+            <div class="set-row"><label for="sec-totp-pw">Password</label>
+              <input id="sec-totp-pw" type="password" autocomplete="current-password"></div>
+            <button type="button" id="sec-totp-regen" class="action-btn">Regenerate recovery codes</button>
+            <button type="button" id="sec-totp-disable" class="action-btn">Disable 2FA</button>
+            <pre id="sec-regen-codes" class="sec-codes hidden"></pre>
+          </div>
+          <span id="sec-totp-msg"></span>
         </div>
 
-        <div id="sec-totp-enroll" class="hidden">
-          <p class="set-hint">1. Scan this QR code with your authenticator app (or enter the secret manually), then enter a 6-digit code to activate. Your recovery codes appear after you activate.</p>
-          <div id="sec-totp-qr" class="sec-qr" aria-label="TOTP setup QR code"></div>
-          <div class="set-row"><label>Secret</label><code id="sec-totp-secret" class="sec-copy"></code></div>
-          <div class="set-row"><label>Setup link</label><code id="sec-totp-uri" class="sec-copy"></code></div>
-          <div class="set-row"><label for="sec-totp-code">Enter a code to activate</label>
-            <input id="sec-totp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
-          <button type="button" id="sec-totp-activate" class="action-btn">Activate 2FA</button>
-          <button type="button" id="sec-totp-cancel" class="action-btn">Cancel</button>
+        <div class="set-section">
+          <h4>Security posture</h4>
+          <div id="sec-posture" class="set-hint">Loading…</div>
         </div>
 
-        <div id="sec-totp-activated" class="hidden">
-          <p class="device-warning"><b>2FA is on. Save your recovery codes now.</b> Each works once if you lose your authenticator – they are shown only this once.</p>
-          <pre id="sec-totp-codes" class="sec-codes"></pre>
-          <p class="set-hint">After signing in with your password, use the next authenticator code if your app still shows the code you just entered.</p>
-          <button type="button" id="sec-totp-done" class="action-btn">I've saved my codes – sign in</button>
+        <div class="set-section">
+          <h4>Audit log<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Recent authentication events. Secrets are never recorded.</span></span></h4>
+          <div id="sec-audit"><p class="empty">Loading…</p></div>
         </div>
-
-        <div id="sec-totp-on" class="hidden">
-          <p class="set-hint">2FA is on. Disabling it, or regenerating recovery codes, requires your password and signs you out of all sessions.</p>
-          <div class="set-row"><label for="sec-totp-pw">Password</label>
-            <input id="sec-totp-pw" type="password" autocomplete="current-password"></div>
-          <button type="button" id="sec-totp-regen" class="action-btn">Regenerate recovery codes</button>
-          <button type="button" id="sec-totp-disable" class="action-btn">Disable 2FA</button>
-          <pre id="sec-regen-codes" class="sec-codes hidden"></pre>
-        </div>
-        <span id="sec-totp-msg"></span>
       </div>
 
-      <div class="set-section">
-        <h4>Security posture</h4>
-        <div id="sec-posture" class="set-hint">Loading…</div>
-      </div>
-
-      <div class="set-section">
-        <h4>Audit log</h4>
-        <p class="set-hint">Recent authentication events. Secrets are never recorded.</p>
-        <div id="sec-audit"><p class="empty">Loading…</p></div>
+      <div id="settings-save-bar">
+        <button id="save-settings" class="action-btn">Save settings</button><span id="settings-msg"></span>
       </div>
     </section>
   </div>
@@ -1393,7 +1440,9 @@ function renderLadderCheck(c) {
   if (c.id === "router_wlan" && c.ok === false) {
     html += `<p class="set-hint wlan-hint">Use Wi-Fi-only devices that reply to ping – not a wired PC. Windows often blocks ICMP.</p>`;
   }
-  return html;
+  // Wrap the whole check (row + evidence + micro rows + hint) so the divider
+  // separates entire checks rather than splitting a check from its evidence.
+  return `<div class="ladder-check">${html}</div>`;
 }
 
 function renderLadder(checks) {
@@ -1852,11 +1901,13 @@ async function refresh() {
   if (s.quiet_hours) {
     const q = s.quiet_hours;
     const parts = [];
+    const zone = q.timezone || "local time";
+    if (q.now) parts.push(`Pi time now: ${q.now} (${zone}).`);
     if (!q.enabled) parts.push("Quiet hours are off.");
     else if (q.active) parts.push(`Quiet hours are active until ${q.end}.`);
     else parts.push(`Quiet hours run from ${q.start} to ${q.end}.`);
     if (q.pending) parts.push(`${q.pending} alert${q.pending === 1 ? "" : "s"} waiting for the morning summary.`);
-    parts.push(`Uses ${q.timezone || "the Linkmoth host's local time"}; outbound webhooks continue normally.`);
+    parts.push("Evaluated on the Linkmoth host's clock; outbound webhooks continue normally.");
     $("s-quiet-status").textContent = parts.join(" ");
   }
   renderTodayBanner(s);
@@ -1937,7 +1988,7 @@ async function refresh() {
       <div class="stat"><div class="k">Uptime, recorded interval</div><div class="v">${st.uptime_pct === null ? "–" : st.uptime_pct + "%"}</div><small>${st.monitoring_interval_s ? fmtDur(st.monitoring_interval_s) + " monitored" : "no recorded interval"}</small></div>
       <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d} <small>${st.false_alarms_30d} false</small></div></div>
       <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div></div>
-      <div class="stat"><div class="k">Top offender</div><div class="v v-compact">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "–"}</div></div>`;
+      <div class="stat"><div class="k">Top offender</div><div class="v v-compact" title="${top ? esc(BLAME_NAMES[top[0]] || top[0]) : ""}">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "–"}</div></div>`;
     const maxN = Math.max(...blameEntries.map((e) => e[1]), st.false_alarms_30d, 1);
     const total = blameEntries.reduce((acc, e) => acc + e[1], 0) + st.false_alarms_30d;
     if (total > 0) {
@@ -2759,8 +2810,10 @@ function closeNavMenu() {
   $("main-nav").classList.remove("open");
   $("nav-burger").setAttribute("aria-expanded", "false");
 }
-const TAB_NAMES = ["today", "devices", "history", "settings", "security"];
+const TAB_NAMES = ["today", "devices", "history", "settings"];
+const SETTINGS_SUBTABS = ["general", "network", "notifications", "data", "security"];
 let currentTab = "today";
+let currentSettingsSubtab = "general";
 function showTab(name) {
   if (!TAB_NAMES.includes(name)) name = "today";
   currentTab = name;
@@ -2770,16 +2823,35 @@ function showTab(name) {
   }
   if (name === "devices") loadDevices(false);
   if (name === "history") loadHistory();
-  if (name === "settings") { loadDatabaseInfo(); loadWebhooks(false); loadInboundWebhookInfo(); }
-  if (name === "security") loadSecurity();
+  if (name === "settings") showSettingsSubtab(currentSettingsSubtab);
   closeNavMenu();
   // Reflect the tab in the URL fragment so PWA shortcuts (/#history) and
   // bookmarks land on the right tab. replaceState avoids a history entry and
   // does not fire hashchange (which would re-enter applyTabFromHash).
   if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
 }
+function showSettingsSubtab(name) {
+  if (!SETTINGS_SUBTABS.includes(name)) name = "general";
+  currentSettingsSubtab = name;
+  for (const g of SETTINGS_SUBTABS) {
+    $("subtab-" + g).classList.toggle("hidden", g !== name);
+    const btn = document.querySelector('.subnav-btn[data-subtab="' + g + '"]');
+    if (btn) btn.classList.toggle("active", g === name);
+  }
+  // The "Save settings" bar only applies to the config groups.
+  $("settings-save-bar").classList.toggle("hidden", name === "data" || name === "security");
+  if (name === "notifications") { loadWebhooks(false); loadInboundWebhookInfo(); }
+  if (name === "data") loadDatabaseInfo();
+  if (name === "security") loadSecurity();
+}
 function applyTabFromHash() {
   const name = (location.hash || "").replace(/^#/, "");
+  if (name === "security") {
+    // Security now lives inside Settings; keep old /#security links working.
+    if (currentTab !== "settings") showTab("settings");
+    showSettingsSubtab("security");
+    return;
+  }
   if (TAB_NAMES.includes(name) && name !== currentTab) showTab(name);
 }
 window.addEventListener("hashchange", applyTabFromHash);
@@ -2787,7 +2859,26 @@ $("nav-today").addEventListener("click", () => showTab("today"));
 $("nav-devices").addEventListener("click", () => showTab("devices"));
 $("nav-history").addEventListener("click", () => showTab("history"));
 $("nav-settings").addEventListener("click", () => showTab("settings"));
-$("nav-security").addEventListener("click", () => showTab("security"));
+document.querySelectorAll(".subnav-btn").forEach((btn) => {
+  btn.addEventListener("click", () => showSettingsSubtab(btn.dataset.subtab));
+});
+// Info tooltips: tap toggles open (touch), Escape or an outside click closes,
+// Enter/Space toggles the focused badge (keyboard).
+document.addEventListener("click", (ev) => {
+  const tip = ev.target.closest(".info-tip");
+  // A tip can sit inside a <label>; without this the click also forwards to
+  // the label's input and immediately re-closes the tooltip.
+  if (tip) ev.preventDefault();
+  document.querySelectorAll(".info-tip.open").forEach((t) => { if (t !== tip) t.classList.remove("open"); });
+  if (tip) tip.classList.toggle("open");
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") { document.querySelectorAll(".info-tip.open").forEach((t) => t.classList.remove("open")); return; }
+  if (ev.key === "Enter" || ev.key === " ") {
+    const el = document.activeElement;
+    if (el && el.classList && el.classList.contains("info-tip")) { ev.preventDefault(); el.classList.toggle("open"); }
+  }
+});
 $("nav-burger").addEventListener("click", () => {
   const open = $("main-nav").classList.toggle("open");
   $("nav-burger").setAttribute("aria-expanded", String(open));

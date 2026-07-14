@@ -35,6 +35,10 @@ ICON_PATH = BASE / "linkmoth.svg"
 WHITE_LOGO_PATH = BASE / "linkmoth-white.svg"
 WHITE_MARK_PATH = BASE / "linkmoth-mark-white.svg"
 MASKABLE_ICON_PATH = BASE / "linkmoth-maskable.svg"
+PNG_ICON_PATHS = {
+    "/linkmoth-icon-192.png": BASE / "linkmoth-icon-192.png",
+    "/linkmoth-icon-512.png": BASE / "linkmoth-icon-512.png",
+}
 FAVICON_PATH = BASE / "linkmoth-white.ico"
 SW_PATH = BASE / "sw.js"
 MANIFEST_PATH = BASE / "manifest.webmanifest"
@@ -3848,6 +3852,13 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, {"error": "not found"})
             return
+        if url.path in PNG_ICON_PATHS:
+            icon = PNG_ICON_PATHS[url.path]
+            if icon.is_file():
+                self._send(200, icon.read_bytes(), "image/png")
+            else:
+                self._send(404, {"error": "not found"})
+            return
         if url.path in ("/favicon.ico", "/linkmoth-white.ico"):
             if FAVICON_PATH.is_file():
                 self._send(200, FAVICON_PATH.read_bytes(), "image/x-icon")
@@ -4429,6 +4440,8 @@ def doctor():
     report("linkmoth-white.svg present", WHITE_LOGO_PATH.is_file(), str(WHITE_LOGO_PATH))
     report("linkmoth-mark-white.svg present", WHITE_MARK_PATH.is_file(), str(WHITE_MARK_PATH))
     report("linkmoth-maskable.svg present", MASKABLE_ICON_PATH.is_file(), str(MASKABLE_ICON_PATH))
+    for png_path in PNG_ICON_PATHS.values():
+        report(f"{png_path.name} present", png_path.is_file(), str(png_path))
     report("browser icon present", FAVICON_PATH.is_file(), str(FAVICON_PATH))
     try:
         import linkmoth_push  # noqa: F401  (adds the optional push venv to sys.path)

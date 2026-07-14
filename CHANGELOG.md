@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.2.7
+
+### Dashboard and settings
+
+- Combined Security and Settings into one Settings area with clear General,
+  Network checks, Notifications, Data, and Security sections.
+- Added compact help tooltips for unfamiliar settings while preserving keyboard
+  and touch access.
+- Improved fault-ladder dividers, long top-offender labels, and quiet-hours
+  status with the Linkmoth host's current local time.
+
+### PWA and packaging
+
+- Added native 192 px and 512 px PNG app icons, including maskable PWA support,
+  and included them in installation, diagnostics, and release archives.
+
+### Documentation
+
+- Quick-start and Advanced installation commands now install v0.2.7.
+
 ## 0.2.6
 
 ### Installer
