@@ -69,6 +69,34 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_stat_cards_keep_primary_metrics_visually_prominent(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn(
+            ".stat .v { min-height: 40px; margin-top: 2px; font-size: 30px;",
+            dashboard,
+        )
+
+    def test_settings_subtabs_match_the_main_navigation_treatment(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn(
+            ".subnav-btn {\n"
+            "  flex: 1; min-width: 0; min-height: 51px; padding: 10px 8px;\n"
+            "  font: inherit; font-size: 19px; font-weight: 600; line-height: 1.2; cursor: pointer;\n"
+            "  border: 1px solid var(--border); border-radius: 12px;\n"
+            "  background: var(--card); color: var(--muted);",
+            dashboard,
+        )
+        self.assertIn(".subnav-btn:active { transform: scale(0.98); }", dashboard)
+        self.assertIn(".subnav-btn.active { color: var(--text); border-color: var(--text); }", dashboard)
+        self.assertIn(
+            '<div class="k">Incidents</div><div class="v">${st.incidents_30d}</div><small>',
+            dashboard,
+        )
+        self.assertIn(
+            '<div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div><small>last 30 days</small>',
+            dashboard,
+        )
+
     def test_healthy_verdict_hides_incident_actions(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('run.severity === "ok" && evidenceStates.length > 0', dashboard)
