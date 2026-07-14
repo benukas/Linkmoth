@@ -52,8 +52,8 @@ ssh user@192.168.1.50
 **2. Install the latest release:**
 
 ```bash
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.7/linkmoth-v0.2.7-bootstrap.sh
-sudo bash linkmoth-v0.2.7-bootstrap.sh
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.8/linkmoth-v0.2.8-bootstrap.sh
+sudo bash linkmoth-v0.2.8-bootstrap.sh
 ```
 
 This checks your environment, sets up a hardened systemd service, and prints
