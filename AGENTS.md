@@ -82,15 +82,40 @@ protection/rulesets and may change. Treat the PR checks page as authoritative.
 Release tags are protected and must be signed. A release tag is created only
 from the final merged commit on `main`.
 
-1. Ensure the release PR is merged and all required checks are green.
-2. Fetch current refs and verify the target is `origin/main`:
+1. Before opening the release PR, choose the exact new version and perform
+   this **mandatory version sweep**. Do not tag until every applicable item is
+   updated and reviewed:
+
+   - public quick-start commands in `README.md`, including every release URL
+     and bootstrap filename;
+   - versioned commands in `ADVANCED.md`, including Sigstore and optional
+     installer paths;
+   - the top-level `CHANGELOG.md` entry for the new version (do not rewrite
+     historical entries);
+   - release-version assertions in `test/test_release.py` and any other
+     version-specific tests;
+   - every matching tracked `dist/` counterpart, rebuilt from the source
+     files.
+
+   Run `rg -n "v<previous-version>|<previous-version>"` across release
+   sources and `dist/` to distinguish stale current-install references from
+   intentional historical changelog entries. Run the release tests after the
+   sweep; they must confirm that `dist/` exactly matches its sources.
+2. Commit the version sweep on its own signed `release/<version>` branch,
+   push it, and open a PR into `main`. A version bump is not complete merely
+   because a prior feature PR was merged.
+3. Ensure the release PR is merged and all required checks and approvals are
+   green. Verify the merge on GitHub and do not assume a user statement about
+   check status is enough to authorize a protected tag.
+4. Fetch current refs and verify the target is the final merged `origin/main`
+   commit, not a local branch or a PR head:
 
    ```bash
    git fetch origin --tags
    git rev-parse origin/main
    ```
 
-3. Create and verify an annotated signed tag (replace the version and message):
+5. Create and verify an annotated signed tag (replace the version and message):
 
    ```bash
    git tag -s vX.Y.Z -m "Linkmoth vX.Y.Z"
@@ -98,10 +123,10 @@ from the final merged commit on `main`.
    git push origin vX.Y.Z
    ```
 
-4. The protected `v*` tag triggers the release workflow. Wait for it to finish
+6. The protected `v*` tag triggers the release workflow. Wait for it to finish
    successfully, then verify the GitHub release contains the archive,
    bootstrap script, manifest, SBOM, checksum, and their Sigstore bundles.
-5. Never delete, move, or recreate a published tag merely to retry a workflow.
+7. Never delete, move, or recreate a published tag merely to retry a workflow.
    Investigate and fix the workflow through a PR first. Any exception requires
    explicit maintainer approval and restoration of all tag-protection rules.
 
@@ -115,6 +140,8 @@ from the final merged commit on `main`.
   the pinned release workflow identity as an optional `--sigstore-verified`
   path; only that path may write a verified installation record.
 - Update the quick-start version when publishing a newer stable release.
+  This is part of the mandatory version sweep above, together with Advanced
+  commands, changelog, release tests, and matching `dist/` files.
 
 ## Final handoff
 
