@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Installer
+
+- Browser-push setup now installs its pinned source-only `http-ece` dependency
+  while keeping every other Python dependency wheel-only and unprivileged.
+
 ## 0.2.5
 
 ### Dashboard
