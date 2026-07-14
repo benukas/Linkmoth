@@ -122,6 +122,9 @@ def quiet_hours_status(cfg: dict, db_connect, now: Optional[float] = None) -> di
         "end": str(cfg.get("quiet_hours_end", "07:00")),
         "pending": pending,
         "timezone": time.tzname[zone_index] if time.tzname else "local time",
+        # Current time on the Linkmoth host, so the dashboard can show which
+        # clock quiet hours is actually evaluated against (the Pi's own zone).
+        "now": f"{local.tm_hour:02d}:{local.tm_min:02d}",
     }
 
 

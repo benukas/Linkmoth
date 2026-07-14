@@ -20,6 +20,8 @@ DIST_FILES = {
     "linkmoth-white.svg",
     "linkmoth-mark-white.svg",
     "linkmoth-maskable.svg",
+    "linkmoth-icon-192.png",
+    "linkmoth-icon-512.png",
     "linkmoth-white.ico",
     "sw.js",
     "manifest.webmanifest",
@@ -105,8 +107,14 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_ladder_keeps_probe_details_compact_and_nonduplicative(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('.row.with-probes { padding-bottom: 6px; border-bottom: 1px solid var(--border); }', dashboard)
-        self.assertIn('.probe-evidence + .row { border-top: none; }', dashboard)
+        # Each check (row + its evidence) is wrapped in one .ladder-check block,
+        # and the divider sits on that block — never between a check and its own
+        # evidence, and never trailing after the last check.
+        self.assertIn('.ladder-check { border-top: 1px solid var(--border); }', dashboard)
+        self.assertIn('.ladder-check:first-child, .ladder-group + .ladder-check { border-top: none; }', dashboard)
+        self.assertIn('return `<div class="ladder-check">${html}</div>`;', dashboard)
+        self.assertIn('.row.with-probes { padding-bottom: 6px; }', dashboard)
+        self.assertNotIn('.row.with-probes { padding-bottom: 6px; border-bottom:', dashboard)
         self.assertIn('detail = state === "passed" ? "All test targets responded."', dashboard)
 
     def test_sign_out_lives_in_settings_not_the_header(self):
@@ -151,16 +159,16 @@ class PublicReleaseTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn("sudo bash linkmoth-v0.2.6-bootstrap.sh", readme)
+        self.assertIn("sudo bash linkmoth-v0.2.7-bootstrap.sh", readme)
         self.assertIn(
-            "releases/download/v0.2.6/linkmoth-v0.2.6-bootstrap.sh",
+            "releases/download/v0.2.7/linkmoth-v0.2.7-bootstrap.sh",
             readme,
         )
         self.assertIn("No Git checkout, package manager, or Cosign installation is", readme)
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.2.6", advanced)
+        self.assertIn("VERSION=v0.2.7", advanced)
         self.assertIn("cosign verify-blob", advanced)
         self.assertIn("--sigstore-verified", advanced)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", advanced)
