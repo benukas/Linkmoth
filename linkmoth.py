@@ -450,7 +450,7 @@ class _BoundedHeaderReader:
             bounded_size = min(size, bounded_size)
         try:
             line = self._reader.readline(bounded_size)
-        except TimeoutError as exc:
+        except (socket.timeout, TimeoutError) as exc:
             raise _HeaderReadTimeout() from exc
         if time.monotonic() > self._deadline:
             raise _HeaderReadTimeout()
