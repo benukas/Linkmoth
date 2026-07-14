@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.2.8
+
+### Dashboard
+
+- Balanced summary-card metric hierarchy and made Settings subtabs match the
+  main navigation style.
+
+### Documentation
+
+- Quick-start and Advanced installation commands now install v0.2.8.
+
 ## 0.2.7
 
 ### Dashboard and settings
