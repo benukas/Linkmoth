@@ -419,19 +419,22 @@ chmod 750 "$ETC"
 # and never touches the system Python (PEP 668 on Debian).
 VENV="$APP/venv"
 install_pywebpush_venv() {
-  local py="$VENV/bin/python" package rc
+  local py="$VENV/bin/python" package http_ece rc
   if python3 -I -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
     package="pywebpush==2.3.0"
   else
     package="pywebpush==2.0.3"
   fi
-  # Installation runs as the unprivileged service account and accepts wheels
-  # only, so package build hooks never execute as root.
+  # http-ece is not published as a wheel. Pin it explicitly and permit source
+  # only for that package; every other dependency must still be a wheel. The
+  # source build runs as the unprivileged service account, never as root.
+  http_ece="http-ece==1.2.1"
   chown -R linkmoth:linkmoth "$VENV"
   rc=0
   if ! runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME \
       "$py" -m pip install --quiet --no-cache-dir --only-binary=:all: \
-      "$package" --upgrade-strategy only-if-needed \
+      --no-binary=http-ece "$http_ece" "$package" \
+      --upgrade-strategy only-if-needed \
       || ! runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME \
         "$py" -c 'import pywebpush'; then
     rc=1

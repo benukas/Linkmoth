@@ -1137,7 +1137,9 @@ class AuthCryptoTests(unittest.TestCase):
         self.assertIn('chmod 640 "$ETC/config.json"', installer)
         self.assertIn("PATH=/usr/sbin:/usr/bin:/sbin:/bin", installer)
         self.assertIn("pywebpush==2.3.0", installer)
+        self.assertIn("http-ece==1.2.1", installer)
         self.assertIn("--only-binary=:all:", installer)
+        self.assertIn("--no-binary=http-ece", installer)
         self.assertIn("runuser -u linkmoth", installer)
 
     def test_server_refuses_invalid_configuration(self):
