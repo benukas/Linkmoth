@@ -46,7 +46,7 @@ five minutes.
 **1. SSH into the host** (skip this if it has its own screen and keyboard):
 
 ```bash
-ssh user@192.168.1.50
+ssh user@<host-ip>
 ```
 
 **2. Install the latest release:**

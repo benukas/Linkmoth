@@ -461,7 +461,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 #subtab-security .set-section .action-btn { margin-right: 10px; margin-top: 4px; }
 #auth-gate {
   position: fixed; inset: 0; background: var(--bg); z-index: 100;
-  display: flex; align-items: center; justify-content: center; padding: 24px;
+  display: flex; align-items: safe center; justify-content: center; padding: 24px;
+  overflow-y: auto;
 }
 #auth-gate.hidden { display: none; }
 .auth-box {
