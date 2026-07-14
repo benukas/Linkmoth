@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.2.4
+
+### Dashboard and PWA
+
+- Refined the dark and white themes, dashboard controls, device views, and
+  installable app assets.
+- A fully healthy diagnosis now hides incident controls, even when an older
+  incident has legacy metadata.
+- Dashboard copy now uses shorter en dashes consistently.
+
+### Documentation
+
+- Quick-start and Advanced installation commands now install v0.2.4.
+
 ## 0.2.3
 
 ### Security and exposure hardening
