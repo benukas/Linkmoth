@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.2.9
+
+### Security
+
+- Closed a slow-request denial-of-service: a client that never finished
+  sending headers used to hold a worker slot indefinitely. There is now a
+  10-second accept-to-headers-complete deadline, independent header byte and
+  count caps, and a bounded 408/431 response that always releases the slot.
+- Removed the global login-failure budget that let a handful of distributed
+  LAN addresses lock out the real admin. Login throttling is now per-source
+  only.
+- Sigstore verification is on by default in the installer bootstrap. Skipping
+  it now requires the explicit `--insecure-skip-verify` flag, which prints a
+  warning.
+
+### Dashboard
+
+- Fixed the onboarding modal overflowing off-screen with no way to scroll on
+  shorter viewports, during password creation and uptime-checker setup.
+
+### Documentation
+
+- Quick-start and Advanced installation commands now install v0.2.9.
+- Replaced the specific-looking LAN address in the README quick-start SSH
+  example with a placeholder.
+
 ## 0.2.8
 
 ### Dashboard
