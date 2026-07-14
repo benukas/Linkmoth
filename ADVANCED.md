@@ -18,7 +18,7 @@ download the bootstrap bundle, verify the pinned release-workflow identity,
 and run the same bootstrap with `--sigstore-verified`:
 
 ```bash
-VERSION=v0.2.4
+VERSION=v0.2.5
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
@@ -233,7 +233,7 @@ script (the quick-start path), the installer isn't left on the host, so
 re-run the versioned bootstrap — it forwards the flag through:
 
 ```bash
-VERSION=v0.2.4   # use your installed version (shown in the dashboard footer)
+VERSION=v0.2.5   # use your installed version (shown in the dashboard footer)
 curl -fLO https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh
 sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
 ```

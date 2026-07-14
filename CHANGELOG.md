@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.2.5
+
+### Dashboard
+
+- Hidden incident controls now remain hidden when no incident is open.
+- Browser-push controls now follow this browser's actual subscription rather
+  than notification permission alone.
+- Fault-ladder target evidence is compact and paired with plain-language
+  summaries instead of repeated endpoint details.
+
+### Documentation
+
+- Quick-start and Advanced installation commands now install v0.2.5.
+
 ## 0.2.4
 
 ### Dashboard and PWA
