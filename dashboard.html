@@ -124,6 +124,7 @@ nav button.active { color: var(--text); border-color: var(--text); }
 .action-bar {
   display: flex; gap: 12px; margin: -8px 0 16px; flex-wrap: wrap;
 }
+.action-bar.hidden { display: none; }
 .action-bar .action-btn { flex: 1; min-width: 140px; padding: 16px 18px; font-size: 18px; }
 .statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
@@ -168,14 +169,16 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
 }
 .ladder-group:first-child { margin-top: 0; }
 .ladder-group + .row { border-top: none; }
+.row.with-probes { padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .probe-summary {
   display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
   background: var(--warn-bg); color: var(--warn-text); font-size: 13px; font-weight: 700;
 }
-.probe-evidence { margin: 5px 0 0 58px; color: var(--muted); font-size: 14px; }
+.probe-evidence { margin: 3px 0 10px 58px; color: var(--muted); font-size: 14px; }
 .probe-evidence summary { cursor: pointer; }
 .probe-evidence ul { margin: 5px 0 8px; padding-left: 20px; }
 .probe-evidence li { margin: 3px 0; }
+.probe-evidence + .row { border-top: none; }
 .row.micro-row { padding: 4px 0 4px 28px; border-top: none; }
 .row.micro-row .label { font-size: 15px; font-weight: 500; }
 .row.micro-row .detail { font-size: 14px; }
@@ -1345,12 +1348,21 @@ function renderLadderCheck(c) {
     }
   }
   const summary = c.probe_summary || {};
+  const hasProbeEvidence = (c.probes || []).length > 1;
   const disagreement = state === "partial"
     ? `<span class="probe-summary">${summary.passed || 0}/${summary.attempted || 0} targets passed</span>`
     : "";
-  let html = `<div class="row"><div class="badge ${cls}">${mark}</div>
-    <div><div class="label">${esc(c.label)}${chip}${disagreement}</div><div class="detail">${esc(c.detail)}</div></div></div>`;
-  if ((c.probes || []).length > 1) {
+  let detail = c.detail;
+  if (hasProbeEvidence) {
+    const attempted = summary.attempted || c.probes.length;
+    const passed = summary.passed ?? c.probes.filter((probe) => probe.ok).length;
+    detail = state === "passed" ? "All test targets responded."
+      : passed ? `${passed} of ${attempted} test targets responded.`
+      : "No test targets responded.";
+  }
+  let html = `<div class="row${hasProbeEvidence ? " with-probes" : ""}"><div class="badge ${cls}">${mark}</div>
+    <div><div class="label">${esc(c.label)}${chip}${disagreement}</div><div class="detail">${esc(detail)}</div></div></div>`;
+  if (hasProbeEvidence) {
     html += `<details class="probe-evidence"><summary>Per-target evidence (${c.probes.length})</summary><ul>`
       + c.probes.map((probe) =>
         `<li>${probe.ok ? "✓" : "✕"} <b>${esc(probe.target)}</b> – ${esc(probe.detail)}</li>`
@@ -3579,18 +3591,30 @@ function renderPushStatus(s) {
     return;
   }
   const iosBlock = pushSetupBlocker();
+  enableBtn.classList.remove("hidden");
+  disableBtn.classList.add("hidden");
   if (iosBlock) {
     lines.push(iosBlock);
     enableBtn.disabled = true;
   } else if (!p.enabled) {
     lines.push("Push is disabled in settings.");
     enableBtn.disabled = true;
-  } else if (!iosBlock) {
-    enableBtn.disabled = Notification.permission === "granted";
+  } else {
+    // Permission only allows subscribing. It does not mean this device is
+    // subscribed, so a granted permission must leave Enable available.
+    enableBtn.disabled = Notification.permission === "denied";
   }
   lines.push(`Registered devices: ${p.subscribers || 0}. Permission here: ${Notification.permission}.`);
   el.innerHTML = lines.join(" ");
-  disableBtn.classList.toggle("hidden", Notification.permission !== "granted");
+  navigator.serviceWorker.getRegistration("/sw.js")
+    .then((reg) => reg && reg.pushManager.getSubscription())
+    .then((sub) => {
+      // Subscription is device-specific; the server count may include other
+      // browsers, so only show Disable when this browser has one.
+      enableBtn.classList.toggle("hidden", !!sub);
+      disableBtn.classList.toggle("hidden", !sub);
+    })
+    .catch(() => {});
 }
 
 async function enablePushOnDevice() {

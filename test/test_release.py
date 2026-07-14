@@ -75,6 +75,19 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
         self.assertIn('if (!everythingAnswers && openInc && openInc.ref)', dashboard)
+        self.assertIn('.action-bar.hidden { display: none; }', dashboard)
+
+    def test_push_buttons_follow_this_device_subscription(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('enableBtn.disabled = Notification.permission === "denied";', dashboard)
+        self.assertIn('reg.pushManager.getSubscription()', dashboard)
+        self.assertIn('disableBtn.classList.toggle("hidden", !sub);', dashboard)
+
+    def test_ladder_keeps_probe_details_compact_and_nonduplicative(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('.row.with-probes { padding-bottom: 6px; border-bottom: 1px solid var(--border); }', dashboard)
+        self.assertIn('.probe-evidence + .row { border-top: none; }', dashboard)
+        self.assertIn('detail = state === "passed" ? "All test targets responded."', dashboard)
 
     def test_sign_out_lives_in_settings_not_the_header(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
