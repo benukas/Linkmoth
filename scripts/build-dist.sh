@@ -21,6 +21,7 @@ FILES=(
   linkmoth.svg
   linkmoth-white.svg
   linkmoth-mark-white.svg
+  linkmoth-maskable.svg
   linkmoth-white.ico
   sw.js
   manifest.webmanifest

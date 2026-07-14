@@ -180,16 +180,30 @@ many alerts in a burst, Linkmoth shares one ladder result for 10 seconds
 
 ### Uptime Kuma
 
-**Important:** point Uptime Kuma at Linkmoth on the **LAN**, not over WAN:
+**Important:** point Uptime Kuma at Linkmoth on the **LAN**, not over WAN.
+Use the address the installer printed (the same host/setup URL from the
+quick start), with `/api/webhooks/kuma` in place of `/setup`:
 
 ```text
-https://127.0.0.1:8686/api/webhooks/kuma
+https://<host-ip>:8686/api/webhooks/kuma
 ```
 
-Kuma monitors need the internet to check external sites, but **webhook delivery
-to Linkmoth uses localhost** and works while WAN is down. During a WAN outage,
-**Linkmoth** (not Kuma) detects the fault and queues suppressed service alerts;
-Discord/push/generic webhooks fire when the link returns.
+Kuma monitors need the internet to check external sites, but **webhook
+delivery to Linkmoth stays on the LAN** and keeps working while WAN is down.
+During a WAN outage, **Linkmoth** (not Kuma) detects the fault and queues
+suppressed service alerts; Discord/push/generic webhooks fire when the link
+returns.
+
+A LAN address works whether Kuma runs on the same host as Linkmoth or on a
+different device. Two narrower cases:
+
+- **Linkmoth's `bind` is `0.0.0.0` or `::`** (listening on every interface):
+  Kuma on the same host may use `https://127.0.0.1:8686/api/webhooks/kuma`
+  instead; every other device still needs the LAN address above.
+- **Linkmoth's `bind` is literally `127.0.0.1`** (the guided-setup fallback
+  for an ambiguous network configuration): only Kuma running on that exact
+  host can reach Linkmoth at all — there is no LAN address that will work
+  until `bind` is set to a real interface.
 
 ### Generic inbound webhook (any other tool)
 
@@ -213,9 +227,20 @@ send rich embeds on confirmed faults and recoveries, including the fault
 ladder, incident reference, and a digest of services that were down during a
 global outage. **Global outages defer outbound alerts** until recovery.
 
-**Browser push** (Settings → Browser push) is opt-in: run
-`sudo bash install.sh --with-push` once to set it up (it installs
-`pywebpush` into a private virtualenv, leaving system Python untouched).
+**Browser push** (Settings → Browser push) is opt-in and set up by re-running
+the installer with `--with-push` once. If you installed with the bootstrap
+script (the quick-start path), the installer isn't left on the host, so
+re-run the versioned bootstrap — it forwards the flag through:
+
+```bash
+VERSION=v0.2.3   # use your installed version (shown in the dashboard footer)
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh
+sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
+```
+
+From a git checkout, run `sudo bash install.sh --with-push` in that folder
+instead. Either way it installs `pywebpush` into a private virtualenv,
+leaving system Python untouched.
 Works on desktop and Android in the browser. On iPhone/iPad you must install
 the dashboard to the Home Screen first (Share → Add to Home Screen), open it
 from the icon, then enable push — Safari tabs cannot subscribe. iOS also
@@ -733,6 +758,32 @@ timeouts, and store no device credentials, headers, or executable content.
 Linkmoth installs no polkit rules. Service administration remains an explicit
 local `sudo systemctl` action.
 
+## Backup and restore
+
+Back up before any major upgrade (a new minor/major release, not routine
+`sudo bash install.sh` re-runs on the same version). The archive contains
+both directories from **Layout** above — configuration and TLS material from
+`/etc/linkmoth`, and history/secrets from `/var/lib/linkmoth`:
+
+```bash
+sudo systemctl stop linkmoth
+sudo tar czf "linkmoth-backup-$(date +%F).tar.gz" -C / etc/linkmoth var/lib/linkmoth
+sudo systemctl start linkmoth
+```
+
+To restore (same major OS/architecture; stop the service first so nothing
+writes to the state directory mid-restore):
+
+```bash
+sudo systemctl stop linkmoth
+sudo tar xzf linkmoth-backup-YYYY-MM-DD.tar.gz -C /
+sudo systemctl start linkmoth
+```
+
+The archive is sensitive: it contains the webhook secret and TOTP seed in
+usable form (see **Security posture** above), so store and transfer it the
+way you would any other credential, and delete copies you no longer need.
+
 ## Updating
 
 Get the new code (`git pull` in the cloned folder, or re-copy it), then
@@ -829,8 +880,10 @@ where Web Push is allowed.
    only works from that standalone app (iOS 16.4+).
 3. Confirm the dashboard loads without a certificate warning in the Home Screen
    app before tapping **Enable push on this device**.
-4. If it still fails, check that `install.sh --with-push` was run on the host
-   (Settings will say push is unavailable otherwise).
+4. If it still fails, check that the installer was re-run with `--with-push`
+   on the host (Settings will say push is unavailable, with the exact command,
+   otherwise). See **Browser push** above for the bootstrap vs git-checkout
+   command.
 
 ### Host IP or hostname changed
 

@@ -5,7 +5,7 @@
  * /api/ is ever cached: Linkmoth is a live network-diagnosis tool, and
  * serving a stale diagnosis while offline would be actively misleading.
  */
-const SHELL_CACHE = "linkmoth-shell-v1";
+const SHELL_CACHE = "linkmoth-shell-v2";
 const SHELL_URLS = ["/", "/manifest.webmanifest", "/linkmoth.svg", "/linkmoth-white.ico"];
 
 self.addEventListener("install", (event) => {
@@ -31,18 +31,20 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
   if (!SHELL_URLS.includes(url.pathname)) return;
 
-  // Stale-while-revalidate: instant load from cache, refreshed in the
-  // background for next time, falling back to cache alone when offline.
+  // Network-first while online: always try a fresh fetch so an upgraded
+  // shell shows up immediately, updating the cache as it goes. Only fall
+  // back to the cached copy when the network is unavailable.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request).then((response) => {
-        if (response.ok) {
-          caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, response.clone()));
-        }
-        return response;
-      }).catch(() => cached);
-      return cached || network;
-    }),
+    fetch(event.request).then((response) => {
+      // Clone synchronously, before the caller starts reading the body we
+      // return below — cloning after that (e.g. inside the caches.open()
+      // callback) races the body stream and intermittently throws.
+      const copy = response.ok ? response.clone() : null;
+      if (copy) {
+        caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, copy));
+      }
+      return response;
+    }).catch(() => caches.match(event.request)),
   );
 });
 

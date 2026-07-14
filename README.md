@@ -5,6 +5,7 @@
 [![CI](https://github.com/benukas/linkmoth/actions/workflows/ci.yml/badge.svg)](https://github.com/benukas/linkmoth/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776AB.svg)](https://www.python.org/)
+[![Status: Early Access / Beta](https://img.shields.io/badge/status-early--access%20%2F%20beta-orange.svg)](CHANGELOG.md)
 
 A network flight recorder for your home LAN. When something breaks, it
 tells you **whose fault it is** in plain language:
@@ -20,11 +21,22 @@ or any other tool that can send a webhook, Linkmoth can pair with it instead:
 your monitor notices *that* something is down, Linkmoth works out *why*, and
 both show up on a simple LAN-only dashboard.
 
-Tested on **Raspberry Pi OS** (Raspberry Pi 5); Debian and Ubuntu use the
-same base and should work too, though that's not independently verified yet
-(see [supported platforms](ADVANCED.md#supported-platforms)). Local and
-dependency-free: no cloud account, no telemetry, standard-library Python
-only. See [CHANGELOG.md](CHANGELOG.md) for recent changes.
+**Linkmoth is early access / beta.** It's actively developed by a single
+maintainer; expect rough edges, and please report what you find (see
+[Reporting issues](#reporting-issues) below). Local and dependency-free: no
+cloud account, no telemetry, standard-library Python only. See
+[CHANGELOG.md](CHANGELOG.md) for recent changes.
+
+| OS | Status |
+| --- | --- |
+| Raspberry Pi OS (Raspberry Pi 5) | Tested |
+| Debian | Expected to work (same systemd/apt base) — not independently verified |
+| Ubuntu | Expected to work (same systemd/apt base) — not independently verified |
+
+This table will grow as real users report successful installs on other
+distributions (see [supported platforms](ADVANCED.md#supported-platforms)
+for the full detail, and [CONTRIBUTING.md](CONTRIBUTING.md) to send a
+compatibility report).
 
 ## Quick start
 
@@ -63,9 +75,13 @@ That's it. Linkmoth already checks the network on its own and opens
 incidents when it finds a fault.
 
 **4. Already run a monitor? Connect it (optional).** Uptime Kuma, Zabbix,
-Grafana alerting, or any tool/script that can send a webhook works. In your
-monitor, add a webhook notification pointed at
-`https://127.0.0.1:8686/trigger`, content type `application/json`, header
+Grafana alerting, or any tool/script that can send a webhook works (tested
+primarily with Uptime Kuma). In your monitor, add a webhook notification
+pointed at the same address printed by the installer, replacing `/setup`
+with `/trigger`: `https://<host-ip>:8686/trigger`. A LAN address can be used
+by monitors on this host or elsewhere on the LAN. If the installer printed
+`127.0.0.1`, only software running on the Linkmoth host can reach it. Use
+content type `application/json`, header
 `Authorization: Bearer <webhook-secret>` (the installer printed this secret;
 reprint it with `sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py
 --auth-show-webhook`). Now any monitor going down makes Linkmoth diagnose
@@ -89,13 +105,66 @@ A few other things it does:
 - Defers noisy service alerts during a confirmed network-wide outage and
   summarizes them once it recovers.
 
+## Scope and security
+
+Linkmoth is built for **one administrator on a trusted home LAN** — it is
+not intended for multi-tenant use, and it should not be directly exposed to
+the internet (no port forwards, no public tunnels). It refuses direct
+requests from a public/global source IP as a safety net (see
+[Security posture](ADVANCED.md#security-posture)), but that guard is an
+application-layer check, not a substitute for your own firewall or
+reverse-proxy configuration — it doesn't make internet exposure safe on its
+own.
+
+**Before a major upgrade, back up `/var/lib/linkmoth`** (and `/etc/linkmoth`
+for its configuration); see
+[backup and restore](ADVANCED.md#backup-and-restore) for the exact commands.
+
 ## Learn more
 
 [ADVANCED.md](ADVANCED.md) covers everything that didn't fit here:
 configuration reference, the full Uptime Kuma/Discord/webhook integration,
 TLS certificate trust (do this properly, since it's the one step where a LAN
-attacker could trick you), the CLI, security posture, updating, uninstalling,
-and troubleshooting.
+attacker could trick you), the CLI, security posture, updating, backups,
+uninstalling, and troubleshooting.
+
+## Reporting issues
+
+- **Bugs and compatibility reports:** open a
+  [GitHub Issue](https://github.com/benukas/linkmoth/issues) — see
+  [CONTRIBUTING.md](CONTRIBUTING.md) for what makes a report useful (version,
+  distribution, safe reproduction steps).
+- **Security vulnerabilities:** do **not** use a public issue. Follow the
+  private reporting process in [SECURITY.md](SECURITY.md) instead.
+
+Before filing a **public** bug report, attach the dashboard's
+**Download support-safe JSON** export (Settings → Evidence exports) — it
+removes credentials and pseudonymizes private-network identifiers, unlike
+the plain support summary below. For **private** security reports or direct
+maintainer contact, a plain-text support summary (Settings → **Copy support
+summary**, or the same button on any incident) is also useful; it excludes
+credentials but can still show real LAN IPs and network layout, so keep it
+out of public issues. It looks like this:
+
+```
+Linkmoth support summary
+Time: 2026-07-14T09:12:03.000Z
+Incident: LM-2026-0142
+Verdict: Router isn't answering on the LAN (router_down, critical)
+Confidence: high
+Why: Three consecutive router probes timed out after local DNS also failed.
+Next step: Power-cycle the router; if it stays down, contact your ISP.
+
+Fault ladder:
+- [FAIL] Router: no response on 3/3 probes
+  - FAIL 192.168.1.1: timeout
+- [SKIP] Local DNS: not reached (router already failed)
+
+Generated locally by Linkmoth. Credentials are excluded; this summary may include local network addresses.
+```
+
+`sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --doctor` (environment
+and health check, no secrets) is also useful to attach for either audience.
 
 ## License, attribution, and official development
 
@@ -105,14 +174,12 @@ and troubleshooting.
   users over a network. The software is provided without warranty or liability
   to the extent the law allows.
 - Linkmoth does **not** accept external code contributions into the official
-  project. Bug reports and reproducible issue reports are welcome; pull
-  requests will be closed without review. See [CONTRIBUTING.md](CONTRIBUTING.md).
+  project. Pull requests will be closed without review; see
+  [Reporting issues](#reporting-issues) above for bug reports.
 - The Linkmoth name and logos are not granted by the AGPL. Forks must not imply
   that they are official Linkmoth releases; see [TRADEMARKS.md](TRADEMARKS.md).
 - Third-party code and algorithm acknowledgements are recorded in
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- Please report security issues privately following [SECURITY.md](SECURITY.md);
-  do not publish working exploit details in a public issue.
 - This repository is the public source for the official project. Future
   commercial editions may be offered separately under different terms by the
   copyright holder; already released AGPL versions remain AGPL.
