@@ -502,6 +502,39 @@ def send_suppression_digest_alert(digest: List[str], verdict: dict, cfg: Optiona
     return True
 
 
+def send_quiet_hours_digest_alert(
+    lines: List[str],
+    count: int,
+    cfg: Optional[dict] = None,
+) -> bool:
+    """Send one summary after the configured quiet period ends."""
+    if not lines or not discord_alerts_active(cfg):
+        return False
+    url = discord_webhook_url(cfg)
+    start = str((cfg or {}).get("quiet_hours_start", "22:00"))
+    end = str((cfg or {}).get("quiet_hours_end", "07:00"))
+    payload = {
+        "embeds": [{
+            "title": "☀️ Quiet-hours summary",
+            "description": _truncate(
+                f"{int(count)} alert(s) were held from {start} to {end} "
+                f"(Linkmoth host local time).\n\n" + "\n".join(lines),
+                4096,
+            ),
+            "color": RECOVERY_COLOR,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "footer": {"text": "Linkmoth · quiet hours"},
+        }],
+    }
+    threading.Thread(
+        target=_send_payload_sync,
+        args=(url, payload, "quiet-hours digest"),
+        daemon=True,
+        name="discord-quiet-hours-digest",
+    ).start()
+    return True
+
+
 def send_outage_recovery_alert(
     prior_fault: dict,
     recovery_verdict: dict,

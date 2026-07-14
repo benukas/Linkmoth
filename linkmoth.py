@@ -359,6 +359,9 @@ DEFAULT_CONFIG = {
     "discord_webhook_url": "",
     "discord_notifications_enabled": False,
     "push_notifications_enabled": True,
+    "quiet_hours_enabled": False,
+    "quiet_hours_start": "22:00",
+    "quiet_hours_end": "07:00",
     "notify_webhook_url": "",
     "notify_webhook_enabled": False,
     "target_wifi_clients": [],
@@ -636,6 +639,11 @@ def _discord_webhook_url(v):
     return value
 
 
+def _quiet_time(v):
+    from linkmoth_notify import validate_quiet_time
+    return validate_quiet_time(v)
+
+
 SETTABLE = {
     "kuma_url": _kuma_url,
     "ui_refresh_seconds": lambda v: max(2, min(120, int(v))),
@@ -650,6 +658,9 @@ SETTABLE = {
     "discord_webhook_url": _discord_webhook_url,
     "discord_notifications_enabled": _bool_setting,
     "push_notifications_enabled": _bool_setting,
+    "quiet_hours_enabled": _bool_setting,
+    "quiet_hours_start": _quiet_time,
+    "quiet_hours_end": _quiet_time,
     "notify_webhook_url": lambda v: str(v).strip()[:2000],
     "notify_webhook_enabled": _bool_setting,
 }
@@ -682,6 +693,19 @@ def apply_settings(data):
             return False, {
                 "discord_webhook_url": "valid Discord webhook URL required when alerts are enabled",
             }
+    quiet_enabled = clean.get(
+        "quiet_hours_enabled", CFG.get("quiet_hours_enabled", False)
+    )
+    quiet_start = clean.get(
+        "quiet_hours_start", CFG.get("quiet_hours_start", "22:00")
+    )
+    quiet_end = clean.get(
+        "quiet_hours_end", CFG.get("quiet_hours_end", "07:00")
+    )
+    if quiet_enabled and quiet_start == quiet_end:
+        return False, {
+            "quiet_hours_end": "end time must differ from start time",
+        }
     current = {}
     if SETTINGS_PATH.exists():
         try:
@@ -925,10 +949,12 @@ def init_db():
         from linkmoth_push import init_push_db
         from linkmoth_devices import init_device_db
         from linkmoth_webhooks import init_webhook_db
+        from linkmoth_notify import init_notification_db
         init_outage_db(conn)
         init_push_db(conn)
         init_device_db(conn)
         init_webhook_db(conn)
+        init_notification_db(conn)
     # SQLite can recreate the main file while enabling WAL on some platforms;
     # restore the private state-file mode after schema/journal initialization.
     try:
@@ -2874,6 +2900,7 @@ class Engine:
             kuma_url = ""
         from linkmoth_outage import OUTAGE_TRACKER
         from linkmoth_push import list_subscriptions, push_available
+        from linkmoth_notify import quiet_hours_status
         host = host_stats()
         database = db_maintenance_info()
         return {
@@ -2908,6 +2935,7 @@ class Engine:
                 "enabled": bool(CFG.get("push_notifications_enabled", True)),
                 "subscribers": len(list_subscriptions(db)),
             },
+            "quiet_hours": quiet_hours_status(CFG, db),
             "app": {
                 "version": VERSION,
                 "github": GITHUB_REPO,
@@ -4690,6 +4718,7 @@ def main():
                     last_incident_probe = now
                 record_quality_sample()
             time.sleep(max(60, sample_m * 60))
+    from linkmoth_notify import quiet_hours_scheduler_loop
     from linkmoth_webhooks import drain_loop, migrate_legacy_webhook
     migrate_legacy_webhook(CFG, db, SETTINGS_PATH)
     start_host_cpu_sampler()
@@ -4697,6 +4726,12 @@ def main():
     threading.Thread(target=janitor_loop, daemon=True).start()
     threading.Thread(target=DEVICES.scheduler_loop, daemon=True).start()
     threading.Thread(target=drain_loop, args=(db,), daemon=True).start()
+    threading.Thread(
+        target=quiet_hours_scheduler_loop,
+        args=(CFG, STATE_DIR, db),
+        daemon=True,
+        name="linkmoth-quiet-hours",
+    ).start()
     ENGINE.resume_after_startup()
     try:
         server = create_server()

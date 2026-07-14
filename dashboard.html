@@ -810,6 +810,22 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <p class="set-hint">Works on desktop and Android in the browser. On iPhone/iPad you must add Linkmoth to the Home Screen first (Share → Add to Home Screen), open it from the icon, then enable push – Safari tabs cannot subscribe. The Linkmoth CA must be fully trusted on iOS (profile install <em>and</em> Settings → General → About → Certificate Trust Settings). Global outages defer push until the network recovers.</p>
       </div>
       <div class="set-section">
+        <h4>Quiet hours</h4>
+        <div class="set-row">
+          <label for="s-quiet-enabled">Hold Discord and push alerts overnight</label>
+          <input id="s-quiet-enabled" type="checkbox">
+        </div>
+        <div class="set-row">
+          <label for="s-quiet-start">Starts</label>
+          <input id="s-quiet-start" type="time" value="22:00">
+        </div>
+        <div class="set-row">
+          <label for="s-quiet-end">Ends</label>
+          <input id="s-quiet-end" type="time" value="07:00">
+        </div>
+        <p id="s-quiet-status" class="set-hint">Uses the Linkmoth host's local time. Outbound webhooks continue normally.</p>
+      </div>
+      <div class="set-section">
         <h4>Outbound webhooks</h4>
         <p class="set-hint"><b>Linkmoth sends events out to another app.</b> Create an inbound webhook in that app first, then paste the URL it gives you below. There is no Linkmoth URL to copy for this direction. Failed deliveries, and events during an outage, are queued and retried after recovery.</p>
         <div id="wh-list"><p class="empty">Loading webhooks…</p></div>
@@ -1827,8 +1843,21 @@ async function refresh() {
       $("s-discord-url").value = s.settings.discord_webhook_url || "";
       $("s-discord-enabled").checked = !!s.settings.discord_notifications_enabled;
       $("s-push-enabled").checked = s.settings.push_notifications_enabled !== false;
+      $("s-quiet-enabled").checked = !!s.settings.quiet_hours_enabled;
+      $("s-quiet-start").value = s.settings.quiet_hours_start || "22:00";
+      $("s-quiet-end").value = s.settings.quiet_hours_end || "07:00";
       settingsLoaded = true;
     }
+  }
+  if (s.quiet_hours) {
+    const q = s.quiet_hours;
+    const parts = [];
+    if (!q.enabled) parts.push("Quiet hours are off.");
+    else if (q.active) parts.push(`Quiet hours are active until ${q.end}.`);
+    else parts.push(`Quiet hours run from ${q.start} to ${q.end}.`);
+    if (q.pending) parts.push(`${q.pending} alert${q.pending === 1 ? "" : "s"} waiting for the morning summary.`);
+    parts.push(`Uses ${q.timezone || "the Linkmoth host's local time"}; outbound webhooks continue normally.`);
+    $("s-quiet-status").textContent = parts.join(" ");
   }
   renderTodayBanner(s);
   if (s.database && !$("tab-settings").classList.contains("hidden")) {
@@ -3452,6 +3481,9 @@ $("save-settings").addEventListener("click", async () => {
     discord_webhook_url: $("s-discord-url").value.trim(),
     discord_notifications_enabled: $("s-discord-enabled").checked,
     push_notifications_enabled: $("s-push-enabled").checked,
+    quiet_hours_enabled: $("s-quiet-enabled").checked,
+    quiet_hours_start: $("s-quiet-start").value,
+    quiet_hours_end: $("s-quiet-end").value,
   };
   try {
     const r = await fetch("/api/settings", {

@@ -166,6 +166,32 @@ class DeviceNotificationTests(unittest.TestCase):
         push.assert_called_once()
         webhook.assert_not_called()
 
+    def test_quiet_hours_hold_push_and_discord_but_not_webhook(self):
+        device = {
+            "id": "device-id",
+            "name": "Printer",
+            "address": "192.168.1.40",
+            "preset": "printer",
+            "alerts": {"discord": True, "push": True, "webhook": True},
+        }
+        result = {"state": "down", "summary": "no response", "results": []}
+        with mock.patch(
+            "linkmoth_notify.defer_notification_if_quiet", return_value=True,
+        ) as defer, mock.patch(
+            "linkmoth_discord.send_device_discord_alert",
+        ) as discord, mock.patch(
+            "linkmoth_push.send_push_async",
+        ) as push, mock.patch(
+            "linkmoth_webhooks.emit_event",
+        ) as webhook:
+            linkmoth_devices.notify_device_event(
+                {}, Path("."), lambda: None, device, result, "fault",
+            )
+        defer.assert_called_once()
+        discord.assert_not_called()
+        push.assert_not_called()
+        webhook.assert_called_once()
+
     def test_webhook_channel_emits_device_event(self):
         device = {
             "id": "device-id",

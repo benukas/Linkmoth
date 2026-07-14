@@ -240,19 +240,31 @@ def handle_inbound_alert(status, detail, raw, engine, cfg: dict, db_connect,
         }
 
     forwarded = False
+    quiet_deferred = False
     if forward_discord:
-        forwarded = send_kuma_discord_alert(
-            {
-                "kuma_status": status,
-                "detail": detail,
-                "monitor": detail,
-                "payload": raw,
-                "checks": checks,
-                "verdict": verdict,
-                "incident_ref": (open_inc or {}).get("ref"),
-            },
+        from linkmoth_notify import defer_notification_if_quiet
+        deferred = defer_notification_if_quiet(
             cfg,
+            db_connect,
+            f"Uptime Kuma: {detail}",
+            "Service recovered" if status == 1 else "Service reported down",
+            discord=True,
         )
+        if deferred:
+            quiet_deferred = True
+        else:
+            forwarded = send_kuma_discord_alert(
+                {
+                    "kuma_status": status,
+                    "detail": detail,
+                    "monitor": detail,
+                    "payload": raw,
+                    "checks": checks,
+                    "verdict": verdict,
+                    "incident_ref": (open_inc or {}).get("ref"),
+                },
+                cfg,
+            )
 
     if status == 1:
         digest = flush_suppression_digest(db_connect, recovery_ts=time.time())
@@ -282,18 +294,25 @@ def handle_inbound_alert(status, detail, raw, engine, cfg: dict, db_connect,
         inc = engine.open_incident()
         if inc:
             engine.trigger(f"{source_prefix}-up", detail)
-        action = "forwarded_recovery" if forwarded else "noted_recovery"
+        if quiet_deferred:
+            action = "deferred_recovery"
+        else:
+            action = "forwarded_recovery" if forwarded else "noted_recovery"
     else:
         engine.trigger(
             f"{source_prefix}-down" if status == 0 else f"{source_prefix}-proxy",
             detail,
         )
-        action = "forwarded" if forwarded else "triggered"
+        if quiet_deferred:
+            action = "deferred"
+        else:
+            action = "forwarded" if forwarded else "triggered"
 
     inc = engine.open_incident()
     return {
         "action": action,
         "forwarded_discord": forwarded,
+        "quiet_hours_deferred": quiet_deferred,
         "verdict_code": verdict.get("code") if verdict else None,
         "detail": detail,
         "incident_ref": (inc or {}).get("ref"),

@@ -192,6 +192,33 @@ class DiscordSendTests(unittest.TestCase):
     def test_empty_url_is_noop(self):
         self.assertFalse(linkmoth_discord.send_discord_alert({}, "fault", {}))
 
+    def test_quiet_hours_digest_is_one_summary(self):
+        sent = threading.Event()
+        captured = []
+
+        def fake_send(url, payload, label):
+            captured.append((url, payload, label))
+            sent.set()
+
+        cfg = {
+            "discord_webhook_url": WEBHOOK,
+            "discord_notifications_enabled": True,
+            "quiet_hours_start": "22:00",
+            "quiet_hours_end": "07:00",
+        }
+        with mock.patch.object(
+            linkmoth_discord, "_send_payload_sync", side_effect=fake_send,
+        ):
+            self.assertTrue(linkmoth_discord.send_quiet_hours_digest_alert(
+                ["• Printer is down", "• WAN recovered"], 2, cfg,
+            ))
+            self.assertTrue(sent.wait(2))
+        self.assertEqual(len(captured), 1)
+        embed = captured[0][1]["embeds"][0]
+        self.assertIn("Quiet-hours summary", embed["title"])
+        self.assertIn("Printer is down", embed["description"])
+        self.assertIn("22:00 to 07:00", embed["description"])
+
 
 class EngineDiscordIntegrationTests(unittest.TestCase):
     def setUp(self):
