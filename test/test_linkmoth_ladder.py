@@ -170,8 +170,9 @@ class RouterWlanTests(unittest.TestCase):
     def test_skipped_when_not_configured(self):
         self.linkmoth.CFG["target_wifi_clients"] = []
         ok, detail = self.linkmoth.check_router_wlan(True)
+        # ok is None => the rung renders as skipped; the detail states the reason.
         self.assertIsNone(ok)
-        self.assertIn("skipped", detail)
+        self.assertIn("not configured", detail)
 
     def test_skipped_when_gateway_down(self):
         self.linkmoth.CFG["target_wifi_clients"] = ["192.168.1.50"]

@@ -282,6 +282,7 @@ fi
 [ -f "$SRC/linkmoth.svg" ] || die "linkmoth.svg not found next to install.sh"
 [ -f "$SRC/linkmoth-white.svg" ] || die "linkmoth-white.svg not found next to install.sh"
 [ -f "$SRC/linkmoth-mark-white.svg" ] || die "linkmoth-mark-white.svg not found next to install.sh"
+[ -f "$SRC/linkmoth-maskable.svg" ] || die "linkmoth-maskable.svg not found next to install.sh"
 [ -f "$SRC/linkmoth-white.ico" ] || die "linkmoth-white.ico not found next to install.sh"
 [ -f "$SRC/sw.js" ] || die "sw.js not found next to install.sh"
 [ -f "$SRC/manifest.webmanifest" ] || die "manifest.webmanifest not found next to install.sh"
@@ -470,7 +471,7 @@ fi
 APP_FILES="linkmoth.py linkmoth_auth.py linkmoth_discord.py linkmoth_kuma_proxy.py
 linkmoth_outage.py linkmoth_push.py linkmoth_notify.py linkmoth_devices.py
 linkmoth_webhooks.py dashboard.html linkmoth.svg linkmoth-white.svg
-linkmoth-mark-white.svg linkmoth-white.ico sw.js
+linkmoth-mark-white.svg linkmoth-maskable.svg linkmoth-white.ico sw.js
 manifest.webmanifest"
 [ -f "$SRC/linkmoth-build.json" ] && APP_FILES="$APP_FILES linkmoth-build.json"
 step "staging application files..."
@@ -702,7 +703,20 @@ info "incidents \342\200\224 no other service is required."
 printf '\n'
 note "Optional: if you run Uptime Kuma, point it here for instant, per-service"
 note "triggering (Settings > Notifications > Webhook):"
-note "  URL:     https://$HEALTH_HOST:$PORT/trigger   (JSON)"
-note "           use $HEALTH_HOST only if Kuma runs on this host; otherwise https://$IP:$PORT/trigger"
+case "$BIND" in
+  0.0.0.0|::)
+    note "  URL:     https://127.0.0.1:$PORT/trigger   (JSON; Kuma on this host)"
+    note "           Kuma elsewhere on the LAN: https://$IP:$PORT/trigger"
+    ;;
+  127.0.0.1)
+    note "  URL:     https://127.0.0.1:$PORT/trigger   (JSON)"
+    note "           only reachable from Kuma running on this same host; no LAN"
+    note "           address will work until bind is set to a real interface"
+    ;;
+  *)
+    note "  URL:     https://$IP:$PORT/trigger   (JSON; same address whether Kuma"
+    note "           runs on this host or elsewhere on the LAN)"
+    ;;
+esac
 note "  Header:  Authorization: Bearer $WEBHOOK_SECRET"
 note "           re-print anytime: sudo -u linkmoth python3 $APP/linkmoth.py --auth-show-webhook"

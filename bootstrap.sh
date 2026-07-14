@@ -129,7 +129,13 @@ try:
             actual[relative] = True
         if set(actual) != set(expected): fail("archive and manifest file sets differ")
         os.mkdir(destination, 0o700)
-        tar.extractall(destination, members=members)
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(destination, members=members, filter="data")
+        else:
+            # Manifest, path, type, mode, size, and digest validation above
+            # already rejects unsafe archive contents on interpreters without
+            # native extraction-filter support (pre-3.9.17/3.10.12/3.11.4).
+            tar.extractall(destination, members=members)
 except (OSError, tarfile.TarError) as exc: fail(str(exc))
 installed = os.path.join(destination, root)
 if not os.path.isfile(os.path.join(installed, "install.sh")): fail("install.sh is missing")

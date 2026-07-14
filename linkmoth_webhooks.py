@@ -616,7 +616,7 @@ def sample_context(kind="fault", now=None):
             "fault_recovered",
             verdict={
                 "severity": "ok", "code": "all_clear",
-                "title": "All clear — everything answers",
+                "title": "All network checks passed",
                 "explain": "Test recovery sent from the Linkmoth dashboard.",
                 "hint": "",
             },

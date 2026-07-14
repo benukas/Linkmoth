@@ -19,6 +19,7 @@ DIST_FILES = {
     "linkmoth.svg",
     "linkmoth-white.svg",
     "linkmoth-mark-white.svg",
+    "linkmoth-maskable.svg",
     "linkmoth-white.ico",
     "sw.js",
     "manifest.webmanifest",
@@ -65,6 +66,15 @@ class PublicReleaseTests(unittest.TestCase):
             "  min-height: 48px; width: auto; margin-top: 0; padding: 12px 18px;",
             dashboard,
         )
+
+    def test_healthy_verdict_hides_incident_actions(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('run.severity === "ok" && evidenceStates.length > 0', dashboard)
+        self.assertIn(
+            'evidenceStates.every((state) => state === "passed" || state === "skipped")',
+            dashboard,
+        )
+        self.assertIn('if (!everythingAnswers && openInc && openInc.ref)', dashboard)
 
     def test_sign_out_lives_in_settings_not_the_header(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")

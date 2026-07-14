@@ -12,6 +12,32 @@
       "sizes": "500x500",
       "type": "image/svg+xml",
       "purpose": "any"
+    },
+    {
+      "src": "/linkmoth-maskable.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Diagnose now",
+      "short_name": "Diagnose",
+      "description": "Run a fresh network diagnosis",
+      "url": "/?do=diagnose"
+    },
+    {
+      "name": "History",
+      "short_name": "History",
+      "description": "Recent checks and incidents",
+      "url": "/#history"
+    },
+    {
+      "name": "Devices",
+      "short_name": "Devices",
+      "description": "Monitored devices and their status",
+      "url": "/#devices"
     }
   ]
 }

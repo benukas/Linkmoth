@@ -23,6 +23,7 @@ ALLOWED_PRESETS = frozenset({"generic", "printer", "web_ui", "tcp_service"})
 MAX_DEVICES = 50
 MAX_CONCURRENT_CHECKS = 4
 MAX_DEVICE_RUNS = 200
+DEVICE_SPARK_SAMPLES = 60
 MAX_HTTP_BODY = 64 * 1024
 HTTP_TIMEOUT = 10
 TCP_TIMEOUT = 5
@@ -477,7 +478,24 @@ class DeviceManager:
     def list_devices(self):
         with self.db_connect() as conn:
             rows = conn.execute("SELECT * FROM devices ORDER BY name COLLATE NOCASE").fetchall()
-        return [_row_to_device(row, self._is_running(row["id"])) for row in rows]
+            devices = []
+            for row in rows:
+                item = _row_to_device(row, self._is_running(row["id"]))
+                item["latency"] = self._latency_series(conn, row["id"])
+                devices.append(item)
+        return devices
+
+    def _latency_series(self, conn, device_id, limit=DEVICE_SPARK_SAMPLES):
+        """Recent check latencies (oldest→newest) for the per-device sparkline."""
+        rows = conn.execute(
+            "SELECT ts, state, duration_ms FROM device_runs "
+            "WHERE device_id=? ORDER BY id DESC LIMIT ?",
+            (device_id, limit),
+        ).fetchall()
+        return [
+            {"ts": row["ts"], "state": row["state"], "ms": row["duration_ms"]}
+            for row in reversed(rows)
+        ]
 
     def get_device(self, device_id):
         with self.db_connect() as conn:

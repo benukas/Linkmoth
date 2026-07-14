@@ -11,35 +11,23 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
-  /* Cream (default light) */
-  --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
-  --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
-  --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
-  --warn-bg: #fcf0d7; --warn-text: #8a5a00;
-  --bad-bg: #fbe4e2; --bad-text: #a52a1e;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="cream"]):not([data-theme="white"]) {
-    --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
-    --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
-    --ok-bg: #1d3a24; --ok-text: #8fd39c;
-    --warn-bg: #40320f; --warn-text: #f0c46a;
-    --bad-bg: #46201c; --bad-text: #f2988d;
-  }
-}
-:root[data-theme="dark"] {
+  /* Default theme — warm dark, shown out of the box. */
   --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
   --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
   --ok-bg: #1d3a24; --ok-text: #8fd39c;
   --warn-bg: #40320f; --warn-text: #f0c46a;
   --bad-bg: #46201c; --bad-text: #f2988d;
+  /* Logo art renders white; flip it dark only on the light (White) theme. */
+  --logo-invert: 0;
 }
-:root[data-theme="cream"] {
-  --bg: #faf9f5; --card: #ffffff; --text: #1a1a17; --muted: #6b6a64;
-  --border: #e3e1d9; --line: #4a7dbd; --line2: #b0682f;
-  --ok-bg: #e3f2e6; --ok-text: #1c6b2d;
-  --warn-bg: #fcf0d7; --warn-text: #8a5a00;
-  --bad-bg: #fbe4e2; --bad-text: #a52a1e;
+:root[data-theme="dark"] {
+  /* AMOLED — near-black so OLED pixels can switch off. */
+  --bg: #050505; --card: #141414; --text: #f0efe9; --muted: #9a9a92;
+  --border: #262626; --line: #7ba7dd; --line2: #d99a5f;
+  --ok-bg: #14301b; --ok-text: #8fd39c;
+  --warn-bg: #382a0b; --warn-text: #f0c46a;
+  --bad-bg: #3d1a17; --bad-text: #f2988d;
+  --logo-invert: 0;
 }
 :root[data-theme="white"] {
   --bg: #ffffff; --card: #f6f7f8; --text: #16181b; --muted: #666c72;
@@ -47,6 +35,7 @@
   --ok-bg: #e1f1e5; --ok-text: #196b2c;
   --warn-bg: #fbedd4; --warn-text: #855400;
   --bad-bg: #fae2e0; --bad-text: #a4291c;
+  --logo-invert: 1;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -60,7 +49,7 @@ body {
 }
 main { max-width: 760px; margin: 0 auto; }
 header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-.site-logo { width: 56px; height: auto; flex-shrink: 0; }
+.site-logo { width: 56px; height: auto; flex-shrink: 0; filter: invert(var(--logo-invert, 0)); }
 h1 { font-size: 26px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 #age { color: var(--muted); font-size: 16px; flex: 1; font-variant-numeric: tabular-nums; }
 header a { color: var(--muted); font-size: 16px; transition: color 150ms ease; }
@@ -104,7 +93,7 @@ nav button.active { color: var(--text); border-color: var(--text); }
 .mt10 { margin-top: 10px; }
 .mt12 { margin-top: 12px; }
 .hint-block { display: block; margin-top: 2px; }
-.wlan-hint { margin: 4px 0 8px 44px; }
+.wlan-hint { margin: 4px 0 10px 58px; font-size: 14px; color: var(--muted); }
 .v-compact { font-size: 20px; }
 .card {
   background: var(--card); border: 1px solid var(--border);
@@ -178,6 +167,7 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
   font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
 }
 .ladder-group:first-child { margin-top: 0; }
+.ladder-group + .row { border-top: none; }
 .probe-summary {
   display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
   background: var(--warn-bg); color: var(--warn-text); font-size: 13px; font-weight: 700;
@@ -315,12 +305,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
   margin: 0; padding: 6px; list-style: none;
   background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-  box-shadow: 0 10px 28px rgba(30, 26, 16, 0.14); max-height: 320px; overflow-y: auto;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); max-height: 320px; overflow-y: auto;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="cream"]):not([data-theme="white"]) .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
-}
-:root[data-theme="dark"] .custom-select-menu { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); }
+:root[data-theme="white"] .custom-select-menu { box-shadow: 0 10px 28px rgba(30, 26, 16, 0.14); }
 .custom-select-menu li {
   padding: 12px 14px; border-radius: 10px; cursor: pointer;
   font-size: 17px; font-weight: 600; border: 1px solid transparent;
@@ -370,6 +357,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 #wh-msg.ok, #wh-curl-msg.ok { color: var(--ok-text); }
 #wh-msg.bad, #wh-curl-msg.bad { color: var(--bad-text); }
 #wh-curl-msg { margin-left: 12px; font-size: 16px; }
+.push-cmd { display: inline-block; margin: 6px 0; padding: 6px 10px; font-family: ui-monospace, monospace; font-size: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; user-select: all; }
 .set-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
 .set-section h4 { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--text); }
 #save-settings { margin-top: 14px; }
@@ -382,11 +370,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .device-toolbar h3 { margin: 0; }
 .device-card { position: relative; transition: border-color 150ms ease, box-shadow 150ms ease; }
-.device-card:hover { box-shadow: 0 2px 10px rgba(30, 26, 16, 0.08); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="cream"]):not([data-theme="white"]) .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
-}
-:root[data-theme="dark"] .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+.device-spark { margin: 10px 0 6px; }
+.device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+:root[data-theme="white"] .device-card:hover { box-shadow: 0 2px 10px rgba(30, 26, 16, 0.08); }
 .device-card.up { border-left: 6px solid var(--ok-text); }
 .device-card.degraded, .device-card.error { border-left: 6px solid var(--warn-text); }
 .device-card.down { border-left: 6px solid var(--bad-text); }
@@ -408,6 +394,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-history-row { padding: 7px 0; border-top: 1px solid var(--border); }
 .device-history-row:first-child { margin-top: 8px; }
 .device-form-actions { display: flex; gap: 10px; margin-top: 14px; }
+.export-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .device-warning {
   background: var(--warn-bg); color: var(--warn-text); padding: 10px 12px;
   border-radius: 9px; font-size: 15px; margin: 8px 0;
@@ -419,6 +406,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .sec-qr { margin: 6px 0 14px; }
 .sec-qr svg { width: 200px; height: 200px; background: #fff; padding: 10px; border-radius: 9px; display: block; }
 .sec-codes { font-family: ui-monospace, monospace; font-size: 15px; line-height: 1.7; background: var(--surface-1); padding: 12px 14px; border-radius: 9px; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
+.update-command { display: block; box-sizing: border-box; width: 100%; margin: 10px 0 8px; font: 14px ui-monospace, monospace; line-height: 1.6; white-space: pre-wrap; background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; resize: vertical; }
+.update-release-link { display: block; margin-top: 4px; }
 #sec-pw-msg, #sec-totp-msg { display: block; margin-top: 8px; font-size: 16px; }
 #sec-pw-msg.bad, #sec-totp-msg.bad { color: var(--bad-text); }
 #sec-pw-msg.ok, #sec-totp-msg.ok { color: var(--ok-text); }
@@ -437,7 +426,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 }
 .auth-box h2 { margin: 0 0 8px; font-size: 24px; text-align: center; }
 .auth-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 6px 0 18px; }
-.auth-brand img { width: 128px; height: auto; }
+.auth-brand img { width: 128px; height: auto; filter: invert(var(--logo-invert, 0)); }
 .auth-brand span { font-size: 24px; font-weight: 600; letter-spacing: 0.3px; }
 .auth-note { color: var(--muted); line-height: 1.45; margin: 0 0 16px; }
 .auth-box label { display: block; font-size: 16px; font-weight: 600; margin-bottom: 6px; }
@@ -501,7 +490,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <label class="role-opt">
         <input type="radio" name="auth-role" value="explainer">
         <span><b>I already use another monitor</b> (e.g. Uptime Kuma)
-          <span class="set-hint hint-block">Leave uptime checking to that service. It calls Linkmoth's webhook when something is down, and Linkmoth explains which layer failed and who's to blame — it won't open incidents on its own.</span></span>
+          <span class="set-hint hint-block">Leave uptime checking to that service. It calls Linkmoth's webhook when something is down, and Linkmoth explains which layer failed and who's to blame – it won't open incidents on its own.</span></span>
       </label>
       <p id="auth-role-webhook" class="set-hint hidden">After you finish, copy the inbound webhook URL and token from <b>Settings → Integrations</b> into your monitor.</p>
       <button id="auth-role-btn" type="button">Continue</button>
@@ -524,10 +513,10 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <h1>Linkmoth</h1>
     <span id="age">loading…</span>
     <div id="host-health" class="host-health hidden" aria-label="Linkmoth host health">
-      <div id="host-cpu" class="host-metric"><span class="k">CPU</span><span class="v">—</span></div>
-      <div id="host-temp" class="host-metric"><span class="k">TEMP</span><span class="v">—</span></div>
-      <div id="host-memory" class="host-metric"><span class="k">RAM</span><span class="v">—</span></div>
-      <div id="host-disk" class="host-metric"><span class="k">DISK</span><span class="v">—</span></div>
+      <div id="host-cpu" class="host-metric"><span class="k">CPU</span><span class="v">–</span></div>
+      <div id="host-temp" class="host-metric"><span class="k">TEMP</span><span class="v">–</span></div>
+      <div id="host-memory" class="host-metric"><span class="k">RAM</span><span class="v">–</span></div>
+      <div id="host-disk" class="host-metric"><span class="k">DISK</span><span class="v">–</span></div>
     </div>
   </header>
 
@@ -558,11 +547,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <p id="v-evidence" class="hint hidden"></p>
       <p id="v-pattern" class="hint hidden"></p>
       <details id="v-playbook" class="playbook hidden">
-        <summary>What to do next — safest steps first</summary>
+        <summary>What to do next – safest steps first</summary>
         <p class="playbook-note">Start at step 1 and stop when the linked rung turns green. “Interruption” steps briefly disconnect people. Never press a router’s factory-reset pin unless you already have a configuration backup.</p>
         <ol id="v-playbook-steps"></ol>
         <p id="verify-result" class="verify-result hidden"></p>
-        <button type="button" id="verify-fix-btn" class="action-btn verify-fix-btn hidden">I tried this — check again</button>
+        <button type="button" id="verify-fix-btn" class="action-btn verify-fix-btn hidden">I tried this – check again</button>
       </details>
     </section>
 
@@ -597,11 +586,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <h3>Connection quality</h3>
       <p id="q-meta" class="set-hint mt0">Measuring…</p>
       <div class="q-head">
-        <span id="q-badge" class="q-badge q-unknown">—</span>
+        <span id="q-badge" class="q-badge q-unknown">–</span>
         <div class="q-stats">
-          <span><b id="q-latency">—</b><small>latency</small></span>
-          <span><b id="q-jitter">—</b><small>jitter</small></span>
-          <span><b id="q-loss">—</b><small>loss</small></span>
+          <span><b id="q-latency">–</b><small>latency</small></span>
+          <span><b id="q-jitter">–</b><small>jitter</small></span>
+          <span><b id="q-loss">–</b><small>loss</small></span>
         </div>
       </div>
       <p id="q-reasons" class="hint"></p>
@@ -735,10 +724,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <div class="set-row">
           <label for="s-theme">Theme</label>
           <select id="s-theme">
-            <option value="system">Match device</option>
-            <option value="cream">Cream</option>
-            <option value="white">White</option>
+            <option value="default">Default</option>
             <option value="dark">Dark</option>
+            <option value="white">White</option>
           </select>
         </div>
       </div>
@@ -752,9 +740,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <div class="set-section">
         <h4>Evidence exports</h4>
         <p class="set-hint">Exports are created locally from bounded evidence. Detailed JSON is for administrators; readable local is a plain-text handoff; support-safe JSON removes credentials and pseudonymizes private-network identifiers consistently within that export.</p>
-        <button type="button" id="export-detailed" class="action-btn">Download detailed JSON</button>
-        <button type="button" id="export-readable" class="action-btn">Download readable local</button>
-        <button type="button" id="export-support" class="action-btn">Download support-safe JSON</button>
+        <div class="export-actions">
+          <button type="button" id="export-detailed" class="action-btn">Download detailed JSON</button>
+          <button type="button" id="export-readable" class="action-btn">Download readable local</button>
+          <button type="button" id="export-support" class="action-btn">Download support-safe JSON</button>
+        </div>
       </div>
       <div class="set-row"><label for="s-kuma">Uptime Kuma link</label><input id="s-kuma" placeholder="auto"></div>
       <p class="set-hint">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</p>
@@ -814,7 +804,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <p id="push-status" class="set-hint">Loading push status…</p>
         <button type="button" id="push-enable" class="action-btn">Enable push on this device</button>
         <button type="button" id="push-disable" class="action-btn hidden">Disable push on this device</button>
-        <p class="set-hint">Works on desktop and Android in the browser. On iPhone/iPad you must add Linkmoth to the Home Screen first (Share → Add to Home Screen), open it from the icon, then enable push — Safari tabs cannot subscribe. The Linkmoth CA must be fully trusted on iOS (profile install <em>and</em> Settings → General → About → Certificate Trust Settings). Global outages defer push until the network recovers.</p>
+        <p class="set-hint">Works on desktop and Android in the browser. On iPhone/iPad you must add Linkmoth to the Home Screen first (Share → Add to Home Screen), open it from the icon, then enable push – Safari tabs cannot subscribe. The Linkmoth CA must be fully trusted on iOS (profile install <em>and</em> Settings → General → About → Certificate Trust Settings). Global outages defer push until the network recovers.</p>
       </div>
       <div class="set-section">
         <h4>Outbound webhooks</h4>
@@ -840,13 +830,13 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
             <label for="wh-headers">Custom headers</label>
             <textarea id="wh-headers" rows="2" spellcheck="false" placeholder="Authorization: Bearer xxx&#10;X-Linkmoth-Token: xxx"></textarea>
           </div>
-          <p class="set-hint">One <code>Name: value</code> per line. Values are stored as secrets — after saving they show masked (<code>••••••••abcd</code>); leave the masked value untouched to keep it.</p>
+          <p class="set-hint">One <code>Name: value</code> per line. Values are stored as secrets – after saving they show masked (<code>••••••••abcd</code>); leave the masked value untouched to keep it.</p>
           <div id="wh-template-wrap" class="hidden">
             <div class="set-row wh-headers-row">
               <label for="wh-template">Payload template</label>
               <textarea id="wh-template" rows="6" spellcheck="false"></textarea>
             </div>
-            <p class="set-hint">Placeholders only — no logic: <code id="wh-template-vars"></code></p>
+            <p class="set-hint">Placeholders only – no logic: <code id="wh-template-vars"></code></p>
           </div>
           <p id="wh-msg"></p>
           <div class="device-form-actions">
@@ -894,7 +884,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <input id="sec-new-pw" type="password" autocomplete="new-password" minlength="12"></div>
         <div class="set-row"><label for="sec-new-pw2">Confirm new password</label>
           <input id="sec-new-pw2" type="password" autocomplete="new-password" minlength="12"></div>
-        <p class="set-hint">At least 12 characters. Changing your password signs you out of all sessions on every device — you'll log back in.</p>
+        <p class="set-hint">At least 12 characters. Changing your password signs you out of all sessions on every device – you'll log back in.</p>
         <button type="button" id="sec-change-pw" class="action-btn">Change password</button>
         <span id="sec-pw-msg"></span>
       </div>
@@ -904,7 +894,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <p id="sec-totp-status" class="set-hint">Loading…</p>
 
         <div id="sec-totp-off">
-          <p class="set-hint">Add an authenticator app (TOTP) as a second factor. Enabling 2FA signs you out of all sessions — you'll log back in with a code.</p>
+          <p class="set-hint">Add an authenticator app (TOTP) as a second factor. Enabling 2FA signs you out of all sessions – you'll log back in with a code.</p>
           <button type="button" id="sec-totp-begin" class="action-btn">Set up 2FA</button>
         </div>
 
@@ -920,10 +910,10 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         </div>
 
         <div id="sec-totp-activated" class="hidden">
-          <p class="device-warning"><b>2FA is on. Save your recovery codes now.</b> Each works once if you lose your authenticator — they are shown only this once.</p>
+          <p class="device-warning"><b>2FA is on. Save your recovery codes now.</b> Each works once if you lose your authenticator – they are shown only this once.</p>
           <pre id="sec-totp-codes" class="sec-codes"></pre>
           <p class="set-hint">After signing in with your password, use the next authenticator code if your app still shows the code you just entered.</p>
-          <button type="button" id="sec-totp-done" class="action-btn">I've saved my codes — sign in</button>
+          <button type="button" id="sec-totp-done" class="action-btn">I've saved my codes – sign in</button>
         </div>
 
         <div id="sec-totp-on" class="hidden">
@@ -962,13 +952,14 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 const $ = (id) => document.getElementById(id);
 
 function applyTheme(pref) {
-  if (pref === "cream" || pref === "white" || pref === "dark") {
+  if (pref === "white" || pref === "dark") {
     document.documentElement.setAttribute("data-theme", pref);
   } else {
+    // "default" (and any legacy value) falls back to the bare :root theme.
     document.documentElement.removeAttribute("data-theme");
   }
 }
-applyTheme(localStorage.getItem("linkmoth-theme") || "system");
+applyTheme(localStorage.getItem("linkmoth-theme") || "default");
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -991,7 +982,7 @@ function clearPacketCache() {
 const BLAME_NAMES = {
   wan_down: "ISP / WAN", local_dns_broken: "Local DNS", pihole_broken: "Local DNS", router_down: "Router",
   router_wlan_down: "Router Wi-Fi", upstream_dns_down: "Upstream DNS", pi_link: "Linkmoth host link",
-  link_degraded: "Host Ethernet degraded", host_power: "Linkmoth host power",
+  link_degraded: "Host Ethernet link degraded", host_power: "Linkmoth host power",
   restricted_connectivity: "Filtered connectivity",
   web_broken: "Web/HTTPS", partial_routing: "Routing", all_clear: "False alarm",
 };
@@ -1065,7 +1056,7 @@ const PLAYBOOKS = {
   all_clear: [
     ["Return to the original alert", "The network ladder is healthy now. Read the service's own error, logs, or monitor response before restarting anything.", [], "check"],
     ["Check the affected service directly", "Open only that service from another LAN device. A single broken app with a healthy ladder is an app or host problem, not an ISP outage.", [], "check"],
-    ["Restart only the affected service", "If its own evidence shows it is stuck, restart that service or container—not the router and not unrelated devices.", [], "interruption", "Success: the original service check recovers while the network ladder remains green."],
+    ["Restart only the affected service", "If its own evidence shows it is stuck, restart that service or container–not the router and not unrelated devices.", [], "interruption", "Success: the original service check recovers while the network ladder remains green."],
     ["Tune a repeated false alarm", "If the service is merely slow, adjust that monitor's timeout or retries based on observed response time; do not silence real failures globally.", [], "check"],
   ],
   probe_disagreement: [
@@ -1075,7 +1066,7 @@ const PLAYBOOKS = {
   ],
   wifi_witness_disagreement: [
     ["Wake the silent Wi-Fi witness", "Unlock it, keep it awake, confirm it is on the intended Wi-Fi, and diagnose again. Phones often stop replying while asleep.", ["router_wlan"], "check", "Success: every configured witness replies, or you identify one device that never accepts ping."],
-    ["Test that device normally", "Open the router page or another LAN service from it. If normal Wi-Fi works but ping does not, the device is a poor witness—not a broken radio.", ["router_wlan"], "check"],
+    ["Test that device normally", "Open the router page or another LAN service from it. If normal Wi-Fi works but ping does not, the device is a poor witness–not a broken radio.", ["router_wlan"], "check"],
     ["Remove an unreliable witness", "Keep only Wi-Fi-only devices that stay awake and accept ping. This improves diagnosis without creating a device-monitoring list.", ["router_wlan"], "check"],
   ],
   power_issue: [
@@ -1277,7 +1268,7 @@ function spark(svgId, hist, key, color, label, detailId) {
     point.setAttribute("cx", px.toFixed(1));
     point.setAttribute("cy", py.toFixed(1));
     point.setAttribute("visibility", "visible");
-    detail.textContent = `${label} — ${fmtTs(sample.ts)} · ${Math.round(value)} ms`;
+    detail.textContent = `${label} – ${fmtTs(sample.ts)} · ${Math.round(value)} ms`;
   }
   function clear() {
     selected = -1;
@@ -1362,7 +1353,7 @@ function renderLadderCheck(c) {
   if ((c.probes || []).length > 1) {
     html += `<details class="probe-evidence"><summary>Per-target evidence (${c.probes.length})</summary><ul>`
       + c.probes.map((probe) =>
-        `<li>${probe.ok ? "✓" : "✕"} <b>${esc(probe.target)}</b> — ${esc(probe.detail)}</li>`
+        `<li>${probe.ok ? "✓" : "✕"} <b>${esc(probe.target)}</b> – ${esc(probe.detail)}</li>`
       ).join("") + `</ul></details>`;
   }
   for (const m of c.micro || []) {
@@ -1372,7 +1363,7 @@ function renderLadderCheck(c) {
       <div><div class="label">${esc(m.label)}</div><div class="detail">${esc(m.detail)}</div></div></div>`;
   }
   if (c.id === "router_wlan" && c.ok === false) {
-    html += `<p class="set-hint wlan-hint">Use Wi-Fi-only devices that reply to ping — not a wired PC. Windows often blocks ICMP.</p>`;
+    html += `<p class="set-hint wlan-hint">Use Wi-Fi-only devices that reply to ping – not a wired PC. Windows often blocks ICMP.</p>`;
   }
   return html;
 }
@@ -1393,11 +1384,17 @@ function supportSummary(status) {
   const inc = status.open_incident;
   const lines = [
     "Linkmoth support summary",
-    `Time: ${new Date(run.ts * 1000).toISOString()}`,
+    `Initial diagnosis: ${new Date(run.ts * 1000).toISOString()}`,
     `Incident: ${inc && inc.ref ? inc.ref : "none open"}`,
+  ];
+  if (inc && inc.started) {
+    const endTs = inc.resolved || run.ts;
+    lines.push(`Duration: ${fmtDur(Math.max(0, endTs - inc.started))}${inc.resolved ? "" : " (ongoing)"}`);
+  }
+  lines.push(
     `Verdict: ${run.title} (${run.code}, ${run.severity})`,
     `Confidence: ${confidenceForChecks(run.checks)}`,
-  ];
+  );
   if (run.explain) lines.push(`Why: ${run.explain}`);
   if (run.hint) lines.push(`Next step: ${run.hint}`);
   lines.push("", "Fault ladder:");
@@ -1412,7 +1409,7 @@ function supportSummary(status) {
       lines.push(`  - ${micro.ok ? "PASS" : micro.ok === false ? "FAIL" : "SKIP"} ${micro.label}: ${micro.detail}`);
     }
   }
-  lines.push("", "Generated locally by Linkmoth; no webhook credentials are included.");
+  lines.push("", "Generated locally by Linkmoth. Credentials are excluded; this summary may include local network addresses.");
   return lines.join("\n");
 }
 
@@ -1424,7 +1421,7 @@ function incidentSupportSummary(packet) {
   if (!run) return `Linkmoth incident ${inc.ref || inc.id}: no diagnosis runs stored.`;
   const base = supportSummary({ last_run: run, open_incident: inc });
   const timeline = (packet.runs || []).map((item) =>
-    `- ${new Date(item.ts * 1000).toISOString()} — ${item.title}`
+    `- ${new Date(item.ts * 1000).toISOString()} – ${item.title}`
   );
   return base + `\n\nIncident started: ${new Date(inc.started * 1000).toISOString()}`
     + (inc.resolved ? `\nIncident resolved: ${new Date(inc.resolved * 1000).toISOString()}` : "\nIncident status: open")
@@ -1451,7 +1448,7 @@ async function copyPlainText(text) {
 }
 
 function fmtBytes(n) {
-  if (n == null || n < 0) return "—";
+  if (n == null || n < 0) return "–";
   if (n < 1024) return n + " B";
   if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
   return (n / 1048576).toFixed(2) + " MB";
@@ -1459,12 +1456,12 @@ function fmtBytes(n) {
 
 function renderDatabaseInfo(db) {
   if (!db || !db.exists) {
-    $("db-status").textContent = "No state.db file yet — it is created on first run.";
+    $("db-status").textContent = "No state.db file yet – it is created on first run.";
     return;
   }
   const avNote = db.auto_vacuum === 0
-    ? "AUTO_VACUUM is off (legacy database) — daily cleanup may run full VACUUM when many free pages remain."
-    : `AUTO_VACUUM is ${db.auto_vacuum_label} — daily cleanup reclaims free pages; manual VACUUM fully repacks the file.`;
+    ? "AUTO_VACUUM is off (legacy database) – daily cleanup may run full VACUUM when many free pages remain."
+    : `AUTO_VACUUM is ${db.auto_vacuum_label} – daily cleanup reclaims free pages; manual VACUUM fully repacks the file.`;
   $("db-status").textContent =
     `File size ${fmtBytes(db.size_bytes)} · ${db.freelist_count} free page(s) · ${avNote}`;
 }
@@ -1529,9 +1526,24 @@ function showAuthGate(mode) {
   $("auth-err").textContent = "";
 }
 
+let launchIntentHandled = false;
+function handleLaunchIntent() {
+  // Runs once, after the dashboard is unlocked, to honour a PWA shortcut.
+  const params = new URLSearchParams(location.search);
+  if (params.get("do") === "diagnose") {
+    // Strip the query so a later manual refresh does not re-trigger it.
+    history.replaceState(null, "", location.pathname + location.hash);
+    showTab("today");
+    const btn = $("diagnose");
+    if (btn && !btn.disabled) btn.click();
+    return;
+  }
+  applyTabFromHash();
+}
 function hideAuthGate() {
   $("auth-gate").classList.add("hidden");
   $("logout-btn").classList.remove("hidden");
+  if (!launchIntentHandled) { launchIntentHandled = true; handleLaunchIntent(); }
 }
 
 async function ensureAuth() {
@@ -1678,19 +1690,19 @@ $("logout-btn").addEventListener("click", doLogout);
 function renderQuality(q) {
   const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
   const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
-  const fmtMs = (v) => (v === null || v === undefined) ? "—" : Math.round(v) + " ms";
-  const fmtPct = (v) => (v === null || v === undefined) ? "—" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
+  const fmtMs = (v) => (v === null || v === undefined) ? "–" : Math.round(v) + " ms";
+  const fmtPct = (v) => (v === null || v === undefined) ? "–" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
   if (!q || q.enabled === false) {
     meta.textContent = q ? "Quality checks are off (enable in config)." : "Quality data unavailable.";
-    setBadge("q-unknown", "—");
-    $("q-latency").textContent = $("q-jitter").textContent = $("q-loss").textContent = "—";
+    setBadge("q-unknown", "–");
+    $("q-latency").textContent = $("q-jitter").textContent = $("q-loss").textContent = "–";
     reasons.textContent = "";
     return;
   }
   const c = q.current;
   if (!c) {
     meta.textContent = "Measuring… first sample appears within a few minutes.";
-    setBadge("q-unknown", "—");
+    setBadge("q-unknown", "–");
     return;
   }
   setBadge("q-" + (c.state || "unknown"), c.state || "unknown");
@@ -1705,7 +1717,7 @@ function renderQuality(q) {
 }
 
 function fmtBytesShort(bytes) {
-  if (bytes === null || bytes === undefined) return "—";
+  if (bytes === null || bytes === undefined) return "–";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = Number(bytes), unit = 0;
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
@@ -1725,20 +1737,20 @@ function renderHostHealth(host) {
   if (!host || typeof host !== "object") { panel.classList.add("hidden"); return; }
   panel.classList.remove("hidden");
   const cpu = host.cpu_percent;
-  const cpuText = cpu === null ? "—" : (cpu < 10 ? `${cpu.toFixed(1)}%` : `${Math.round(cpu)}%`);
+  const cpuText = cpu === null ? "–" : (cpu < 10 ? `${cpu.toFixed(1)}%` : `${Math.round(cpu)}%`);
   renderHostMetric("host-cpu", cpuText,
-    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% (5-second average) · load: ${host.load_1m ?? "—"} · ${host.cpu_cores || 1} core(s)`,
+    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% (5-second average) · load: ${host.load_1m ?? "–"} · ${host.cpu_cores || 1} core(s)`,
     cpu >= 95 ? "bad" : cpu >= 80 ? "warn" : "");
   const temp = host.temperature_c;
-  renderHostMetric("host-temp", temp === null ? "—" : `${Math.round(temp)}°`,
+  renderHostMetric("host-temp", temp === null ? "–" : `${Math.round(temp)}°`,
     temp === null ? "No CPU temperature sensor was found" : `Hottest thermal sensor: ${temp}°C`,
     temp >= 85 ? "bad" : temp >= 75 ? "warn" : "");
   const memory = host.memory_percent;
-  renderHostMetric("host-memory", memory === null ? "—" : `${Math.round(memory)}%`,
+  renderHostMetric("host-memory", memory === null ? "–" : `${Math.round(memory)}%`,
     memory === null ? "Memory usage unavailable" : `RAM: ${fmtBytesShort(host.memory_used_bytes)} of ${fmtBytesShort(host.memory_total_bytes)} used`,
     memory >= 95 ? "bad" : memory >= 85 ? "warn" : "");
   const disk = host.disk_percent;
-  renderHostMetric("host-disk", disk === null ? "—" : `${Math.round(disk)}%`,
+  renderHostMetric("host-disk", disk === null ? "–" : `${Math.round(disk)}%`,
     disk === null ? "Disk usage unavailable" : `Root disk: ${fmtBytesShort(host.disk_used_bytes)} of ${fmtBytesShort(host.disk_total_bytes)} used`,
     disk >= 95 ? "bad" : disk >= 85 ? "warn" : "");
 }
@@ -1773,7 +1785,7 @@ async function refresh() {
     const provenanceText = {
       "sigstore-verified": "Sigstore-verified release",
       "unverified-manual": "Unverified/manual installation",
-      "legacy-unavailable": "Legacy installation — provenance unavailable",
+      "legacy-unavailable": "Legacy installation – provenance unavailable",
       "invalid": "Installation record invalid",
     }[provenance.state] || "Installation record invalid";
     $("provenance-state").textContent = provenanceText;
@@ -1820,8 +1832,14 @@ async function refresh() {
     $("v-hint").textContent = run.hint || "";
     $("v-evidence").textContent = evidenceSummary(run.checks);
     $("v-evidence").classList.remove("hidden");
-    const partialEvidence = (run.checks || []).some((c) => checkState(c) === "partial");
-    everythingAnswers = run.code === "all_clear" && !partialEvidence;
+    const evidenceStates = (run.checks || []).map(checkState);
+    const partialEvidence = evidenceStates.some((state) => state === "partial");
+    // The rendered severity and complete ladder are the UI contract.  An old
+    // incident can retain a legacy code while the current diagnosis is fully
+    // healthy, so never expose incident controls beside a green all-clear
+    // verdict just because that historical code differs.
+    everythingAnswers = run.severity === "ok" && evidenceStates.length > 0
+      && evidenceStates.every((state) => state === "passed" || state === "skipped");
     const allClearNeedsHelp = run.code !== "all_clear" || partialEvidence;
     const pbSteps = allClearNeedsHelp ? playbookSteps(run.code, run.checks) : [];
     if (pbSteps.length) {
@@ -1875,10 +1893,10 @@ async function refresh() {
     const blameEntries = Object.entries(st.blame || {});
     const top = blameEntries.sort((a, b) => b[1] - a[1])[0];
     $("stats").innerHTML = `
-      <div class="stat"><div class="k">Uptime, recorded interval</div><div class="v">${st.uptime_pct === null ? "—" : st.uptime_pct + "%"}</div><small>${st.monitoring_interval_s ? fmtDur(st.monitoring_interval_s) + " monitored" : "no recorded interval"}</small></div>
+      <div class="stat"><div class="k">Uptime, recorded interval</div><div class="v">${st.uptime_pct === null ? "–" : st.uptime_pct + "%"}</div><small>${st.monitoring_interval_s ? fmtDur(st.monitoring_interval_s) + " monitored" : "no recorded interval"}</small></div>
       <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d} <small>${st.false_alarms_30d} false</small></div></div>
       <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div></div>
-      <div class="stat"><div class="k">Top offender</div><div class="v v-compact">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "—"}</div></div>`;
+      <div class="stat"><div class="k">Top offender</div><div class="v v-compact">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "–"}</div></div>`;
     const maxN = Math.max(...blameEntries.map((e) => e[1]), st.false_alarms_30d, 1);
     const total = blameEntries.reduce((acc, e) => acc + e[1], 0) + st.false_alarms_30d;
     if (total > 0) {
@@ -1901,7 +1919,7 @@ async function refresh() {
 
   if (s.history_meta) {
     const hm = s.history_meta;
-    const sample = hm.sample_minutes || hm.baseline_minutes || "—";
+    const sample = hm.sample_minutes || hm.baseline_minutes || "–";
     const refresh = hm.refresh_seconds || refreshSec;
     let meta = `Dashboard refresh every ${refresh}s · new graph point every ${sample} min`;
     if (hm.last_ts) {
@@ -1935,7 +1953,7 @@ function renderPacket(d) {
     lines.push(`<p><span class="k">Reference:</span> <span class="inc-ref">${esc(inc.ref)}</span></p>`);
   }
   if (d.first_failure) {
-    lines.push(`<p><span class="k">First failure:</span> <b>${esc(d.first_failure.label)}</b> — ${esc(d.first_failure.detail)}${d.first_failure_note ? `<br><small>${esc(d.first_failure_note)}</small>` : ""}</p>`);
+    lines.push(`<p><span class="k">First failure:</span> <b>${esc(d.first_failure.label)}</b> – ${esc(d.first_failure.detail)}${d.first_failure_note ? `<br><small>${esc(d.first_failure_note)}</small>` : ""}</p>`);
   }
   const why = [];
   if (d.confidence_reason) why.push(`<li><b>Confidence:</b> ${esc(d.confidence_reason)}</li>`);
@@ -1946,7 +1964,7 @@ function renderPacket(d) {
   const pbRun = firstBad || d.runs[d.runs.length - 1];
   const pbSteps = pbCode ? playbookSteps(pbCode, pbRun ? pbRun.checks : []) : [];
   if (pbSteps.length) {
-    lines.push(`<details class="playbook"><summary>What to do next — safest steps first</summary>
+    lines.push(`<details class="playbook"><summary>What to do next – safest steps first</summary>
       <p class="playbook-note">Start with safe checks. Stop when the linked rung turns green, and avoid a factory reset unless you have a configuration backup.</p>
       <ol>${playbookHtml(pbSteps)}</ol></details>`);
   }
@@ -1957,12 +1975,12 @@ function renderPacket(d) {
   if (d.similar && d.similar.length) {
     lines.push(`<details class="packet-section"><summary>Similar incidents (${d.similar.length})</summary><ul class="similar-inc">`
       + d.similar.map((s) =>
-        `<li><span class="inc-ref">${esc(s.ref || "—")}</span> ${fmtTs(s.started)} · ${fmtDur(s.duration_s || 0)}</li>`
+        `<li><span class="inc-ref">${esc(s.ref || "–")}</span> ${fmtTs(s.started)} · ${fmtDur(s.duration_s || 0)}</li>`
       ).join("") + `</ul></details>`);
   }
   const recurrence = formatIncidentPattern(d.pattern);
   if (recurrence) {
-    lines.push(`<details class="packet-section"><summary>Repeat evidence</summary><div class="diffbox"><b>${esc(recurrence)}</b><p>Repeated faults are evidence for a router vendor, DNS operator, or ISP—not a reason to repeatedly reboot things.</p></div></details>`);
+    lines.push(`<details class="packet-section"><summary>Repeat evidence</summary><div class="diffbox"><b>${esc(recurrence)}</b><p>Repeated faults are evidence for a router vendor, DNS operator, or ISP–not a reason to repeatedly reboot things.</p></div></details>`);
   }
   if (d.diff.length) {
     lines.push(`<details class="packet-section"><summary>Compared with last healthy check</summary><div class="diffbox">`
@@ -1978,7 +1996,7 @@ function renderPacket(d) {
     lines.push(`<details class="packet-section"><summary>What stayed healthy</summary><p>${d.stayed_healthy.map(esc).join(", ")}</p></details>`);
   }
   lines.push(`<details class="packet-section"><summary>Diagnosis timeline (${d.runs.length} runs) ${conf}</summary><ul class="timeline">` + d.runs.map((r, index) =>
-    `<li><details class="timeline-run" data-run-index="${index}"><summary><span class="dot ${r.severity}"></span>${fmtTime(r.ts)} — ${esc(r.title)}</summary><div class="rawruns"></div></details></li>`
+    `<li><details class="timeline-run" data-run-index="${index}"><summary><span class="dot ${r.severity}"></span>${fmtTime(r.ts)} – ${esc(r.title)}</summary><div class="rawruns"></div></details></li>`
   ).join("") + `</ul></details>`);
   return `<div class="packet">${lines.join("")}</div>`;
 }
@@ -2000,7 +2018,7 @@ function incidentSummaryHtml(inc) {
     : '<span class="pill done">' + fmtDur(inc.resolved - inc.started) + "</span>";
   const title = inc.lifecycle === "recovered-awaiting-confirmation" ? "Recovered awaiting confirmation"
     : inc.lifecycle === "false-alarm" ? "False alarm"
-    : open ? "Active — diagnosing" : (inc.diagnosis_title || inc.verdict_title || inc.verdict_code || "Closed");
+    : open ? "Active – diagnosing" : (inc.diagnosis_title || inc.verdict_title || inc.verdict_code || "Closed");
   const ref = inc.ref ? `<span class="inc-ref">${esc(inc.ref)}</span>` : "";
   return `<summary><span class="inc-summary-title">${ref}${esc(title)}</span><span class="inc-summary-meta"><span class="when">${fmtTs(inc.started)} · </span>${pill}</span></summary>`;
 }
@@ -2064,12 +2082,17 @@ function deviceIntervalLabel(seconds) {
 }
 
 function renderDeviceCard(d) {
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   const state = d.last_state || "unknown";
-  const stateLabel = d.running ? "checking…" : state;
+  const stateLabel = d.running ? "checking…" : cap(state);
   const latest = d.last_run_ts ? `Last checked ${fmtAge(Date.now() / 1000 - d.last_run_ts)}` : "Never checked";
   const alerts = Object.entries(d.alerts || {}).filter(([, on]) => on).map(([name]) => name);
+  // "Scheduled monitoring" is the confirmed/stable state from repeated checks —
+  // distinct from the single latest check shown in the badge. Until enough
+  // checks have run it has no stable verdict yet, so say so plainly rather than
+  // printing "unknown" beside a badge that already shows Up/Down.
   const monitoring = d.interval_seconds
-    ? `${deviceIntervalLabel(d.interval_seconds)} · monitored state: ${d.stable_state || "unknown"}`
+    ? `${deviceIntervalLabel(d.interval_seconds)} · Scheduled monitoring: ${d.stable_state ? cap(d.stable_state) : "awaiting first result"}`
     : "Automatic checks off";
   const summary = d.last_summary || "Run a check to see whether this device answers.";
   return `<section class="card device-card ${esc(state)}${d.enabled ? "" : " disabled"}" data-device-id="${esc(d.id)}">
@@ -2081,6 +2104,11 @@ function renderDeviceCard(d) {
     <p class="device-summary">${esc(summary)}</p>
     <p class="device-meta">${esc(d.address)} · ${esc(d.preset)} · ${esc(latest)}</p>
     <p class="device-meta">${esc(monitoring)} · Alerts: ${alerts.length ? esc(alerts.join(", ")) : "off"}</p>
+    <div class="device-spark">
+      <svg class="spark" id="spark-dev-${esc(d.id)}" viewBox="0 0 600 72" preserveAspectRatio="none" tabindex="0"></svg>
+      <p class="spark-detail" id="spark-dev-${esc(d.id)}-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
+      <div class="spark-label"><span>Check latency</span><span>${d.latency && d.latency.length ? Math.round(d.latency[d.latency.length - 1].ms) + " ms" : "–"}</span></div>
+    </div>
     <div class="device-actions">
       <button type="button" class="action-btn" data-device-action="run" data-device-id="${esc(d.id)}"${!d.enabled || d.running ? " disabled" : ""}>Run now</button>
       <button type="button" class="action-btn" data-device-action="edit" data-device-id="${esc(d.id)}">Edit</button>
@@ -2115,6 +2143,19 @@ async function loadDeviceHistory(details) {
     ).join("");
   } catch (e) {
     slot.innerHTML = `<p class="empty">Could not reach Linkmoth.</p>`;
+  }
+}
+
+function renderDeviceSparks(devices) {
+  // Draw the per-device latency sparkline after the cards are in the DOM,
+  // reusing the same interactive chart the Today tab uses.
+  for (const d of devices) {
+    const svgId = "spark-dev-" + d.id;
+    if (!$(svgId)) continue;
+    const hist = (d.latency || []).map((s) => ({
+      ts: s.ts, ms: { latency: s.ms }, severity: s.state === "down" ? "bad" : "ok",
+    }));
+    spark(svgId, hist, "latency", "var(--line)", d.name, svgId + "-detail");
   }
 }
 
@@ -2167,6 +2208,7 @@ async function loadDevices(silent) {
     } else {
       $("device-list").innerHTML = deviceData.map(renderDeviceCard).join("");
       bindDeviceCards();
+      renderDeviceSparks(deviceData);
     }
     const channels = out.channels || {};
     const unavailable = Object.entries(channels).filter(([, ready]) => !ready).map(([name]) => name);
@@ -2393,7 +2435,7 @@ function whStatusLine(w) {
       cls: "",
     };
   }
-  return { text: "never sent — try a test", cls: "" };
+  return { text: "never sent – try a test", cls: "" };
 }
 
 function renderWebhookItem(w) {
@@ -2467,7 +2509,7 @@ function whParseHeaders(text) {
     const line = rawLine.trim();
     if (!line) continue;
     const idx = line.indexOf(":");
-    if (idx < 1) throw new Error(`header line needs "Name: value" — got "${line.slice(0, 40)}"`);
+    if (idx < 1) throw new Error(`header line needs "Name: value" – got "${line.slice(0, 40)}"`);
     headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
   }
   return headers;
@@ -2593,7 +2635,7 @@ async function testWebhook(id, kind, item) {
       msg.textContent = out.error || "Test failed.";
       msg.className = "wh-test-msg bad";
     } else if (out.ok) {
-      msg.textContent = `HTTP ${out.status} — delivered`;
+      msg.textContent = `HTTP ${out.status} – delivered`;
       msg.className = "wh-test-msg ok";
     } else {
       msg.textContent = `Failed: ${out.error || ("HTTP " + out.status)}`;
@@ -2676,8 +2718,12 @@ function closeNavMenu() {
   $("main-nav").classList.remove("open");
   $("nav-burger").setAttribute("aria-expanded", "false");
 }
+const TAB_NAMES = ["today", "devices", "history", "settings", "security"];
+let currentTab = "today";
 function showTab(name) {
-  for (const t of ["today", "devices", "history", "settings", "security"]) {
+  if (!TAB_NAMES.includes(name)) name = "today";
+  currentTab = name;
+  for (const t of TAB_NAMES) {
     $("tab-" + t).classList.toggle("hidden", t !== name);
     $("nav-" + t).classList.toggle("active", t === name);
   }
@@ -2686,7 +2732,16 @@ function showTab(name) {
   if (name === "settings") { loadDatabaseInfo(); loadWebhooks(false); loadInboundWebhookInfo(); }
   if (name === "security") loadSecurity();
   closeNavMenu();
+  // Reflect the tab in the URL fragment so PWA shortcuts (/#history) and
+  // bookmarks land on the right tab. replaceState avoids a history entry and
+  // does not fire hashchange (which would re-enter applyTabFromHash).
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
 }
+function applyTabFromHash() {
+  const name = (location.hash || "").replace(/^#/, "");
+  if (TAB_NAMES.includes(name) && name !== currentTab) showTab(name);
+}
+window.addEventListener("hashchange", applyTabFromHash);
 $("nav-today").addEventListener("click", () => showTab("today"));
 $("nav-devices").addEventListener("click", () => showTab("devices"));
 $("nav-history").addEventListener("click", () => showTab("history"));
@@ -2920,7 +2975,7 @@ async function loadSecurityPosture() {
     const tunnelWarning = tunnels.length
       ? `<p class="device-warning"><b>Bind exposure:</b> listening on 0.0.0.0 reaches beyond your LAN over ` +
         `${tunnels.map((t) => `<b>${esc(t.iface)}</b> (${esc(t.address)})`).join(", ")} ` +
-        `— a VPN/tunnel interface Linkmoth detected on this host. Set <code>"bind"</code> in ` +
+        `– a VPN/tunnel interface Linkmoth detected on this host. Set <code>"bind"</code> in ` +
         `<code>/etc/linkmoth/config.json</code> to your LAN IP instead of 0.0.0.0, then restart.</p>`
       : "";
     const exposure = s.public_exposure_recent || {};
@@ -2978,7 +3033,7 @@ $("sec-change-pw").addEventListener("click", async () => {
   if (np !== np2) { secMsg("sec-pw-msg", "New passwords do not match.", false); return; }
   const { ok, body } = await secPost("/api/auth/change-password", { current: cur, new: np });
   if (ok) {
-    secMsg("sec-pw-msg", "Password changed — signing you out…", true);
+    secMsg("sec-pw-msg", "Password changed – signing you out…", true);
     setTimeout(ensureAuth, 1200);
   } else {
     secMsg("sec-pw-msg", body.error || "Could not change password.", false);
@@ -2999,7 +3054,7 @@ $("sec-totp-begin").addEventListener("click", async () => {
   $("sec-totp-enroll").classList.remove("hidden");
   secMsg(
     "sec-totp-msg",
-    qr ? "" : "QR generation failed — enter the secret manually.",
+    qr ? "" : "QR generation failed – enter the secret manually.",
     false,
   );
 });
@@ -3036,7 +3091,7 @@ $("sec-totp-activate").addEventListener("click", async () => {
   } catch (e) {
     holdAuthForRecoveryCodes = false;
     button.disabled = false;
-    secMsg("sec-totp-msg", "Could not activate 2FA — try again.", false);
+    secMsg("sec-totp-msg", "Could not activate 2FA – try again.", false);
   }
 });
 
@@ -3055,7 +3110,7 @@ $("sec-totp-done").addEventListener("click", async () => {
 $("sec-totp-disable").addEventListener("click", async () => {
   const { ok, body } = await secPost("/api/auth/totp/disable", { password: $("sec-totp-pw").value });
   if (ok) {
-    secMsg("sec-totp-msg", "2FA disabled — signing you out…", true);
+    secMsg("sec-totp-msg", "2FA disabled – signing you out…", true);
     setTimeout(ensureAuth, 1200);
   } else {
     secMsg("sec-totp-msg", body.error || "Could not disable 2FA.", false);
@@ -3176,6 +3231,15 @@ $("diagnose").addEventListener("click", async () => {
   }, 4000);
 });
 
+async function rediagnoseAfterIncidentAction() {
+  // After a close / false-alarm the incident is gone server-side, but the last
+  // stored run is still the old fault, so the Today card would keep showing a
+  // fault (and its buttons). Kick off a fresh diagnosis so the verdict and the
+  // incident controls reflect the current reality, then refresh once it lands.
+  try { await fetch("/api/diagnose", { method: "POST", headers: authHeaders({}) }); } catch (e) {}
+  setTimeout(refresh, 4000);
+}
+
 $("update-check").addEventListener("click", async () => {
   const button = $("update-check");
   const result = $("update-result");
@@ -3195,15 +3259,31 @@ $("update-check").addEventListener("click", async () => {
     result.textContent = `Version ${data.latest_version} is available (published ${data.published_at}). Copy the versioned update command below; it checks the archive checksum and does not run automatically. Sigstore verification remains optional.`;
     const command = document.createElement("textarea");
     command.readOnly = true;
+    command.rows = 3;
+    command.className = "update-command";
     command.value = data.update_command;
     command.setAttribute("aria-label", "Versioned update command");
     result.appendChild(command);
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "action-btn";
+    copyBtn.textContent = "Copy command";
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await copyPlainText(data.update_command);
+        copyBtn.textContent = "Copied";
+      } catch (e) {
+        copyBtn.textContent = "Copy failed";
+      }
+      setTimeout(() => { copyBtn.textContent = "Copy command"; }, 1800);
+    });
+    result.appendChild(copyBtn);
     const link = document.createElement("a");
+    link.className = "update-release-link";
     link.href = data.release_url;
     link.textContent = "View official release";
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    result.appendChild(document.createTextNode(" "));
     result.appendChild(link);
   } catch (error) {
     result.textContent = error.message || "Update check failed";
@@ -3287,10 +3367,10 @@ async function runVerifyFix(resultEl) {
       msg.textContent = `New target disagreement: ${(out.regressed_labels || out.regressed).join(", ")}. The network still has a working path; expand the amber rung.`;
       msg.classList.add("bad");
     } else if (out.verdict && out.verdict.severity === "ok") {
-      msg.textContent = "All clear — the network looks healthy now. Close the incident if you are done investigating.";
+      msg.textContent = "All clear – the network looks healthy now. Close the incident if you are done investigating.";
       msg.classList.add("ok");
     } else {
-      msg.textContent = "Still failing — try another step from the playbook.";
+      msg.textContent = "Still failing – try another step from the playbook.";
       msg.classList.add("bad");
     }
     await refresh();
@@ -3369,7 +3449,7 @@ $("save-settings").addEventListener("click", async () => {
     });
     const out = await r.json();
     if (out.saved) {
-      msg.textContent = "Saved — applied immediately";
+      msg.textContent = "Saved – applied immediately";
       msg.className = "ok";
       settingsLoaded = false;
       refresh();
@@ -3419,9 +3499,9 @@ function pushHttpsErrorHint(err) {
     if (isAppleMobile()) {
       return "HTTPS/certificate error on this device. Install the Linkmoth CA, then enable full trust in Settings → General → About → Certificate Trust Settings. Reopen the Home Screen app and try again.";
     }
-    return "HTTPS/certificate error — trust the Linkmoth CA on this device (see README TLS section) and reload.";
+    return "HTTPS/certificate error – trust the Linkmoth CA on this device (see README TLS section) and reload.";
   }
-  return "Push setup failed — check HTTPS, Home Screen app (iPhone), and browser support.";
+  return "Push setup failed – check HTTPS, Home Screen app (iPhone), and browser support.";
 }
 
 function renderTodayBanner(s) {
@@ -3429,7 +3509,7 @@ function renderTodayBanner(s) {
   const lines = [];
   if (s.outage_active) {
     el.className = "banner bad";
-    lines.push(`<b>Global outage active</b> — ${esc(s.outage_active.title || s.outage_active.code)}. Alerts are deferred until the network can reach Discord/push again.`);
+    lines.push(`<b>Global outage active</b> – ${esc(s.outage_active.title || s.outage_active.code)}. Alerts are deferred until the network can reach Discord/push again.`);
   } else if (s.open_incident_meta) {
     const m = s.open_incident_meta;
     el.className = "banner";
@@ -3437,7 +3517,7 @@ function renderTodayBanner(s) {
     const lastTxt = last
       ? `${esc(last.title)} (${fmtAge(s.now - last.ts)} ago)`
       : "waiting for first recheck";
-    lines.push(`<b>Open incident ${esc(m.ref || ("#" + m.id))}</b> — ${m.run_count} run(s) · last loop: ${lastTxt}${m.diagnosing ? " · diagnosing…" : ""}`);
+    lines.push(`<b>Open incident ${esc(m.ref || ("#" + m.id))}</b> – ${m.run_count} run(s) · last loop: ${lastTxt}${m.diagnosing ? " · diagnosing…" : ""}`);
     if (last && last.severity === "ok" && s.last_run && s.last_run.severity === "ok") {
       lines.push(`Live ladder is green; incident closes after two consecutive healthy loop runs (up to ~10 min apart).`);
     }
@@ -3463,10 +3543,25 @@ function renderPushStatus(s) {
   const disableBtn = $("push-disable");
   let lines = [];
   if (s.outage_active) {
-    lines.push(`Global outage active: ${esc(s.outage_active.title || s.outage_active.code)} — alerts deferred until recovery.`);
+    lines.push(`Global outage active: ${esc(s.outage_active.title || s.outage_active.code)} – alerts deferred until recovery.`);
   }
   if (!p.available) {
-    lines.push("Server push unavailable — run on the host: sudo bash install.sh --with-push");
+    const gh = (s.app && s.app.github) || "https://github.com/benukas/linkmoth";
+    const ver = s.app && s.app.version ? "v" + s.app.version : null;
+    if (ver) {
+      // The installer is not left on the host after a bootstrap install, so
+      // point at the versioned bootstrap (the same asset used to install),
+      // which forwards --with-push to the installer. A git checkout can use
+      // its own install.sh instead.
+      const cmd = esc(`curl -fLO ${gh}/releases/download/${ver}/linkmoth-${ver}-bootstrap.sh `
+        + `&& sudo bash linkmoth-${ver}-bootstrap.sh --with-push`);
+      lines.push(`Server push isn't set up on this host. Enable it by re-running the installer with push: `
+        + `<code class="push-cmd">${cmd}</code> `
+        + `(from a git checkout instead, run <code>sudo bash install.sh --with-push</code> in that folder).`);
+    } else {
+      lines.push("Server push isn't set up on this host – re-run the installer with "
+        + "<code>--with-push</code> (see ADVANCED.md → Browser push).");
+    }
     enableBtn.disabled = true;
     disableBtn.classList.add("hidden");
     el.innerHTML = lines.join(" ");
@@ -3507,7 +3602,7 @@ async function enablePushOnDevice() {
   }
   try {
     if (Notification.permission === "denied") {
-      msg.textContent = "Notifications blocked — allow them in browser settings.";
+      msg.textContent = "Notifications blocked – allow them in browser settings.";
       return;
     }
     const perm = await Notification.requestPermission();
@@ -3587,7 +3682,7 @@ $("incident-false-alarm").addEventListener("click", async () => {
     });
     const out = await r.json();
     if (!r.ok) alert(out.error || "Could not mark false alarm");
-    else { clearPacketCache(); refresh(); }
+    else { clearPacketCache(); refresh(); rediagnoseAfterIncidentAction(); }
   } catch (e) {
     alert("Could not mark false alarm");
   }
@@ -3607,6 +3702,8 @@ document.addEventListener("click", async (ev) => {
     if (!r.ok) { alert(out.error || "Could not mark false alarm"); btn.disabled = false; return; }
     clearPacketCache();
     loadHistory();
+    refresh();
+    rediagnoseAfterIncidentAction();
   } catch (e) {
     alert("Could not mark false alarm");
     btn.disabled = false;
@@ -3619,7 +3716,7 @@ $("incident-close").addEventListener("click", async () => {
     const r = await fetch("/api/incident/close", { method: "POST", headers: authHeaders() });
     const out = await r.json();
     if (!r.ok) alert(out.error || "Close failed");
-    else refresh();
+    else { refresh(); rediagnoseAfterIncidentAction(); }
   } catch (e) {
     alert("Close failed");
   }
@@ -3645,8 +3742,8 @@ $("vacuum-db").addEventListener("click", async () => {
     if (out.vacuum) {
       const reclaimed = out.bytes_reclaimed || 0;
       msg.textContent = reclaimed
-        ? `Done — reclaimed ${fmtBytes(reclaimed)} (${fmtBytes(out.size_before_bytes)} → ${fmtBytes(out.size_after_bytes)})`
-        : "Done — database repacked (no size change)";
+        ? `Done – reclaimed ${fmtBytes(reclaimed)} (${fmtBytes(out.size_before_bytes)} → ${fmtBytes(out.size_after_bytes)})`
+        : "Done – database repacked (no size change)";
       msg.className = "ok";
       if (out.database) renderDatabaseInfo(out.database);
       else loadDatabaseInfo();
@@ -3662,7 +3759,8 @@ $("vacuum-db").addEventListener("click", async () => {
   setTimeout(() => { msg.textContent = ""; }, 8000);
 });
 
-$("s-theme").value = localStorage.getItem("linkmoth-theme") || "system";
+const savedTheme = localStorage.getItem("linkmoth-theme");
+$("s-theme").value = (savedTheme === "white" || savedTheme === "dark") ? savedTheme : "default";
 $("s-theme").addEventListener("change", (e) => {
   localStorage.setItem("linkmoth-theme", e.target.value);
   applyTheme(e.target.value);

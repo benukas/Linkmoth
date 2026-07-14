@@ -34,6 +34,7 @@ BASE = Path(__file__).resolve().parent
 ICON_PATH = BASE / "linkmoth.svg"
 WHITE_LOGO_PATH = BASE / "linkmoth-white.svg"
 WHITE_MARK_PATH = BASE / "linkmoth-mark-white.svg"
+MASKABLE_ICON_PATH = BASE / "linkmoth-maskable.svg"
 FAVICON_PATH = BASE / "linkmoth-white.ico"
 SW_PATH = BASE / "sw.js"
 MANIFEST_PATH = BASE / "manifest.webmanifest"
@@ -1305,7 +1306,7 @@ def check_power():
                 throttle_detail = "ok now (undervoltage/throttling happened since boot)"
             else:
                 throttle_ok = True
-                throttle_detail = "power ok"
+                throttle_detail = "Host power healthy"
     if throttle_ok is None:
         for name_file in Path("/sys/class/hwmon").glob("hwmon*/name"):
             try:
@@ -1317,7 +1318,7 @@ def check_power():
                     throttle_detail = "undervoltage now (hwmon)"
                 else:
                     throttle_ok = True
-                    throttle_detail = "power ok (hwmon)"
+                    throttle_detail = "Host power healthy"
                 break
             except OSError:
                 continue
@@ -1486,7 +1487,7 @@ def check_router_wlan(gateway_ok, include_evidence=False):
     """
     clients = CFG.get("target_wifi_clients") or []
     if not clients:
-        result = (None, "not configured — skipped")
+        result = (None, "not configured")
         return (*result, {}) if include_evidence else result
     if not gateway_ok:
         result = (None, "router LAN unreachable — skipped")
@@ -1674,6 +1675,12 @@ def _dns_query_a(server, domain, timeout=2.0):
     return ancount >= 1 or truncated
 
 
+def _ms_text(ms):
+    """Human-readable latency. Sub-millisecond timings round to 0 with a plain
+    '{:.0f} ms' format, which reads as an impossible '0 ms'; show '<1 ms'."""
+    return "<1 ms" if ms < 0.5 else f"{ms:.0f} ms"
+
+
 def dig(server, domain):
     try:
         ipaddress.ip_address(server)
@@ -1684,8 +1691,8 @@ def dig(server, domain):
     answered = _dns_query_a(server, domain)
     ms = (time.monotonic() - start) * 1000
     if answered:
-        return True, f"@{server}: answered in {ms:.0f} ms", ms
-    return False, f"@{server}: no answer", None
+        return True, f"Resolver at {server}: answered in {_ms_text(ms)}", ms
+    return False, f"Resolver at {server}: no answer", None
 
 
 def http_get(url, timeout=5):
@@ -1711,7 +1718,7 @@ def http_get(url, timeout=5):
         )
         with opener.open(req, timeout=timeout) as r:
             ms = (time.monotonic() - start) * 1000
-            return True, f"{target}: HTTP {r.status} in {ms:.0f} ms", ms
+            return True, f"{target}: HTTP {r.status} in {_ms_text(ms)}", ms
     except Exception as e:
         return False, f"{_https_probe_label(url)}: {e.__class__.__name__}", None
 
@@ -2056,10 +2063,10 @@ def run_ladder():
         wlan_ok, wlan_detail = wlan_result
         wlan_evidence = {}
     if wlan_ok is None:
-        add("router_wlan", "Router Wireless (WLAN)", None, wlan_detail)
+        add("router_wlan", "Router Wi-Fi", None, wlan_detail)
     else:
         add(
-            "router_wlan", "Router Wireless (WLAN)", wlan_ok, wlan_detail,
+            "router_wlan", "Router Wi-Fi", wlan_ok, wlan_detail,
             **wlan_evidence,
         )
     dns_runtime = local_dns_runtime_info(refresh=True)
@@ -2235,8 +2242,10 @@ def verdict(checks):
         )
     elif "⚠️" in (c["link"].get("detail") or ""):
         v = ("warn", "link_degraded", "Host Ethernet link is degraded",
-             "The link is up but negotiated below gigabit or half-duplex: " + c["link"]["detail"],
-             "Try another cable or switch port; bad cabling often drops speed before the link drops entirely.")
+             "The Ethernet link is connected, but it negotiated a reduced mode "
+             "(below gigabit, or half-duplex): " + c["link"]["detail"],
+             "Try another cable or switch port. A damaged cable or poor connection "
+             "can reduce the negotiated speed without disconnecting completely.")
     elif c.get("router_wlan", {}).get("ok") is False:
         v = ("warn", "router_wlan_down", "Configured Wi-Fi witnesses are not answering",
              c["router_wlan"]["detail"],
@@ -2256,7 +2265,7 @@ def verdict(checks):
                 "Run one fresh diagnosis. If the same target keeps failing, replace that diagnostic target instead of treating it as a network outage.",
             )
         else:
-            v = ("ok", "all_clear", "All clear — everything answers",
+            v = ("ok", "all_clear", "All network checks passed",
                  "Router, local DNS, upstream DNS, ping and HTTPS all respond normally.",
                  "")
     sev, code, title, explain, hint = v
@@ -2778,7 +2787,7 @@ class Engine:
                     recovery_verdict = {
                         "severity": "ok",
                         "code": "all_clear",
-                        "title": "All clear — everything answers",
+                        "title": "All network checks passed",
                         "explain": v.get("explain", ""),
                         "hint": "",
                     }
@@ -3805,6 +3814,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, {"error": "not found"})
             return
+        if url.path == "/linkmoth-maskable.svg":
+            if MASKABLE_ICON_PATH.is_file():
+                self._send(200, MASKABLE_ICON_PATH.read_bytes(), "image/svg+xml")
+            else:
+                self._send(404, {"error": "not found"})
+            return
         if url.path in ("/favicon.ico", "/linkmoth-white.ico"):
             if FAVICON_PATH.is_file():
                 self._send(200, FAVICON_PATH.read_bytes(), "image/x-icon")
@@ -4385,6 +4400,7 @@ def doctor():
     report("linkmoth.svg present", ICON_PATH.is_file(), str(ICON_PATH))
     report("linkmoth-white.svg present", WHITE_LOGO_PATH.is_file(), str(WHITE_LOGO_PATH))
     report("linkmoth-mark-white.svg present", WHITE_MARK_PATH.is_file(), str(WHITE_MARK_PATH))
+    report("linkmoth-maskable.svg present", MASKABLE_ICON_PATH.is_file(), str(MASKABLE_ICON_PATH))
     report("browser icon present", FAVICON_PATH.is_file(), str(FAVICON_PATH))
     try:
         import linkmoth_push  # noqa: F401  (adds the optional push venv to sys.path)
