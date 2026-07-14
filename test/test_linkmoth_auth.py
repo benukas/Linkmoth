@@ -497,19 +497,18 @@ class AuthenticatedTests(LinkmothTestBase):
         )
         self.assertEqual(code, 429)
 
-    def test_global_login_budget_locks_multiple_source_addresses(self):
-        headers = [{"Remote-Addr": f"192.168.1.{i}"} for i in range(1, 22)]
-        for item in headers[:self.linkmoth_auth_limit()]:
-            self.auth.record_login_failure(item)
-        allowed, retry_after = self.auth.login_allowed(headers[-1])
-        self.assertFalse(allowed)
-        self.assertGreater(retry_after, 0)
+    def test_distributed_login_failures_only_throttle_their_sources(self):
+        attackers = [{"Remote-Addr": f"192.168.1.{i}"} for i in range(1, 21)]
+        for attacker in attackers:
+            for _ in range(3):
+                self.auth.record_login_failure(attacker)
+            allowed, retry_after = self.auth.login_allowed(attacker)
+            self.assertFalse(allowed)
+            self.assertGreater(retry_after, 0)
 
-    def linkmoth_auth_limit(self):
-        return self.linkmoth_auth_module().GLOBAL_FAILURE_LIMIT
-
-    def linkmoth_auth_module(self):
-        return importlib.import_module("linkmoth_auth")
+        clean_source = {"Remote-Addr": "192.168.1.200"}
+        self.assertEqual(self.auth.login_allowed(clean_source), (True, 0))
+        self.assertTrue(self.auth.verify_login_password("secret-passphrase"))
 
     def test_csrf_required_on_diagnose(self):
         _, _, cookie, _ = self._login()

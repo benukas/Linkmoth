@@ -40,8 +40,9 @@ compatibility report).
 
 ## Quick start
 
-You need: a supported Pi/Debian/Ubuntu host that stays powered on, and about
-five minutes.
+You need: a supported Pi/Debian/Ubuntu host that stays powered on,
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/), and
+about five minutes.
 
 **1. SSH into the host** (skip this if it has its own screen and keyboard):
 
@@ -53,14 +54,21 @@ ssh user@192.168.1.50
 
 ```bash
 curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.8/linkmoth-v0.2.8-bootstrap.sh
-sudo bash linkmoth-v0.2.8-bootstrap.sh
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.8/linkmoth-v0.2.8-bootstrap.sh.bundle
+cosign verify-blob \
+  --bundle "linkmoth-v0.2.8-bootstrap.sh.bundle" \
+  --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/v0.2.8" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "linkmoth-v0.2.8-bootstrap.sh"
+sudo bash "linkmoth-v0.2.8-bootstrap.sh"
 ```
 
-This checks your environment, sets up a hardened systemd service, and prints
-the dashboard address and a one-time setup token when it's done.
-No Git checkout, package manager, or Cosign installation is needed. Want the
-build cryptographically verified instead of just checksum-checked? See
-[ADVANCED.md](ADVANCED.md#sigstore-verified-installation).
+This verifies the bootstrap's pinned release-workflow identity; the bootstrap
+then verifies the archive, checksum, and manifest before it installs a hardened
+systemd service. It prints the dashboard address and a one-time setup token
+when it's done. No Git checkout or package manager is needed. See
+[ADVANCED.md](ADVANCED.md#sigstore-verified-installation) for provenance details
+and the explicitly unverified recovery path.
 
 **3. Open the dashboard** at the address the installer printed
 (`https://<host-ip>:8686`). Your browser will warn about the certificate;

@@ -155,13 +155,23 @@ class PublicReleaseTests(unittest.TestCase):
             settings_tab,
         )
 
-    def test_release_bootstrap_keeps_sigstore_optional_and_is_not_pipe_to_root(self):
+    def test_release_bootstrap_verifies_sigstore_by_default_with_explicit_opt_out(self):
         bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn("cosign verify-blob", bootstrap)
-        self.assertIn("VERIFY_SIGSTORE=0", bootstrap)
+        self.assertIn("VERIFY_SIGSTORE=1\nINSTALL_ARGS=()", bootstrap)
         self.assertIn("--sigstore-verified", bootstrap)
-        self.assertIn('command -v cosign >/dev/null || die "cosign is required only for --sigstore-verified"', bootstrap)
+        opt_out = bootstrap.split("--insecure-skip-verify)", 1)[1].split(";;", 1)[0]
+        self.assertIn("VERIFY_SIGSTORE=0", opt_out)
+        self.assertIn("WARNING:", opt_out)
+        self.assertIn(">&2", opt_out)
+        self.assertIn(
+            'command -v cosign >/dev/null || die "cosign is required unless --insecure-skip-verify is used"',
+            bootstrap,
+        )
+        self.assertIn('download "$ASSET.bundle"', bootstrap)
+        self.assertIn('download "$ASSET.sha256.bundle"', bootstrap)
+        self.assertIn('download "$MANIFEST.bundle"', bootstrap)
         self.assertIn('OFFICIAL_REPO="benukas/Linkmoth"', bootstrap)
         self.assertNotIn("raw.githubusercontent.com/benukas/linkmoth/main/bootstrap.sh", bootstrap)
         self.assertIn("sigstore/cosign-installer", workflow)
@@ -183,22 +193,24 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn('chmod 750 "$ETC"', installer)
         self.assertIn('APP_FILES="$APP_FILES linkmoth-build.json"', installer)
 
-    def test_quick_start_uses_a_versioned_release_without_cosign_by_default(self):
+    def test_quick_start_uses_a_sigstore_verified_versioned_release(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
-        self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn("sudo bash linkmoth-v0.2.8-bootstrap.sh", readme)
+        self.assertIn("cosign verify-blob", readme)
+        self.assertIn('sudo bash "linkmoth-v0.2.8-bootstrap.sh"', readme)
         self.assertIn(
             "releases/download/v0.2.8/linkmoth-v0.2.8-bootstrap.sh",
             readme,
         )
-        self.assertIn("No Git checkout, package manager, or Cosign installation is", readme)
+        self.assertIn("refs/tags/v0.2.8", readme)
+        self.assertNotIn("--insecure-skip-verify", readme)
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
         self.assertIn("VERSION=v0.2.8", advanced)
         self.assertIn("cosign verify-blob", advanced)
-        self.assertIn("--sigstore-verified", advanced)
+        self.assertIn("--insecure-skip-verify", advanced)
+        self.assertIn('sudo bash "linkmoth-$VERSION-bootstrap.sh"', advanced)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", advanced)
         self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", advanced)
         self.assertIn("https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION", advanced)

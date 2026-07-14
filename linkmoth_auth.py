@@ -24,9 +24,6 @@ DEFAULT_SESSION_TTL = 86400
 DEFAULT_SESSION_IDLE = 1800
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_LOCKOUT_SECONDS = 300
-GLOBAL_FAILURE_WINDOW_SECONDS = 300
-GLOBAL_FAILURE_LIMIT = 20
-GLOBAL_LOCKOUT_SECONDS = 300
 RECOVERY_CODE_COUNT = 10
 MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 1024
@@ -187,12 +184,6 @@ class AuthManager:
                     failures INTEGER NOT NULL DEFAULT 0,
                     locked_until REAL NOT NULL DEFAULT 0,
                     last_attempt REAL NOT NULL DEFAULT 0
-                );
-                CREATE TABLE IF NOT EXISTS auth_global_login_budget(
-                    id INTEGER PRIMARY KEY CHECK(id=1),
-                    window_started REAL NOT NULL DEFAULT 0,
-                    failures INTEGER NOT NULL DEFAULT 0,
-                    locked_until REAL NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS auth_totp_uses(
                     secret_fingerprint TEXT PRIMARY KEY,
@@ -706,11 +697,6 @@ class AuthManager:
         ip = self._client_ip(headers)
         now = time.time()
         with self._db_connect() as conn:
-            global_row = conn.execute(
-                "SELECT locked_until FROM auth_global_login_budget WHERE id=1"
-            ).fetchone()
-            if global_row and global_row["locked_until"] > now:
-                return False, max(1, math.ceil(global_row["locked_until"] - now))
             row = conn.execute(
                 "SELECT failures, locked_until FROM auth_login_attempts WHERE ip=?",
                 (ip,),
@@ -724,28 +710,6 @@ class AuthManager:
         now = time.time()
         with self._db_connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            budget = conn.execute(
-                "SELECT window_started, failures, locked_until "
-                "FROM auth_global_login_budget WHERE id=1"
-            ).fetchone()
-            if not budget or now - budget["window_started"] >= GLOBAL_FAILURE_WINDOW_SECONDS:
-                window_started, global_failures, global_locked_until = now, 0, 0.0
-            else:
-                window_started = budget["window_started"]
-                global_failures = budget["failures"]
-                global_locked_until = budget["locked_until"]
-            if global_locked_until <= now:
-                global_failures += 1
-                if global_failures >= GLOBAL_FAILURE_LIMIT:
-                    global_locked_until = now + GLOBAL_LOCKOUT_SECONDS
-                    global_failures = 0
-            conn.execute(
-                "INSERT INTO auth_global_login_budget(id, window_started, failures, locked_until) "
-                "VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET "
-                "window_started=excluded.window_started, failures=excluded.failures, "
-                "locked_until=excluded.locked_until",
-                (window_started, global_failures, global_locked_until),
-            )
             row = conn.execute(
                 "SELECT failures, locked_until FROM auth_login_attempts WHERE ip=?",
                 (ip,),
