@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.3.0
+
+### Security
+
+- Enforced the HTTP header deadline as a true wall-clock bound, including for
+  clients that drip-feed bytes, while preserving any request-body bytes read
+  alongside the headers and sizing the listen backlog to the bounded worker
+  pool.
+- Normalized IPv4-mapped IPv6 client addresses into the same authentication
+  rate-limit buckets as their IPv4 equivalents, and made the public-exposure
+  guard consistently use `auth.trusted_proxy_cidrs`.
+- Blocked outbound webhooks from targeting loopback services while retaining
+  explicit delivery to RFC 1918 private IPv4 addresses.
+- Made installer ownership and permission changes refuse symlinks, and made a
+  failed fresh installation remove the CA trust anchor, service units, service
+  user, and application state it created.
+
+### Documentation
+
+- Corrected the trusted-proxy configuration example and updated Quick-start
+  and Advanced installation commands for v0.3.0.
+
 ## 0.2.9
 
 ### Security

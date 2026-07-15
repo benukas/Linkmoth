@@ -53,14 +53,14 @@ ssh user@<host-ip>
 **2. Install the latest release:**
 
 ```bash
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.9/linkmoth-v0.2.9-bootstrap.sh
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.2.9/linkmoth-v0.2.9-bootstrap.sh.bundle
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.3.0/linkmoth-v0.3.0-bootstrap.sh
+curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.3.0/linkmoth-v0.3.0-bootstrap.sh.bundle
 cosign verify-blob \
-  --bundle "linkmoth-v0.2.9-bootstrap.sh.bundle" \
-  --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/v0.2.9" \
+  --bundle "linkmoth-v0.3.0-bootstrap.sh.bundle" \
+  --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/v0.3.0" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  "linkmoth-v0.2.9-bootstrap.sh"
-sudo bash "linkmoth-v0.2.9-bootstrap.sh"
+  "linkmoth-v0.3.0-bootstrap.sh"
+sudo bash "linkmoth-v0.3.0-bootstrap.sh"
 ```
 
 This verifies the bootstrap's pinned release-workflow identity; the bootstrap
