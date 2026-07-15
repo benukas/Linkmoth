@@ -197,17 +197,17 @@ class PublicReleaseTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertIn("cosign verify-blob", readme)
-        self.assertIn('sudo bash "linkmoth-v0.2.8-bootstrap.sh"', readme)
+        self.assertIn('sudo bash "linkmoth-v0.2.9-bootstrap.sh"', readme)
         self.assertIn(
-            "releases/download/v0.2.8/linkmoth-v0.2.8-bootstrap.sh",
+            "releases/download/v0.2.9/linkmoth-v0.2.9-bootstrap.sh",
             readme,
         )
-        self.assertIn("refs/tags/v0.2.8", readme)
+        self.assertIn("refs/tags/v0.2.9", readme)
         self.assertNotIn("--insecure-skip-verify", readme)
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.2.8", advanced)
+        self.assertIn("VERSION=v0.2.9", advanced)
         self.assertIn("cosign verify-blob", advanced)
         self.assertIn("--insecure-skip-verify", advanced)
         self.assertIn('sudo bash "linkmoth-$VERSION-bootstrap.sh"', advanced)
