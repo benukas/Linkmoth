@@ -95,6 +95,29 @@ class ValidationTests(WebhookDbCase):
             with self.assertRaises(ValueError):
                 wh._validate_delivery_target("https://example.test/hook")
 
+    def test_rejects_loopback_literal_webhook_at_creation(self):
+        # An authenticated admin must not be able to point a webhook at the
+        # host's own loopback services (SSRF) -- for any 127.0.0.0/8 address,
+        # over either scheme.
+        for url in (
+            "http://127.0.0.1/hook",
+            "https://127.0.0.1/hook",
+            "http://127.0.0.5:22/hook",
+            "https://127.255.255.254/hook",
+        ):
+            with self.assertRaises(ValueError):
+                self.make_webhook(url=url)
+
+    def test_delivery_rejects_loopback_literal(self):
+        # The same rejection must also hold at delivery time, not just creation.
+        with self.assertRaises(ValueError):
+            wh._resolve_pinned_target("https://127.0.0.1:22/")
+
+    def test_still_accepts_explicit_private_ipv4_over_http(self):
+        # Removing the loopback allowance must not affect legitimate RFC1918 use.
+        hook = self.make_webhook(url="http://10.1.2.3:9000/hook")
+        self.assertEqual(hook["url"], wh.MASK)
+
     def test_rejects_unknown_preset_and_event(self):
         with self.assertRaises(ValueError):
             self.make_webhook(preset="jinja")

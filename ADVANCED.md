@@ -670,11 +670,16 @@ Proxy-supplied client addresses are ignored by default, and Linkmoth refuses
 any request whose direct peer address is a public/global IP — see **Security
 posture** below. If rate limiting must distinguish clients behind a reverse
 proxy, configure that proxy to use HTTPS to Linkmoth and trust the Linkmoth
-CA, then set:
+CA, then set the allowlist inside the `auth` object of `config.json`:
 
 ```json
-"trusted_proxy_cidrs": ["127.0.0.1/32", "::1/128"]
+"auth": {
+  "trusted_proxy_cidrs": ["127.0.0.1/32", "::1/128"]
+}
 ```
+
+If you previously placed `trusted_proxy_cidrs` at the top level of `config.json`
+(per earlier documentation), move it under `auth`; only the `auth` entry is read.
 
 Only list networks that contain an actual trusted reverse proxy. Linkmoth accepts
 `X-Forwarded-For` only when the immediate connection comes from one of those

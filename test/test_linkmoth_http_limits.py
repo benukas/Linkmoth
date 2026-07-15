@@ -117,8 +117,18 @@ class BoundedTLSServerTests(unittest.TestCase):
                     context.wait_for_count(self.linkmoth.MAX_HTTP_CONNECTIONS, 2)
                 )
                 time.sleep(0.4)
+                # Each stalled connection must be terminated past the deadline: a
+                # 408, a clean close, or a reset all show the worker was released.
+                # Only a recv that blocks to its own timeout means the connection
+                # was still being serviced -- the bug this guards against.
                 for peer in peers:
-                    self.assertIn(b" 408 ", peer.recv(256))
+                    try:
+                        data = peer.recv(256)
+                    except socket.timeout:
+                        self.fail("stalled connection was not released after the deadline")
+                    except (ConnectionError, OSError):
+                        continue
+                    self.assertTrue(data == b"" or b" 408 " in data, data)
 
                 time.sleep(0.05)
                 fresh = socket.create_connection(server.server_address, timeout=1)
@@ -134,6 +144,107 @@ class BoundedTLSServerTests(unittest.TestCase):
                 server.shutdown()
                 thread.join(2)
                 server.server_close()
+
+    def test_drip_fed_headers_cannot_extend_the_deadline(self):
+        # A client that trickles one byte at a time, faster than any per-read
+        # timeout, must be cut off at the total wall-clock deadline: neither held
+        # open past it (the slow-loris bypass) NOR closed early on the first read
+        # gap (which would collapse the deadline to the poll interval and break
+        # legitimate slow clients). This guards both failure modes.
+        context = _PassthroughTLSContext()
+
+        class HealthyHandler(self.linkmoth.Handler):
+            def do_GET(self):
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        deadline_s = 0.6
+        with mock.patch.object(
+            self.linkmoth, "REQUEST_HEADER_DEADLINE_SECONDS", deadline_s,
+        ), mock.patch.object(self.linkmoth, "HEADER_POLL_SECONDS", 0.1):
+            server = self.linkmoth.BoundedTLSServer(
+                ("127.0.0.1", 0), HealthyHandler, context,
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                peer = socket.create_connection(server.server_address, timeout=1)
+                peer.settimeout(2)
+                peer.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Stall:")
+
+                # Drip one byte every 0.1s (well under the 0.1s poll) and watch
+                # how long the connection stays writable and when it terminates.
+                t0 = time.monotonic()
+                survived_drips = 0
+                terminated_at = None
+                for _ in range(30):  # up to ~3s
+                    time.sleep(0.1)
+                    try:
+                        peer.sendall(b"a")
+                        survived_drips += 1
+                    except OSError:
+                        terminated_at = time.monotonic() - t0
+                        break
+                    peer.settimeout(0.02)
+                    try:
+                        if peer.recv(64):
+                            terminated_at = time.monotonic() - t0
+                            break
+                    except socket.timeout:
+                        pass
+                    except OSError:
+                        terminated_at = time.monotonic() - t0
+                        break
+                    peer.settimeout(2)
+                peer.close()
+
+                # It must have survived clearly more than one poll interval: a
+                # deadline that collapsed to the poll would close it on the first
+                # gap. Deadline 0.6s / drip 0.1s leaves room for several drips.
+                self.assertGreaterEqual(
+                    survived_drips, 3,
+                    "connection closed too early -- deadline collapsed to the poll",
+                )
+                # And it must have been terminated near the deadline, not held
+                # open for the whole drip (the slow-loris bypass).
+                self.assertIsNotNone(
+                    terminated_at, "drip-fed connection was never terminated",
+                )
+                self.assertLess(terminated_at, deadline_s + 1.5)
+
+                # Pool released: a fresh, well-formed request is served now.
+                fresh = socket.create_connection(server.server_address, timeout=1)
+                try:
+                    fresh.settimeout(2)
+                    fresh.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    self.assertIn(b" 204 ", fresh.recv(256))
+                finally:
+                    fresh.close()
+            finally:
+                server.shutdown()
+                thread.join(2)
+                server.server_close()
+
+    def test_body_after_over_read_headers_is_preserved(self):
+        # A read1() chunk can span the blank line into the body; the wrapper must
+        # serve those buffered body bytes from read(), not lose them.
+        connection = _TimeoutRecorder()
+        raw = (
+            b"POST /x HTTP/1.1\r\nHost: localhost\r\n"
+            b"Content-Length: 11\r\n\r\nhello world"
+        )
+        reader = self.linkmoth._BoundedHeaderReader(
+            io.BytesIO(raw), connection, time.monotonic() + 5,
+        )
+        # Drain the request line + headers exactly as the stdlib parser does.
+        self.assertEqual(reader.readline(), b"POST /x HTTP/1.1\r\n")
+        while True:
+            line = reader.readline()
+            if line in (b"\r\n", b"\n", b""):
+                break
+        reader.finish_headers()
+        self.assertEqual(reader.read(11), b"hello world")
 
     def test_total_header_bytes_are_capped(self):
         connection = _TimeoutRecorder()

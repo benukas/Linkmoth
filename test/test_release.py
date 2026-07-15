@@ -225,6 +225,39 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertNotIn("--no-polkit", installer)
         self.assertIn("rm -f /etc/polkit-1/rules.d/51-linkmoth.rules", installer)
 
+    def test_failed_fresh_install_undoes_its_own_state(self):
+        # A fresh install that fails must not leave a trusted CA anchor, service
+        # units, or the service user behind (there is no previous version to
+        # restore, so the update-rollback branch does not cover it).
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        self.assertIn('elif [ "$IS_UPDATE" -eq 0 ]', installer)
+        # remove_ca_trust must be defined in install.sh (ported from uninstall.sh)
+        # and invoked from the fresh-install cleanup branch.
+        self.assertIn("remove_ca_trust() {", installer)
+        self.assertIn('[ "$CA_TRUST_INSTALLED" -eq 1 ] && remove_ca_trust', installer)
+        self.assertIn("CA_TRUST_INSTALLED=1", installer)
+        self.assertIn("UNITS_COPIED=1", installer)
+        self.assertIn("USER_CREATED=1", installer)
+        self.assertIn('[ "$USER_CREATED" -eq 1 ] && userdel linkmoth', installer)
+        # The two rollback branches stay mutually exclusive: updates restore, a
+        # fresh failure undoes.
+        self.assertIn("update failed - restoring the previous working version", installer)
+        self.assertIn("fresh install failed - undoing changes made so far", installer)
+
+    def test_installer_sets_ownership_without_following_symlinks(self):
+        # A planted symlink at a managed path must not redirect chown/chmod onto
+        # an arbitrary file; the installer opens with O_NOFOLLOW and operates on
+        # the fd instead of the path.
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        self.assertIn("secure_regular_file() {", installer)
+        self.assertIn("O_NOFOLLOW", installer)
+        self.assertIn('secure_regular_file "$ETC/config.json" root linkmoth 640', installer)
+        self.assertIn('secure_regular_file "$STATE/auth.json" linkmoth linkmoth 600', installer)
+        # The old symlink-following forms must be gone.
+        self.assertNotIn('chown root:linkmoth "$ETC/config.json"', installer)
+        self.assertNotIn('chmod 640 "$ETC/config.json"', installer)
+        self.assertNotIn('chmod 600 "$STATE/auth.json"', installer)
+
     def test_dist_contains_only_declared_release_files(self):
         actual = {
             path.relative_to(DIST).as_posix()
