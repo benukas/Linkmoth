@@ -155,6 +155,36 @@ finally:
 PY
 }
 
+# Set owner and mode on a path WITHOUT following a symlink. A bare
+# `chown`/`chmod PATH` follows symlinks, so a planted symlink at a managed path
+# (e.g. /etc/linkmoth/config.json) would redirect the operation onto an
+# arbitrary file. Open with O_NOFOLLOW, verify it is a regular file, and operate
+# on the file descriptor — the same TOCTOU-safe pattern as
+# _ensure_private_state_file in linkmoth.py. Runs isolated (-I).
+secure_regular_file() {  # secure_regular_file PATH OWNER GROUP MODE_OCTAL
+  python3 -I - "$1" "$2" "$3" "$4" <<'PY'
+import grp
+import os
+import pwd
+import stat
+import sys
+
+path, owner, group, mode = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4], 8)
+flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+try:
+    fd = os.open(path, flags)
+except OSError as exc:
+    raise SystemExit(f"refusing symlink or unopenable path: {path}: {exc}")
+try:
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        raise SystemExit(f"refusing non-regular file: {path}")
+    os.fchown(fd, pwd.getpwnam(owner).pw_uid, grp.getgrnam(group).gr_gid)
+    os.fchmod(fd, mode)
+finally:
+    os.close(fd)
+PY
+}
+
 require_binary() {
   local bin="$1" hint="$2"
   if command -v "$bin" >/dev/null; then
@@ -245,6 +275,23 @@ install_ca_trust() {
   fi
   echo "WARNING: could not update the system CA trust store automatically."
   echo "         The Linkmoth host still works; other devices must trust /ca.crt manually."
+}
+
+# Remove the Linkmoth CA from the system trust store. Kept in sync with the copy
+# in uninstall.sh; used to undo install_ca_trust when a fresh install fails.
+remove_ca_trust() {
+  rm -f /usr/local/share/ca-certificates/linkmoth-local-ca.crt
+  if command -v update-ca-certificates >/dev/null; then
+    update-ca-certificates >/dev/null 2>&1 || true
+  fi
+  rm -f /etc/pki/ca-trust/source/anchors/linkmoth-local-ca.crt
+  if command -v update-ca-trust >/dev/null; then
+    update-ca-trust extract >/dev/null 2>&1 || true
+  fi
+  rm -f /etc/ca-certificates/trust-source/anchors/linkmoth-local-ca.crt
+  if command -v trust >/dev/null; then
+    trust extract-compat >/dev/null 2>&1 || true
+  fi
 }
 
 printf '\n%s  Linkmoth installer%s\n' "$B" "$X"
@@ -370,6 +417,11 @@ ROLLBACK_STATE=prepare   # prepare -> activating -> done
 STAGE=""
 BACKUP_APP=""
 BACKUP_UNIT=""
+# Track what THIS run created so a failed fresh install (no previous version to
+# restore) can undo it completely — most importantly the system CA trust anchor.
+USER_CREATED=0
+CA_TRUST_INSTALLED=0
+UNITS_COPIED=0
 cleanup_and_rollback() {
   local rc=$?
   trap - EXIT
@@ -379,8 +431,7 @@ cleanup_and_rollback() {
     [ -n "$BACKUP_UNIT" ] && rm -f "$BACKUP_UNIT"
     exit 0
   fi
-  # Only roll back if we had already begun swapping in the new version over a
-  # working previous install; failures before that leave the old service alone.
+  # Update failure: restore the previous working version, touch nothing else.
   if [ "$ROLLBACK_STATE" = activating ] && [ "$IS_UPDATE" -eq 1 ] && [ -n "$BACKUP_APP" ]; then
     echo "ERROR: update failed - restoring the previous working version" >&2
     cp -a "$BACKUP_APP/." "$APP/" 2>/dev/null || true
@@ -393,6 +444,20 @@ cleanup_and_rollback() {
       systemctl start linkmoth 2>/dev/null || true
       echo "previous Linkmoth version restored and restarted." >&2
     fi
+  # Fresh-install failure: there is no previous version, so leaving partial
+  # state behind — a trusted CA anchor, service units, the service user — is a
+  # security and hygiene problem. Undo exactly what this run created.
+  elif [ "$IS_UPDATE" -eq 0 ]; then
+    echo "ERROR: fresh install failed - undoing changes made so far" >&2
+    if [ "$UNITS_COPIED" -eq 1 ]; then
+      systemctl disable --now linkmoth >/dev/null 2>&1 || true
+      systemctl disable --now linkmoth-cert-renew.timer >/dev/null 2>&1 || true
+      rm -f "$UNIT" "$RENEW_UNIT" "$RENEW_TIMER"
+      systemctl daemon-reload 2>/dev/null || true
+    fi
+    [ "$CA_TRUST_INSTALLED" -eq 1 ] && remove_ca_trust
+    rm -rf "$APP" "$ETC" "$STATE" "$RENEW_SCRIPT"
+    [ "$USER_CREATED" -eq 1 ] && userdel linkmoth 2>/dev/null || true
   fi
   [ -n "$STAGE" ] && rm -rf "$STAGE"
   [ -n "$BACKUP_APP" ] && rm -rf "$BACKUP_APP"
@@ -404,6 +469,7 @@ trap cleanup_and_rollback EXIT
 if ! id linkmoth >/dev/null 2>&1; then
   useradd --system --shell /usr/sbin/nologin --home-dir "$STATE" linkmoth 2>/dev/null \
     || useradd -r --shell /usr/sbin/nologin --home-dir "$STATE" linkmoth
+  USER_CREATED=1
   echo "created service user 'linkmoth'"
 fi
 
@@ -513,8 +579,8 @@ PY
     0.0.0.0|::) note "listening on all interfaces; set \"bind\" in $ETC/config.json to narrow it" ;;
   esac
 fi
-chown root:linkmoth "$ETC/config.json"
-chmod 640 "$ETC/config.json"
+secure_regular_file "$ETC/config.json" root linkmoth 640 \
+  || die "refusing to secure $ETC/config.json (symlink or non-regular file?)"
 python3 -I -m json.tool "$ETC/config.json" >/dev/null \
   || die "$ETC/config.json is not valid JSON"
 PORT="$(python3 -I -c "import json;print(json.load(open('$ETC/config.json')).get('port',8686))")"
@@ -564,7 +630,10 @@ fi
 
 chown -R linkmoth:linkmoth "$STATE"
 chmod 750 "$STATE"
-[ ! -f "$STATE/auth.json" ] || chmod 600 "$STATE/auth.json"
+if [ -e "$STATE/auth.json" ] || [ -L "$STATE/auth.json" ]; then
+  secure_regular_file "$STATE/auth.json" linkmoth linkmoth 600 \
+    || die "refusing to secure $STATE/auth.json (symlink or non-regular file?)"
+fi
 
 section "Certificates"
 # Create a private local CA once, then renew the server certificate on each
@@ -604,6 +673,7 @@ step "issuing the server certificate for current addresses..."
 ok "server certificate ready"
 
 install_ca_trust
+CA_TRUST_INSTALLED=1
 
 sleep 1
 
@@ -632,6 +702,7 @@ done
 cp "$SRC/linkmoth.service" "$UNIT"
 cp "$SRC/linkmoth-cert-renew.service" "$RENEW_UNIT"
 cp "$SRC/linkmoth-cert-renew.timer" "$RENEW_TIMER"
+UNITS_COPIED=1
 
 step "running preflight doctor..."
 runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME LINKMOTH_CONFIG="$ETC/config.json" \

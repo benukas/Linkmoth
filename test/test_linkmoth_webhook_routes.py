@@ -1,4 +1,5 @@
 """End-to-end tests for the webhook manager routes and false-alarm flow."""
+import ipaddress
 import json
 import sys
 import threading
@@ -7,6 +8,7 @@ import unittest
 from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 
 BASE = Path(__file__).resolve().parent
 REPO_ROOT = BASE.parent
@@ -51,7 +53,56 @@ class WebhookRouteTests(LinkmothTestBase):
 
     def setUp(self):
         super().setUp()
-        self._target_guard = mock.patch("linkmoth_webhooks._validate_delivery_target")
+        # These tests deliver to a real loopback catcher to exercise the CRUD,
+        # masking, queue, and lifecycle machinery. The product rejects loopback
+        # webhook targets (SSRF hardening -- covered by the dedicated unit tests
+        # in test_linkmoth_webhooks); here we permit only loopback literals at
+        # creation and mock the delivery-time guard, keeping all other URL
+        # validation intact.
+        import linkmoth_webhooks as _wh
+
+        real_clean_url = _wh._clean_url
+
+        def clean_allowing_loopback(value):
+            host = urlparse(str(value or "").strip()).hostname or ""
+            try:
+                addr = ipaddress.ip_address(host)
+            except ValueError:
+                addr = None
+            if isinstance(addr, ipaddress.IPv4Address) and addr.is_loopback:
+                return str(value).strip()
+            return real_clean_url(value)
+
+        self._clean_url_guard = mock.patch.object(
+            _wh, "_clean_url", side_effect=clean_allowing_loopback,
+        )
+        self._clean_url_guard.start()
+        self.addCleanup(self._clean_url_guard.stop)
+
+        # The real delivery path (and _validate_delivery_target) call
+        # _resolve_pinned_target to pin the address to connect to; allow the
+        # loopback catcher there too while delegating everything else.
+        real_resolve = _wh._resolve_pinned_target
+
+        def resolve_allowing_loopback(url):
+            parsed = urlparse(str(url))
+            host = parsed.hostname or ""
+            try:
+                addr = ipaddress.ip_address(host)
+            except ValueError:
+                addr = None
+            if isinstance(addr, ipaddress.IPv4Address) and addr.is_loopback:
+                scheme = parsed.scheme
+                port = parsed.port or (443 if scheme == "https" else 80)
+                path = parsed.path or "/"
+                if parsed.query:
+                    path = f"{path}?{parsed.query}"
+                return scheme, host, port, path, str(addr)
+            return real_resolve(url)
+
+        self._target_guard = mock.patch.object(
+            _wh, "_resolve_pinned_target", side_effect=resolve_allowing_loopback,
+        )
         self._target_guard.start()
         self.addCleanup(self._target_guard.stop)
         _Catcher.received = []

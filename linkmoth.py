@@ -11,6 +11,7 @@ import ipaddress
 import os
 import re
 import secrets
+import select
 import shlex
 import shutil
 import socket
@@ -165,7 +166,7 @@ def _peer_is_trusted_local(peer_ip):
         return False
     if not peer.is_global:
         return True
-    for cidr in CFG.get("trusted_proxy_cidrs", []) or []:
+    for cidr in CFG.get("auth", {}).get("trusted_proxy_cidrs", []) or []:
         try:
             if peer in ipaddress.ip_network(str(cidr), strict=False):
                 return True
@@ -390,6 +391,12 @@ MAX_REQUEST_BODY = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 15
 TLS_HANDSHAKE_TIMEOUT_SECONDS = 5
 REQUEST_HEADER_DEADLINE_SECONDS = 10
+# Longest a single low-level header read may block before the wall-clock
+# deadline is re-checked. Keeps a drip-feed client (one byte at a time, each
+# under a per-recv timeout) from stretching one readline() call past the
+# deadline: total overrun is bounded by this poll interval, not by
+# REQUEST_TIMEOUT_SECONDS.
+HEADER_POLL_SECONDS = 0.5
 MAX_HTTP_HEADER_BYTES = 32 * 1024
 MAX_HTTP_HEADER_COUNT = 64
 MAX_HTTP_CONNECTIONS = 16
@@ -424,7 +431,21 @@ class _HeaderLimitExceeded(_HeaderReadError):
 
 
 class _BoundedHeaderReader:
-    """Apply an accept-to-headers deadline and independent header caps."""
+    """Apply an accept-to-headers deadline and independent header caps.
+
+    The deadline is a true wall-clock bound. A socket timeout only limits each
+    individual ``recv()``, so delegating a whole line to the underlying
+    ``BufferedReader.readline()`` (which loops over many ``recv()`` calls) would
+    let a client that drips one byte at a time — each byte arriving before the
+    per-recv timeout — hold a worker far past the deadline. Instead we fill from
+    small ``read1()`` chunks and re-check the deadline before every chunk, so no
+    pacing of bytes can extend a request past ``deadline + HEADER_POLL_SECONDS``.
+
+    Over-read bytes (a chunk can span a line boundary, or reach past the final
+    blank line into the body) are held in ``self._buf`` and served by this
+    wrapper's own ``readline``/``read``/``read1`` — never pulled out where the
+    body read (``rfile.read(length)``) could lose them.
+    """
 
     def __init__(self, reader, connection, deadline):
         self._reader = reader
@@ -434,26 +455,92 @@ class _BoundedHeaderReader:
         self._bytes = 0
         self._lines = 0
         self._saw_request_line = False
+        self._buf = bytearray()
+        # A real socket fd we can select() on for the deadline wait; None for
+        # in-memory test streams that never block.
+        self._select_fd = None
+        fileno = getattr(connection, "fileno", None)
+        if callable(fileno):
+            try:
+                fd = fileno()
+            except (OSError, ValueError):
+                fd = None
+            if isinstance(fd, int) and fd >= 0:
+                self._select_fd = fd
+
+    def _read_bounded_line(self, bounded_size):
+        """Return one line (through ``\\n``) or up to ``bounded_size`` bytes,
+        enforcing the absolute wall-clock deadline.
+
+        Readiness is awaited with ``select`` rather than a timed-out socket
+        read: a socket read that times out latches ``SocketIO`` so every later
+        read raises ``OSError: cannot read from timed out object``. ``select``
+        lets us re-check the deadline on every poll without poisoning the socket,
+        and we only read once data is actually available.
+        """
+        while True:
+            newline = self._buf.find(b"\n")
+            if newline != -1 and newline + 1 <= bounded_size:
+                end = newline + 1
+            elif len(self._buf) >= bounded_size:
+                end = bounded_size
+            else:
+                remaining = self._deadline - time.monotonic()
+                if remaining <= 0:
+                    raise _HeaderReadTimeout()
+                # Wait for readability against the deadline. Already-decrypted
+                # TLS bytes are not visible to select on the underlying fd, so
+                # read those without waiting. In-memory streams (tests) have no
+                # fd and never block, so fall through to the read directly.
+                if self._select_fd is not None and not self._ssl_pending():
+                    try:
+                        ready, _, _ = select.select(
+                            [self._select_fd], [], [],
+                            max(0.0, min(HEADER_POLL_SECONDS, remaining)),
+                        )
+                    except (OSError, ValueError):
+                        raise _HeaderReadTimeout()
+                    if not ready:
+                        # Poll expired with no data; re-check the deadline.
+                        continue
+                # Data is ready. Bound the read by whatever deadline remains so a
+                # partial TLS record cannot block past it (a timeout here latches
+                # the socket, but we are closing the connection anyway).
+                self._connection.settimeout(
+                    max(0.001, self._deadline - time.monotonic())
+                )
+                try:
+                    chunk = self._reader.read1(bounded_size - len(self._buf))
+                except (socket.timeout, TimeoutError, OSError):
+                    raise _HeaderReadTimeout()
+                if not chunk:
+                    # EOF: return whatever partial line remains (may be b"").
+                    line = bytes(self._buf)
+                    del self._buf[:]
+                    return line
+                self._buf.extend(chunk)
+                continue
+            line = bytes(self._buf[:end])
+            del self._buf[:end]
+            return line
+
+    def _ssl_pending(self):
+        pending = getattr(self._connection, "pending", None)
+        if not callable(pending):
+            return False
+        try:
+            return pending() > 0
+        except (OSError, ValueError):
+            return False
 
     def readline(self, size=-1):
         if not self._active:
-            return self._reader.readline(size)
-        remaining = self._deadline - time.monotonic()
-        if remaining <= 0:
-            raise _HeaderReadTimeout()
-        self._connection.settimeout(
-            max(0.001, min(REQUEST_TIMEOUT_SECONDS, remaining))
-        )
+            return self._plain_readline(size)
         capacity = MAX_HTTP_HEADER_BYTES - self._bytes
         bounded_size = capacity + 1
         if size is not None and size >= 0:
             bounded_size = min(size, bounded_size)
-        try:
-            line = self._reader.readline(bounded_size)
-        except (socket.timeout, TimeoutError) as exc:
-            raise _HeaderReadTimeout() from exc
-        if time.monotonic() > self._deadline:
-            raise _HeaderReadTimeout()
+        line = self._read_bounded_line(bounded_size)
         self._bytes += len(line)
         if self._bytes > MAX_HTTP_HEADER_BYTES:
             raise _HeaderLimitExceeded()
@@ -465,6 +552,50 @@ class _BoundedHeaderReader:
         else:
             self._saw_request_line = True
         return line
+
+    def _plain_readline(self, size):
+        if not self._buf:
+            return self._reader.readline(size)
+        newline = self._buf.find(b"\n")
+        if newline != -1:
+            end = newline + 1
+        elif size is not None and size >= 0 and len(self._buf) >= size:
+            end = size
+        else:
+            data = bytes(self._buf)
+            del self._buf[:]
+            rest = -1 if size is None or size < 0 else max(0, size - len(data))
+            return data + self._reader.readline(rest)
+        if size is not None and size >= 0:
+            end = min(end, size)
+        line = bytes(self._buf[:end])
+        del self._buf[:end]
+        return line
+
+    def read(self, size=-1):
+        if not self._buf:
+            return self._reader.read(size)
+        if size is None or size < 0:
+            data = bytes(self._buf)
+            del self._buf[:]
+            return data + self._reader.read()
+        if size <= len(self._buf):
+            data = bytes(self._buf[:size])
+            del self._buf[:size]
+            return data
+        data = bytes(self._buf)
+        del self._buf[:]
+        return data + (self._reader.read(size - len(data)) or b"")
+
+    def read1(self, size=-1):
+        if not self._buf:
+            return self._reader.read1(size)
+        if size is None or size < 0:
+            size = len(self._buf)
+        take = min(size, len(self._buf))
+        data = bytes(self._buf[:take])
+        del self._buf[:take]
+        return data
 
     def finish_headers(self):
         self._active = False
@@ -892,6 +1023,11 @@ class BoundedTLSServer(HTTPServer):
     bounded handshake and request work in a fixed worker pool instead.
     """
     allow_reuse_address = True
+    # Match the listen backlog to the worker-pool size so a burst of up to
+    # MAX_HTTP_CONNECTIONS simultaneous clients is accepted (and, if the pool is
+    # full, cleanly slot-rejected) rather than SYN-dropped at the default
+    # backlog of 5 and forced into a multi-second TCP retry.
+    request_queue_size = MAX_HTTP_CONNECTIONS
 
     def __init__(self, address, handler_class, tls_context):
         self.tls_context = tls_context
@@ -3406,6 +3542,10 @@ class Handler(BaseHTTPRequestHandler):
         except _HeaderReadError as exc:
             self.close_connection = True
             try:
+                # The header-poll timeout shrinks toward zero as the deadline
+                # approaches; give the bounded error response a normal write
+                # window so it is actually delivered instead of timing out.
+                self.connection.settimeout(REQUEST_TIMEOUT_SECONDS)
                 self.wfile.write(exc.response)
                 self.wfile.flush()
             except (OSError, ssl.SSLError):

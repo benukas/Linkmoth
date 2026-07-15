@@ -41,6 +41,17 @@ def _header(headers: dict, name: str) -> Optional[str]:
     return None
 
 
+def _normalize_ip(address):
+    """Collapse an IPv4-mapped IPv6 address to its plain IPv4 form.
+
+    Without this, ``198.51.100.7`` and ``::ffff:198.51.100.7`` would key
+    different rate-limit buckets, doubling an attacker's login-attempt budget.
+    """
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped
+    return address
+
+
 def _b64e(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -627,7 +638,7 @@ class AuthManager:
     def _client_ip(self, headers: dict) -> str:
         remote = (_header(headers, "Remote-Addr") or "unknown").strip()
         try:
-            remote_ip = ipaddress.ip_address(remote)
+            remote_ip = _normalize_ip(ipaddress.ip_address(remote))
         except ValueError:
             return remote[:64]
         trusted_networks = []
@@ -647,7 +658,9 @@ class AuthManager:
                 candidates = []
                 for item in forwarded.split(","):
                     try:
-                        candidates.append(ipaddress.ip_address(item.strip()))
+                        candidates.append(
+                            _normalize_ip(ipaddress.ip_address(item.strip()))
+                        )
                     except ValueError:
                         continue
                 for candidate in reversed(candidates):

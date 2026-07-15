@@ -230,7 +230,7 @@ def _clean_url(value):
     else:
         is_local = (
             isinstance(address, ipaddress.IPv4Address)
-            and (address.is_loopback or any(address in network for network in RFC1918_NETWORKS))
+            and any(address in network for network in RFC1918_NETWORKS)
         )
         if not is_local and not address.is_global:
             raise ValueError("url must not target a loopback, link-local, or reserved address")
@@ -243,7 +243,8 @@ def _resolve_pinned_target(url):
     """Validate a delivery URL and return the exact address the request must use.
 
     Hostnames are HTTPS-only and must currently resolve entirely to global IPs;
-    local delivery is limited to an explicit private or loopback IPv4 literal.
+    local delivery is limited to an explicit RFC1918 private IPv4 literal
+    (loopback is not permitted — it would let a webhook reach same-host services).
     Returns (scheme, host, port, path, address) — callers must connect to
     `address` directly rather than re-resolving `host`, or a DNS answer that
     changes between this check and the actual delivery could redirect the
@@ -272,7 +273,7 @@ def _resolve_pinned_target(url):
         return scheme, host, port, path, sorted(addresses)[0]
     is_local = (
         isinstance(address, ipaddress.IPv4Address)
-        and (address.is_loopback or any(address in network for network in RFC1918_NETWORKS))
+        and any(address in network for network in RFC1918_NETWORKS)
     )
     if not is_local and not address.is_global:
         raise ValueError("webhook address is not permitted")

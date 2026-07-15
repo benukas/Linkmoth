@@ -1122,6 +1122,55 @@ class AuthCryptoTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_ipv4_mapped_ipv6_normalizes_to_one_bucket(self):
+        # ::ffff:198.51.100.7 and 198.51.100.7 are the same host; they must key
+        # the same rate-limit bucket, not two independent lockout budgets.
+        from linkmoth_auth import AuthManager
+        tmp = tempfile.mkdtemp()
+        try:
+            state = Path(tmp)
+            auth = AuthManager(
+                state,
+                {"auth": {"trusted_proxy_cidrs": ["10.0.0.1/32"]}},
+                sqlite_connector(state / "auth-test.db"),
+            )
+            # Direct peer presented in mapped form collapses to plain IPv4.
+            self.assertEqual(
+                auth._client_ip({"Remote-Addr": "::ffff:198.51.100.7"}),
+                "198.51.100.7",
+            )
+            # And the same through a trusted-proxy X-Forwarded-For hop.
+            self.assertEqual(
+                auth._client_ip({
+                    "Remote-Addr": "10.0.0.1",
+                    "X-Forwarded-For": "::ffff:198.51.100.7",
+                }),
+                "198.51.100.7",
+            )
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_ipv4_mapped_ipv6_shares_lockout_bucket(self):
+        # Alternating the two representations must not double the failure budget.
+        from linkmoth_auth import AuthManager
+        tmp = tempfile.mkdtemp()
+        try:
+            state = Path(tmp)
+            auth = AuthManager(
+                state, {}, sqlite_connector(state / "auth-test.db"),
+            )
+            plain = {"Remote-Addr": "198.51.100.7"}
+            mapped = {"Remote-Addr": "::ffff:198.51.100.7"}
+            limit = auth._max_attempts()
+            for i in range(limit):
+                headers = plain if i % 2 == 0 else mapped
+                auth.record_login_failure(headers)
+            # Reaching the limit locks both representations, not just one.
+            self.assertFalse(auth.login_allowed(plain)[0])
+            self.assertFalse(auth.login_allowed(mapped)[0])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_auth_cannot_be_disabled_by_legacy_config(self):
         from linkmoth_auth import AuthManager
         tmp = tempfile.mkdtemp()
@@ -1156,9 +1205,10 @@ class AuthCryptoTests(unittest.TestCase):
         self.assertIn('chown root:root "$APP"', installer)
         self.assertIn('chmod 755 "$APP"', installer)
         self.assertIn('chown root:linkmoth "$ETC"', installer)
-        self.assertIn('chown root:linkmoth "$ETC/config.json"', installer)
         self.assertIn('chmod 750 "$ETC"', installer)
-        self.assertIn('chmod 640 "$ETC/config.json"', installer)
+        # config.json is secured root:linkmoth 640 via a symlink-safe helper
+        # (open O_NOFOLLOW + fchown/fchmod the fd) rather than a path chown/chmod.
+        self.assertIn('secure_regular_file "$ETC/config.json" root linkmoth 640', installer)
         self.assertIn("PATH=/usr/sbin:/usr/bin:/sbin:/bin", installer)
         self.assertIn("pywebpush==2.3.0", installer)
         self.assertIn("http-ece==1.2.1", installer)

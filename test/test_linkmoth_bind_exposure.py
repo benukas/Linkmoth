@@ -104,7 +104,9 @@ class PublicExposureGuardTests(unittest.TestCase):
         cls.linkmoth = importlib.import_module("linkmoth")
 
     def setUp(self):
-        self.linkmoth.CFG["trusted_proxy_cidrs"] = []
+        # The allowlist lives under `auth`, matching the config schema, the
+        # Settings UI, and AuthManager's validation/X-Forwarded-For read path.
+        self.linkmoth.CFG["auth"] = {"trusted_proxy_cidrs": []}
 
     def test_lan_and_loopback_are_trusted(self):
         for ip in ("192.168.1.10", "10.0.0.5", "172.16.0.1", "127.0.0.1", "::1"):
@@ -118,13 +120,22 @@ class PublicExposureGuardTests(unittest.TestCase):
         self.assertFalse(self.linkmoth._peer_is_trusted_local("not-an-ip"))
 
     def test_public_address_trusted_once_configured_as_a_proxy(self):
+        # Configuring the allowlist the documented way (under `auth`) must
+        # exempt that peer from the public-source block.
         self.assertFalse(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
-        self.linkmoth.CFG["trusted_proxy_cidrs"] = ["8.8.8.0/24"]
+        self.linkmoth.CFG["auth"] = {"trusted_proxy_cidrs": ["8.8.8.0/24"]}
         self.assertTrue(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
         self.assertFalse(self.linkmoth._peer_is_trusted_local("1.1.1.1"))
 
+    def test_top_level_trusted_proxy_cidrs_is_ignored(self):
+        # The old top-level key (per stale docs) must NOT be honored -- only the
+        # `auth` entry is read, so a misplaced key cannot silently grant trust.
+        self.linkmoth.CFG["trusted_proxy_cidrs"] = ["8.8.8.0/24"]
+        self.linkmoth.CFG["auth"] = {"trusted_proxy_cidrs": []}
+        self.assertFalse(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
+
     def test_malformed_trusted_proxy_cidr_is_ignored_not_fatal(self):
-        self.linkmoth.CFG["trusted_proxy_cidrs"] = ["not-a-cidr"]
+        self.linkmoth.CFG["auth"] = {"trusted_proxy_cidrs": ["not-a-cidr"]}
         self.assertFalse(self.linkmoth._peer_is_trusted_local("8.8.8.8"))
 
 
