@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0
+
 ### Added
 
 - **Incident stories**: every incident's evidence packet now includes a
