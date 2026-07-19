@@ -53,7 +53,7 @@ def _build_version():
 VERSION = _build_version()
 INSTALLATION_RECORD = Path("/etc/linkmoth/installation.json")
 VERIFY_COOLDOWN_SECONDS = 5
-GITHUB_REPO = "https://github.com/benukas/linkmoth"
+GITHUB_REPO = "https://github.com/benukas/Linkmoth"
 GITHUB_API_HOST = "api.github.com"
 GITHUB_RELEASE_HOST = "github.com"
 GITHUB_RELEASE_PATH = "/repos/benukas/Linkmoth/releases/latest"
@@ -383,6 +383,14 @@ DEFAULT_CONFIG = {
         "jitter_bad_ms": 60,
         "loss_warn_pct": 2,
         "loss_bad_pct": 10,
+        # Latency-under-load (bufferbloat) testing. Downloads are bounded by
+        # load_test_seconds AND load_test_max_mb, whichever ends first.
+        # Scheduled runs are off by default (load_test_hours = 0) because
+        # they consume real data; the dashboard button always works.
+        "load_test_url": "https://speed.cloudflare.com/__down?bytes=25000000",
+        "load_test_hours": 0,
+        "load_test_seconds": 10,
+        "load_test_max_mb": 25,
     },
 }
 
@@ -671,6 +679,46 @@ def _ensure_private_state_file(path):
     return created
 
 
+def _coerce_config_types(cfg):
+    """Guard config keys that daemon threads consume with hard subscripts.
+
+    The dashboard settings path validates types before writing, but a
+    hand-edited config.json does not: a "recheck_seconds": 30 (number
+    instead of list) used to raise inside the incident recheck thread and
+    silently kill it, leaving the incident open forever. Wrong-typed keys
+    fall back to the shipped default with a stderr warning, matching how
+    an invalid local_dns block is handled.
+    """
+    def fallback(key, why):
+        cfg[key] = json.loads(json.dumps(DEFAULT_CONFIG[key]))
+        print(f"config error, using default {key}: {why}",
+              file=sys.stderr, flush=True)
+
+    def is_number(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    for key in ("upstream_dns", "ping_targets", "https_targets",
+                "target_wifi_clients", "recheck_seconds"):
+        v = cfg.get(key)
+        if not isinstance(v, list):
+            fallback(key, "must be a JSON list")
+        elif key == "recheck_seconds" and (
+            not v or not all(is_number(x) and x >= 0 for x in v)
+        ):
+            fallback(key, "must be a non-empty list of seconds")
+        elif key != "recheck_seconds" and not all(isinstance(x, str) for x in v):
+            fallback(key, "must be a list of strings")
+    for key in ("port", "recheck_repeat", "incident_max_hours",
+                "baseline_minutes", "history_sample_minutes",
+                "ladder_cache_seconds", "retention_days",
+                "ui_refresh_seconds"):
+        if not is_number(cfg.get(key)):
+            fallback(key, "must be a number")
+    for key in ("auth", "quality"):
+        if not isinstance(cfg.get(key), dict):
+            fallback(key, "must be a JSON object")
+
+
 def load_config():
     global CONFIG_ERROR
     CONFIG_ERROR = None
@@ -709,6 +757,7 @@ def load_config():
         cfg["local_dns"] = dict(LOCAL_DNS_DEFAULT)
         print(f"config error, using default Local DNS: {e}",
               file=sys.stderr, flush=True)
+    _coerce_config_types(cfg)
     return cfg
 
 
@@ -1138,6 +1187,22 @@ def init_db():
                 loss_pct REAL,
                 state TEXT
             );
+            CREATE TABLE IF NOT EXISTS app_meta(
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            CREATE TABLE IF NOT EXISTS load_tests(
+                id INTEGER PRIMARY KEY,
+                ts REAL NOT NULL,
+                idle_ms REAL,
+                loaded_ms REAL,
+                bloat_ms REAL,
+                grade TEXT,
+                throughput_mbps REAL,
+                bytes INTEGER,
+                seconds REAL,
+                error TEXT
+            );
             """
         )
         try:
@@ -1504,7 +1569,13 @@ class _SupportPseudonyms:
             if address not in self._private_networks:
                 self._private_networks[address] = f"PRIVATE-NET-{len(self._private_networks) + 1}"
             return self._private_networks[address]
-        return re.sub(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", private, value)
+        # The trailing guard rejects longer dotted continuations ("1.2.3.4.5",
+        # "10.0.0.1.example") but tolerates sentence punctuation — an address
+        # at the end of a sentence ("replied from 10.0.0.1.") must still be
+        # pseudonymized.
+        return re.sub(
+            r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?!\w)(?!\.\w)", private, value
+        )
 
     def scrub(self, value):
         if isinstance(value, dict):
@@ -1758,6 +1829,37 @@ def check_router_wlan(gateway_ok, include_evidence=False):
         )
     result = (ok, detail)
     return (*result, evidence) if include_evidence else result
+
+
+def wifi_wired_differential(checks):
+    """One plain-language sentence when Wi-Fi witnesses disagree with a
+    healthy wired path — "it's your Wi-Fi, not your provider" — or None
+    when there is nothing defensible to say. Pure over one run's checks."""
+    by_id = {ch["id"]: ch for ch in normalize_stored_checks(checks)}
+    wlan = by_id.get("router_wlan")
+    gateway = by_id.get("gateway")
+    internet = by_id.get("raw_ping") or by_id.get("https")
+    if not wlan or not gateway or not internet:
+        return None
+    if gateway.get("ok") is not True or internet.get("ok") is not True:
+        return None
+    if wlan.get("ok") is False:
+        return (
+            "The wired path and the internet look healthy while no Wi-Fi"
+            " witness replied — this points at Wi-Fi (radio, access point,"
+            " or sleeping witnesses), not your provider."
+        )
+    wlan_ms = wlan.get("ms")
+    gateway_ms = gateway.get("ms")
+    if (wlan.get("ok") is True and wlan_ms is not None
+            and gateway_ms is not None and gateway_ms > 0
+            and wlan_ms >= 100 and wlan_ms >= 10 * gateway_ms):
+        return (
+            f"Wi-Fi witnesses reply far slower than the wired router path"
+            f" ({round(wlan_ms)} ms vs {round(gateway_ms)} ms) — that gap"
+            f" is on the radio side, not your provider."
+        )
+    return None
 
 
 def ping(host, count=3, timeout=2):
@@ -2426,6 +2528,214 @@ def normalize_stored_verdict(item):
     return out
 
 
+# Verdict codes whose failure point is beyond the router — the set a user
+# can reasonably hold their internet provider accountable for.
+ISP_ATTRIBUTABLE_CODES = frozenset({
+    "wan_down", "partial_routing", "restricted_connectivity",
+})
+REPORT_WINDOWS = (7, 30, 90)
+
+# GET endpoints a scoped read-only API token may access (widgets, Home
+# Assistant REST sensors). Everything else still requires a full session.
+READONLY_TOKEN_GET_PATHS = frozenset({
+    "/api/status", "/api/quality", "/api/report",
+})
+
+
+def _human_duration(seconds):
+    seconds = max(0, int(round(float(seconds))))
+    if seconds < 60:
+        return f"{seconds} s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours} h {minutes} min" if minutes else f"{hours} h"
+    days, hours = divmod(hours, 24)
+    return f"{days} d {hours} h" if hours else f"{days} d"
+
+
+_STORY_SOURCES = {
+    "baseline": "Linkmoth's own background check noticed a problem",
+    "dashboard": "a manual diagnosis from the dashboard found a problem",
+    "manual-get": "a manual trigger request asked Linkmoth to check the network",
+    "webhook": "an external monitor's alert asked Linkmoth to check the network",
+    "kuma": "an Uptime Kuma alert asked Linkmoth to check the network",
+}
+
+
+def incident_story(detail):
+    """Render one incident's evidence packet as a short plain-language
+    narrative — the paragraph a person would paste into a chat to explain
+    what happened. Pure rendering over data already in the packet; no
+    credentials, no raw addresses beyond what rung details already show."""
+    inc = detail.get("incident") or {}
+    started = float(inc.get("started") or 0)
+    when = time.strftime("%H:%M on %Y-%m-%d", time.localtime(started))
+    source = str(inc.get("source") or "").strip()
+    opener = None
+    for prefix, text in _STORY_SOURCES.items():
+        if source == prefix or source.startswith(prefix):
+            opener = text
+            break
+    if opener is None:
+        opener = (
+            f"an alert from {source} asked Linkmoth to check the network"
+            if source else "Linkmoth opened an incident"
+        )
+    sentences = [f"At {when}, {opener}."]
+    first_failure = detail.get("first_failure")
+    if first_failure:
+        line = (
+            f"The first rung to fail was {first_failure['label']}:"
+            f" {first_failure['detail']}"
+        )
+        healthy = [
+            label for label in (detail.get("stayed_healthy") or [])
+            if label != first_failure.get("label")
+        ]
+        if healthy:
+            line += f" — while {', '.join(healthy[:3])} stayed healthy"
+        sentences.append(line + ".")
+    title = inc.get("diagnosis_title") or inc.get("verdict_title")
+    if title:
+        line = f"Verdict: {title}"
+        if detail.get("confidence"):
+            line += f" ({detail['confidence']} confidence)"
+        sentences.append(line + ".")
+    runs = detail.get("runs") or []
+    if len(runs) > 1:
+        sentences.append(
+            f"Linkmoth rechecked {len(runs) - 1} more time(s) and kept every result."
+        )
+    lifecycle = inc.get("lifecycle")
+    if lifecycle == "false-alarm":
+        sentences.append(
+            "It was marked a false alarm: nothing wrong was seen from the network side."
+        )
+    elif lifecycle == "closed" and inc.get("resolved"):
+        ended = time.strftime("%H:%M", time.localtime(float(inc["resolved"])))
+        duration = _human_duration(float(inc["resolved"]) - started)
+        sentences.append(
+            f"The network recovered at {ended}, after {duration} of downtime."
+        )
+    elif lifecycle == "recovered-awaiting-confirmation":
+        sentences.append(
+            "The network looks recovered; Linkmoth is confirming before closing"
+            " the incident."
+        )
+    else:
+        sentences.append(
+            f"The incident is still open after {_human_duration(time.time() - started)}."
+        )
+    pattern = detail.get("pattern") or {}
+    if pattern.get("count", 0) > 1 and pattern.get("tier"):
+        sentences.append(
+            f"This fault has now been recorded {pattern['count']} times."
+        )
+    ref = inc.get("ref")
+    tail = (
+        f" (Incident {ref}; generated locally by Linkmoth, credentials excluded.)"
+        if ref else ""
+    )
+    return " ".join(sentences) + tail
+
+
+def isp_report_letter(report):
+    """Plain-language, credential-free evidence text for an ISP support
+    ticket. Contains incident references, local times, durations, and
+    verdict titles — never LAN addresses or secrets."""
+    days = report["days"]
+    isp = report["isp"]
+    lines = ["Internet reliability evidence — generated locally by Linkmoth"]
+    window = f"Window: last {days} days"
+    if report.get("monitoring_since"):
+        since = time.strftime(
+            "%Y-%m-%d", time.localtime(report["monitoring_since"])
+        )
+        window += f" (monitoring since {since})"
+    lines.extend([window, ""])
+    if not isp["count"]:
+        lines.append(
+            f"No provider-attributable outages were recorded in the last"
+            f" {days} days."
+        )
+    else:
+        lines.append(f"Provider-path outages: {isp['count']}")
+        lines.append(
+            "Downtime on the provider path: "
+            + _human_duration(isp["downtime_s"])
+        )
+        longest = report.get("longest")
+        if longest and longest.get("isp_attributable"):
+            when = time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(longest["started"])
+            )
+            dur = (
+                "still ongoing" if longest["open"]
+                else _human_duration(longest["duration_s"])
+            )
+            lines.append(f"Longest single outage: {when} local time, {dur}.")
+        peak = isp.get("peak_hours")
+        if peak:
+            lines.append(
+                f"Outages cluster between {peak['start_hour']:02d}:00 and"
+                f" {peak['end_hour']:02d}:00 local time"
+                f" ({peak['count']} of {isp['count']})."
+            )
+        lines.extend(["", "Incidents (local time):"])
+        for item in report["incidents"]:
+            if not item["isp_attributable"]:
+                continue
+            when = time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(item["started"])
+            )
+            dur = "ongoing" if item["open"] else _human_duration(item["duration_s"])
+            lines.append(
+                f"- {item['ref'] or '(no ref)'} — {when}, {dur} — "
+                + (item["title"] or item["code"] or "outage")
+            )
+    lines.extend([
+        "",
+        "Methodology: Linkmoth checks host, own link, router, local DNS,"
+        " upstream DNS, raw internet reachability, and HTTPS in dependency"
+        " order on a fixed schedule, and rechecks repeatedly during"
+        " incidents. A provider-path verdict requires this LAN and router to"
+        " be healthy while independent internet probes all fail, so local"
+        " faults are not misattributed to the provider.",
+    ])
+    return "\n".join(lines)
+
+
+def isp_report_csv(report):
+    """CSV of every incident in the report window (all layers, not only
+    provider-attributable ones), for spreadsheets or support attachments."""
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow([
+        "ref", "started_local", "resolved_local", "duration_seconds",
+        "ongoing", "verdict_code", "verdict_title", "layer",
+        "isp_attributable",
+    ])
+    for item in report["incidents"]:
+        writer.writerow([
+            item["ref"] or "",
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item["started"])),
+            (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item["resolved"]))
+             if item["resolved"] else ""),
+            item["duration_s"],
+            "yes" if item["open"] else "no",
+            item["code"] or "",
+            item["title"] or "",
+            item["layer"],
+            "yes" if item["isp_attributable"] else "no",
+        ])
+    return buf.getvalue()
+
+
 def verdict(checks):
     checks = normalize_stored_checks(checks)
     c = {ch["id"]: ch for ch in checks}
@@ -2784,13 +3094,14 @@ class Engine:
         return self.diagnose_once(inc["id"], kind="incident"), None
 
     def verify_cooldown_remaining(self):
-        """Atomically check-and-stamp the verify cooldown; 0.0 means allowed."""
+        """Seconds until the next verify is allowed; 0.0 means allowed.
+        Read-only — the cooldown is stamped by verify_fix() only when a
+        diagnosis actually starts, so a verify rejected because another
+        diagnosis is already running does not burn the caller's window."""
         with self.lock:
-            now = time.monotonic()
-            elapsed = now - self._last_verify_mono
+            elapsed = time.monotonic() - self._last_verify_mono
             if elapsed < VERIFY_COOLDOWN_SECONDS:
                 return VERIFY_COOLDOWN_SECONDS - elapsed
-            self._last_verify_mono = now
             return 0.0
 
     def verify_fix(self):
@@ -2798,10 +3109,14 @@ class Engine:
         the currently-open incident if any, else runs standalone. Returns
         (verdict, checks) or None if a diagnosis is already running."""
         inc = self.open_incident()
-        return self.diagnose_once(
+        result = self.diagnose_once(
             incident_id=inc["id"] if inc else None, kind="verify",
             force=True, return_checks=True,
         )
+        if result is not None:
+            with self.lock:
+                self._last_verify_mono = time.monotonic()
+        return result
 
     def last_run_checks(self):
         with db() as conn:
@@ -2860,16 +3175,20 @@ class Engine:
                 return False, "no open incident"
         inc_id = inc["id"]
         with db() as conn:
+            # Rewrite the verdict unconditionally — an already-closed incident
+            # marked as a false alarm must stop counting as a blamed fault in
+            # stats, patterns, and filters. The historical diagnosis is
+            # preserved separately in diagnosis_code/diagnosis_title.
             conn.execute(
-                "UPDATE incidents SET false_alarm=1 WHERE id=?", (inc_id,)
+                "UPDATE incidents SET false_alarm=1, verdict_code=?,"
+                " verdict_title=? WHERE id=?",
+                (false_alarm_verdict["code"], false_alarm_verdict["title"],
+                 inc_id),
             )
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, recovered_at=?, verdict_code=?, verdict_title=?"
+                "UPDATE incidents SET resolved=?, recovered_at=?"
                 " WHERE id=? AND resolved IS NULL",
-                (
-                    time.time(), time.time(), false_alarm_verdict["code"],
-                    false_alarm_verdict["title"], inc_id,
-                ),
+                (time.time(), time.time(), inc_id),
             )
         self._emit_webhook(inc_id, "false_alarm_marked", false_alarm_verdict)
         if cur.rowcount:
@@ -2977,25 +3296,55 @@ class Engine:
             print(f"notify error: {e}", file=sys.stderr, flush=True)
 
     def trigger(self, source, detail=""):
-        inc = self.open_incident()
-        if inc is None:
-            started = time.time()
-            with db() as conn:
-                cur = conn.execute(
-                    "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
-                    (started, source, detail),
-                )
-                inc_id = cur.lastrowid
-                ref = make_incident_ref(inc_id, started)
-                conn.execute("UPDATE incidents SET ref=? WHERE id=?", (ref, inc_id))
-        else:
-            inc_id = inc["id"]
-            with db() as conn:
-                conn.execute(
-                    "UPDATE incidents SET detail = detail || ' | ' || ? WHERE id=?",
-                    (f"{source}: {detail}"[:300], inc_id),
-                )
+        # The whole check-then-create runs under self.lock: two concurrent
+        # triggers (webhook + baseline loop) must not both see "no open
+        # incident" and create one each — the second would never get a
+        # recheck loop and stay open forever. The INSERT is additionally
+        # guarded in SQL so even a writer outside this process can't race a
+        # second open incident into existence.
         with self.lock:
+            inc = self.open_incident()
+            if inc is None:
+                started = time.time()
+                with db() as conn:
+                    cur = conn.execute(
+                        "INSERT INTO incidents(started, source, detail)"
+                        " SELECT ?,?,? WHERE NOT EXISTS"
+                        " (SELECT 1 FROM incidents WHERE resolved IS NULL)",
+                        (started, source, detail),
+                    )
+                    if cur.rowcount:
+                        inc_id = cur.lastrowid
+                        ref = make_incident_ref(inc_id, started)
+                        conn.execute(
+                            "UPDATE incidents SET ref=? WHERE id=?", (ref, inc_id)
+                        )
+                if not cur.rowcount:
+                    # Lost the (out-of-process) race: someone else opened an
+                    # incident between our check and insert. Attach to it. If
+                    # it already resolved again, fall back to a plain insert —
+                    # there is no open incident left to duplicate.
+                    inc = self.open_incident()
+                    if inc is None:
+                        with db() as conn:
+                            cur = conn.execute(
+                                "INSERT INTO incidents(started, source, detail)"
+                                " VALUES(?,?,?)",
+                                (started, source, detail),
+                            )
+                            inc_id = cur.lastrowid
+                            ref = make_incident_ref(inc_id, started)
+                            conn.execute(
+                                "UPDATE incidents SET ref=? WHERE id=?",
+                                (ref, inc_id),
+                            )
+            if inc is not None:
+                inc_id = inc["id"]
+                with db() as conn:
+                    conn.execute(
+                        "UPDATE incidents SET detail = detail || ' | ' || ? WHERE id=?",
+                        (f"{source}: {detail}"[:300], inc_id),
+                    )
             alive = self.loop_thread is not None and self.loop_thread.is_alive()
             if not alive:
                 self.loop_thread = threading.Thread(
@@ -3174,8 +3523,14 @@ class Engine:
         cutoff = now - 30 * 86400
         with db() as conn:
             first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
+            # Any incident overlapping the window counts — including ones
+            # that started before it and are still open (or resolved inside
+            # it). A week-long outage that began before the window must
+            # still show up as downtime inside it.
             inc = [dict(r) for r in conn.execute(
-                "SELECT * FROM incidents WHERE started > ?", (cutoff,))]
+                "SELECT * FROM incidents WHERE started > ?"
+                " OR resolved IS NULL OR resolved > ?",
+                (cutoff, cutoff))]
         monitoring_started = max(float(first_run), cutoff) if first_run else None
         period = max(0.0, now - monitoring_started) if monitoring_started else 0.0
         downtime = 0.0
@@ -3183,15 +3538,23 @@ class Engine:
         false_alarms = 0
         for i in inc:
             code = normalize_stored_verdict(i).get("verdict_code")
-            if i["resolved"] is None:
-                downtime += now - i["started"]
-            elif code and code != "all_clear":
-                downtime += i["resolved"] - i["started"]
-                blame[code] = blame.get(code, 0) + 1
-            elif code == "all_clear":
+            # The false_alarm flag wins over any stored verdict code:
+            # incidents marked false alarm before the code rewrite existed
+            # still carry their original code.
+            if i.get("false_alarm") or code == "all_clear":
                 false_alarms += 1
+                continue
+            # Clamp each incident's contribution to the 30-day window so an
+            # incident spanning the cutoff neither vanishes nor contributes
+            # more downtime than the window holds.
+            begin = max(float(i["started"]), cutoff)
+            if i["resolved"] is None:
+                downtime += max(0.0, now - begin)
+            elif code:
+                downtime += max(0.0, float(i["resolved"]) - begin)
+                blame[code] = blame.get(code, 0) + 1
         return {
-            "incidents_30d": len(inc),
+            "incidents_30d": len(inc) - false_alarms,
             "false_alarms_30d": false_alarms,
             "downtime_s": round(downtime),
             "monitoring_interval_s": round(period),
@@ -3201,6 +3564,103 @@ class Engine:
             ),
             "blame": blame,
         }
+
+    def isp_report(self, days=30):
+        """Accountability report over the stored incident history: what
+        failed, for how long, whose layer it was, plus a plain-language
+        evidence letter for an ISP support ticket. Read-only."""
+        from linkmoth_webhooks import AFFECTED_LAYERS
+        days = days if days in REPORT_WINDOWS else 30
+        now = time.time()
+        cutoff = now - days * 86400
+        with db() as conn:
+            first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
+            rows = [dict(r) for r in conn.execute(
+                "SELECT * FROM incidents WHERE started > ? OR resolved IS NULL"
+                " OR resolved > ? ORDER BY started ASC",
+                (cutoff, cutoff))]
+        monitoring_started = max(float(first_run), cutoff) if first_run else None
+        observed_s = max(0.0, now - monitoring_started) if monitoring_started else 0.0
+        incidents = []
+        blame = {}
+        total_downtime = 0.0
+        longest = None
+        false_alarms = 0
+        for row in rows:
+            inc = normalize_stored_verdict(row)
+            code = inc.get("diagnosis_code") or inc.get("verdict_code") or ""
+            if inc.get("false_alarm") or code == "all_clear":
+                false_alarms += 1
+                continue
+            started = float(inc["started"])
+            resolved = float(inc["resolved"]) if inc.get("resolved") else None
+            window_downtime = max(0.0, (resolved or now) - max(started, cutoff))
+            duration = max(0.0, (resolved or now) - started)
+            entry = {
+                "ref": inc.get("ref"),
+                "started": started,
+                "resolved": resolved,
+                "duration_s": round(duration),
+                "window_downtime_s": round(window_downtime),
+                "open": resolved is None,
+                "code": code or None,
+                "title": inc.get("diagnosis_title") or inc.get("verdict_title"),
+                "layer": AFFECTED_LAYERS.get(code, "none") if code else "none",
+                "isp_attributable": code in ISP_ATTRIBUTABLE_CODES,
+            }
+            incidents.append(entry)
+            if code:
+                bucket = blame.setdefault(code, {"count": 0, "downtime_s": 0})
+                bucket["count"] += 1
+                bucket["downtime_s"] += round(window_downtime)
+            total_downtime += window_downtime
+            if longest is None or duration > longest["duration_s"]:
+                longest = entry
+        wan = [item for item in incidents if item["isp_attributable"]]
+        peak = None
+        if len(wan) >= 3:
+            wan_hours = [0] * 24
+            for item in wan:
+                wan_hours[time.localtime(item["started"]).tm_hour] += 1
+            best_start, best_count = 0, -1
+            for hour in range(24):
+                count = sum(wan_hours[(hour + k) % 24] for k in range(3))
+                if count > best_count:
+                    best_start, best_count = hour, count
+            # Only call it a cluster when the peak window holds at least
+            # half of the outages — 3 incidents spread across a day are
+            # not a pattern.
+            if best_count >= max(3, (len(wan) + 1) // 2):
+                peak = {
+                    "start_hour": best_start,
+                    "end_hour": (best_start + 3) % 24,
+                    "count": best_count,
+                }
+        report = {
+            "days": days,
+            "generated_at": time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(now)
+            ),
+            "monitoring_since": monitoring_started,
+            "observed_s": round(observed_s),
+            "incident_count": len(incidents),
+            "false_alarms": false_alarms,
+            "downtime_s": round(total_downtime),
+            "uptime_pct": (
+                round(max(0.0, 100.0 * (1 - total_downtime / observed_s)), 2)
+                if observed_s > 0 else None
+            ),
+            "blame": blame,
+            "longest": longest,
+            "isp": {
+                "count": len(wan),
+                "downtime_s": sum(item["window_downtime_s"] for item in wan),
+                "peak_hours": peak,
+            },
+            "incidents": incidents,
+        }
+        report["letter"] = isp_report_letter(report)
+        return report
 
     @staticmethod
     def _pattern_for(incs):
@@ -3260,7 +3720,8 @@ class Engine:
         with db() as conn:
             rows = [dict(r) for r in conn.execute(
                 "SELECT verdict_code, started, resolved, ref FROM incidents"
-                " WHERE started > ? AND verdict_code IS NOT NULL",
+                " WHERE started > ? AND verdict_code IS NOT NULL"
+                " AND COALESCE(false_alarm, 0) = 0",
                 (cutoff,))]
         by_code = {}
         for r in rows:
@@ -3281,6 +3742,11 @@ class Engine:
         args = []
         if code == "open":
             q += " WHERE i.resolved IS NULL"
+        elif code == "all_clear":
+            # Include incidents flagged false-alarm before the verdict
+            # rewrite existed; they may still carry their original code.
+            q += " WHERE (i.verdict_code = ? OR COALESCE(i.false_alarm, 0) = 1)"
+            args.append(code)
         elif code:
             if code == "local_dns_broken":
                 q += " WHERE i.verdict_code IN (?, ?)"
@@ -3288,6 +3754,7 @@ class Engine:
             else:
                 q += " WHERE i.verdict_code = ?"
                 args.append(code)
+            q += " AND COALESCE(i.false_alarm, 0) = 0"
         q += " ORDER BY i.id DESC LIMIT ?"
         args.append(max(1, min(200, limit)))
         with db() as conn:
@@ -3344,6 +3811,7 @@ class Engine:
                 for r in conn.execute(
                     "SELECT ref, started, resolved FROM incidents"
                     f" WHERE verdict_code IN ({placeholders}) AND id != ?"
+                    " AND COALESCE(false_alarm, 0) = 0"
                     " ORDER BY id DESC LIMIT 3",
                     (*similar_codes, inc_id)):
                     d = dict(r)
@@ -3387,7 +3855,7 @@ class Engine:
                 comparison_summary = "New failures appeared in " + ", ".join(flipped_labels) + "."
             else:
                 comparison_summary = "The path still worked, but its evidence changed (timing or target agreement)."
-        return {
+        result = {
             "incident": inc,
             "runs": runs,
             "baseline_before": (
@@ -3408,6 +3876,8 @@ class Engine:
             "pattern": self.patterns(sim_code) if sim_code else None,
             "similar": similar,
         }
+        result["story"] = incident_story(result)
+        return result
 
     def evidence_export(self, tier="detailed"):
         """Build a bounded, credential-free local evidence package."""
@@ -4151,22 +4621,45 @@ class Handler(BaseHTTPRequestHandler):
             ENGINE.trigger("manual-get", "GET /trigger")
             self._send(200, {"triggered": True})
             return
+        if url.path == "/metrics":
+            # Prometheus can't hold a browser session; the webhook bearer
+            # (already LAN-scoped by the public-exposure guard) gates the
+            # read-only exposition instead.
+            if not self._require_webhook():
+                self._send(401, {"error": "webhook authorization required"})
+                return
+            self._send(
+                200, prometheus_metrics().encode("utf-8"),
+                "text/plain; version=0.0.4; charset=utf-8",
+            )
+            return
         ok, session = self._require_auth()
         if not ok:
+            # Read-only API tokens are accepted ONLY on these GET endpoints:
+            # current status/quality and the accountability report. They can
+            # never reach settings, auth, devices, webhooks, or any POST.
+            if url.path in READONLY_TOKEN_GET_PATHS and auth.verify_readonly_token(
+                self.headers.get("Authorization")
+            ):
+                session = None
             # /setup is an alias for the dashboard; the UI shows the onboarding
             # gate when a setup code is required, so a beginner can land there
             # straight from the installer's printed address.
-            if url.path in ("/", "/index.html", "/setup"):
+            elif url.path in ("/", "/index.html", "/setup"):
                 self._serve_dashboard()
+                return
             else:
                 self._send(401, {"error": "authentication required"})
-            return
+                return
         if url.path in ("/", "/index.html", "/setup"):
             self._serve_dashboard()
         elif url.path == "/api/status":
             payload = ENGINE.status()
             payload["auth"] = auth.public_status(session)
             payload["quality"] = quality_summary(limit=120)
+            payload["wifi_note"] = wifi_wired_differential(
+                ENGINE.last_run_checks()
+            )
             self._send(200, payload)
         elif url.path == "/api/auth/audit":
             try:
@@ -4175,6 +4668,8 @@ class Handler(BaseHTTPRequestHandler):
                 limit = 50
             limit = max(20, min(200, limit))  # aggressive clamp; newest-first in the query
             self._send(200, {"events": auth.audit_events(limit)})
+        elif url.path == "/api/auth/tokens":
+            self._send(200, {"tokens": auth.list_readonly_tokens()})
         elif url.path == "/api/evidence-export":
             tier = str(qs.get("tier", ["detailed"])[0])
             try:
@@ -4262,6 +4757,19 @@ class Handler(BaseHTTPRequestHandler):
                 limit = 288
             limit = max(1, min(2000, limit))
             self._send(200, quality_summary(limit))
+        elif url.path == "/api/report":
+            try:
+                days = int(qs.get("days", ["30"])[0])
+            except ValueError:
+                days = 30
+            self._send(200, ENGINE.isp_report(days))
+        elif url.path == "/api/report.csv":
+            try:
+                days = int(qs.get("days", ["30"])[0])
+            except ValueError:
+                days = 30
+            csv_text = isp_report_csv(ENGINE.isp_report(days))
+            self._send(200, csv_text.encode("utf-8"), "text/csv; charset=utf-8")
         elif url.path == "/api/push/vapid-key":
             from linkmoth_push import push_available, vapid_public_key_b64
             if not push_available(STATE_DIR):
@@ -4407,6 +4915,26 @@ class Handler(BaseHTTPRequestHandler):
                     ENGINE.trigger("dashboard", f"manual run found: {v['code']}")
             threading.Thread(target=one_shot, daemon=True).start()
             self._send(200, {"started": True})
+        elif path == "/api/quality/load-test":
+            try:
+                _validate_load_url(quality_config().get("load_test_url"))
+            except ValueError as exc:
+                self._send(400, {"error": str(exc)})
+                return
+            if not _LOAD_TEST_LOCK.acquire(blocking=False):
+                self._send(409, {"error": "a load test is already running"})
+                return
+
+            def run_and_release():
+                try:
+                    run_load_test()
+                except Exception as exc:
+                    print(f"load test failed: {exc}", file=sys.stderr, flush=True)
+                finally:
+                    _LOAD_TEST_LOCK.release()
+
+            threading.Thread(target=run_and_release, daemon=True).start()
+            self._send(200, {"started": True})
         elif path == "/api/update/check":
             try:
                 result = manual_update_check()
@@ -4462,6 +4990,22 @@ class Handler(BaseHTTPRequestHandler):
                              "still_bad_labels": human(still_bad),
                              "improved_labels": human(improved),
                              "regressed_labels": human(regressed)})
+        elif path == "/api/auth/tokens":
+            try:
+                data = json.loads(body) if body else {}
+                if not isinstance(data, dict):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                self._send(400, {"error": "expected a JSON object"})
+                return
+            try:
+                value, entry = auth.create_readonly_token(data.get("name"))
+            except ValueError as exc:
+                self._send(400, {"error": str(exc)})
+                return
+            # The plain token value appears in this response only; after
+            # this, only its hash exists server-side.
+            self._send(200, {"token": value, **entry})
         elif path == "/api/settings":
             try:
                 data = json.loads(body)
@@ -4605,6 +5149,13 @@ class Handler(BaseHTTPRequestHandler):
             get_auth().audit_event("csrf_rejected", self._hdrs(), path)
             self._send(403, {"error": "csrf required"})
             return
+        token_match = re.fullmatch(r"/api/auth/tokens/([0-9a-f]{8})", path)
+        if token_match:
+            if get_auth().revoke_readonly_token(token_match.group(1)):
+                self._send(200, {"revoked": True})
+            else:
+                self._send(404, {"error": "no such token"})
+            return
         webhook_match = re.fullmatch(
             r"/api/webhooks/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
             r"[0-9a-f]{4}-[0-9a-f]{12})",
@@ -4641,18 +5192,27 @@ class Handler(BaseHTTPRequestHandler):
             self._send_device_exception(exc)
 
 
-def doctor():
+def doctor(json_output=False):
     problems = 0
+    checks = []
 
     def report(name, healthy, detail=""):
         nonlocal problems
-        print(f"[{'ok' if healthy else 'FAIL'}] {name}"
-              + (f" — {detail}" if detail else ""))
+        checks.append({
+            "name": name,
+            "status": "ok" if healthy else "fail",
+            "detail": detail,
+        })
+        if not json_output:
+            print(f"[{'ok' if healthy else 'FAIL'}] {name}"
+                  + (f" — {detail}" if detail else ""))
         if not healthy:
             problems += 1
 
     def info(name, detail=""):
-        print(f"[--] {name}" + (f" — {detail}" if detail else ""))
+        checks.append({"name": name, "status": "info", "detail": detail})
+        if not json_output:
+            print(f"[--] {name}" + (f" — {detail}" if detail else ""))
 
     report("python >= 3.9", sys.version_info >= (3, 9), sys.version.split()[0])
     # DNS is resolved with a stdlib socket now — no `dig` binary required.
@@ -4742,7 +5302,16 @@ def doctor():
             f"{names} — host-local, not normally reachable from outside; "
             f"narrow \"bind\" if you want to exclude them too",
         )
-    print("all good" if problems == 0 else f"{problems} problem(s) found")
+    if json_output:
+        print(json.dumps({
+            "schema": 1,
+            "version": VERSION,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "problems": problems,
+            "checks": checks,
+        }, indent=2))
+    else:
+        print("all good" if problems == 0 else f"{problems} problem(s) found")
     return 0 if problems == 0 else 1
 
 
@@ -4777,6 +5346,311 @@ def record_quality_sample():
     return {**sample, **verdict}
 
 
+_LOAD_TEST_LOCK = threading.Lock()
+
+
+def _resolve_load_target(url):
+    """A load-test URL must be a public HTTPS host. This feature generates
+    real outbound traffic on purpose; it must never be aimable at the LAN
+    (no internal port probing, no loopback services)."""
+    parsed = urlparse(str(url or "").strip())
+    if (
+        parsed.scheme != "https" or not parsed.hostname
+        or parsed.username is not None or parsed.password is not None
+    ):
+        raise ValueError("load test URL must be https://")
+    try:
+        infos = socket.getaddrinfo(
+            parsed.hostname, parsed.port or 443,
+            type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP,
+        )
+    except OSError as exc:
+        raise ValueError(f"load test host did not resolve: {exc}") from exc
+    addresses = sorted({info[4][0] for info in infos})
+    if not addresses or any(
+        not ipaddress.ip_address(address).is_global for address in addresses
+    ):
+        raise ValueError(
+            "load test host must resolve to public addresses only"
+        )
+    return parsed, addresses
+
+
+def _validate_load_url(url):
+    parsed, _addresses = _resolve_load_target(url)
+    return parsed.geturl()
+
+
+def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
+    start = time.monotonic()
+    deadline = start + seconds
+    parsed = urlparse(url)
+    path = parsed.path or "/"
+    if parsed.params:
+        path += ";" + parsed.params
+    if parsed.query:
+        path += "?" + parsed.query
+    host_header = parsed.hostname or ""
+    if ":" in host_header:
+        host_header = f"[{host_header}]"
+    if parsed.port and parsed.port != 443:
+        host_header += f":{parsed.port}"
+    headers = {
+        "Host": host_header,
+        "User-Agent": "Linkmoth-load-test",
+        "Accept-Encoding": "identity",
+        "Cache-Control": "no-cache",
+        "Connection": "close",
+    }
+    context = ssl.create_default_context()
+    try:
+        for address in addresses:
+            conn = _PinnedHTTPSConnection(
+                parsed.hostname, address, port=parsed.port or 443,
+                timeout=10, context=context,
+            )
+            try:
+                conn.request("GET", path, headers=headers)
+                resp = conn.getresponse()
+                # http.client never follows redirects. Treat every non-2xx
+                # response as a failed target instead of downloading an error
+                # page or trusting a Location that was never validated.
+                if not 200 <= resp.status < 300:
+                    stats["error"] = f"HTTP {resp.status}"
+                    return
+                while time.monotonic() < deadline and not stop.is_set():
+                    remaining = max_bytes - stats["bytes"]
+                    if remaining <= 0:
+                        break
+                    chunk = resp.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    stats["bytes"] += len(chunk)
+                stats["error"] = None
+                return
+            except Exception as exc:
+                stats["error"] = exc.__class__.__name__
+            finally:
+                conn.close()
+    finally:
+        stats["elapsed"] = max(0.0, time.monotonic() - start)
+
+
+def run_load_test(store=True):
+    """Latency-under-load (bufferbloat) measurement.
+
+    Ping the quality target at idle, then again while a bounded download
+    saturates the link, and grade the latency inflation the way the
+    dslreports scale does (A under +30 ms … F above +400 ms). The transfer
+    stops at load_test_seconds or load_test_max_mb, whichever comes first.
+    Returns the result dict, or None when nothing could be measured.
+    """
+    qcfg = quality_config()
+    parsed, addresses = _resolve_load_target(qcfg.get("load_test_url"))
+    url = parsed.geturl()
+    targets = qcfg.get("targets") or CFG.get("ping_targets") or []
+    if not targets:
+        return None
+    idle = measure_quality(targets, count=5)
+    if not idle or idle.get("latency_ms") is None:
+        return None
+    try:
+        seconds = int(qcfg.get("load_test_seconds", 10))
+    except (TypeError, ValueError):
+        seconds = 10
+    seconds = max(5, min(20, seconds))
+    try:
+        max_mb = int(qcfg.get("load_test_max_mb", 25))
+    except (TypeError, ValueError):
+        max_mb = 25
+    max_bytes = max(1, min(100, max_mb)) * 1024 * 1024
+    stats = {"bytes": 0, "elapsed": 0.0, "error": None}
+    stop = threading.Event()
+    worker = threading.Thread(
+        target=_load_downloader,
+        args=(url, addresses, seconds, max_bytes, stats, stop),
+        daemon=True,
+    )
+    worker.start()
+    time.sleep(0.5)  # let the transfer ramp before sampling under load
+    loaded = measure_quality([idle["target"]], count=max(4, seconds - 2))
+    stop.set()
+    worker.join(timeout=seconds + 10)
+    if not loaded or loaded.get("latency_ms") is None:
+        return None
+    bloat = max(0.0, loaded["latency_ms"] - idle["latency_ms"])
+    grade = (
+        "A" if bloat < 30 else "B" if bloat < 60
+        else "C" if bloat < 200 else "D" if bloat < 400 else "F"
+    )
+    throughput = None
+    if stats["bytes"] and stats["elapsed"] > 0.5:
+        throughput = round(stats["bytes"] * 8 / stats["elapsed"] / 1e6, 1)
+    result = {
+        "ts": time.time(),
+        "idle_ms": round(idle["latency_ms"], 1),
+        "loaded_ms": round(loaded["latency_ms"], 1),
+        "bloat_ms": round(bloat, 1),
+        "grade": grade,
+        "throughput_mbps": throughput,
+        "bytes": int(stats["bytes"]),
+        "seconds": round(stats["elapsed"], 1),
+        "error": stats["error"],
+    }
+    if store:
+        try:
+            with db() as conn:
+                conn.execute(
+                    "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms,"
+                    " grade, throughput_mbps, bytes, seconds, error)"
+                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    (result["ts"], result["idle_ms"], result["loaded_ms"],
+                     result["bloat_ms"], result["grade"],
+                     result["throughput_mbps"], result["bytes"],
+                     result["seconds"], result["error"]),
+                )
+        except sqlite3.Error as e:
+            print(f"load test store failed: {e}", file=sys.stderr, flush=True)
+    return result
+
+
+def latest_load_test():
+    try:
+        with db() as conn:
+            row = conn.execute(
+                "SELECT * FROM load_tests ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    return dict(row) if row else None
+
+
+def _median(values):
+    values = sorted(v for v in values if v is not None)
+    if not values:
+        return None
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2.0
+
+
+QUALITY_DAYPARTS = (
+    ("night", 0, 6),
+    ("morning", 6, 12),
+    ("afternoon", 12, 18),
+    ("evening", 18, 24),
+)
+
+
+def quality_findings(days=7):
+    """Plain-language recurring-pattern findings over recent quality
+    samples: time-of-day comparisons, loss concentration, and trend. Pure
+    analytics over data already stored — the sentences a user can point at
+    when saying "the internet is always bad in the evening"."""
+    qcfg = quality_config()
+    cutoff = time.time() - days * 86400
+    rows = []
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT ts, latency_ms, jitter_ms, loss_pct, state"
+                " FROM quality_samples WHERE ts > ? ORDER BY ts ASC",
+                (cutoff,),
+            ).fetchall()
+    except sqlite3.Error as e:
+        print(f"quality findings read failed: {e}", file=sys.stderr, flush=True)
+    samples = [dict(r) for r in rows]
+    result = {
+        "days": days,
+        "sample_count": len(samples),
+        "findings": [],
+        "dayparts": {},
+    }
+    # Below a dozen samples any "pattern" is noise, not evidence.
+    if len(samples) < 12:
+        return result
+    buckets = {}
+    for sample in samples:
+        hour = time.localtime(sample["ts"]).tm_hour
+        for name, lo, hi in QUALITY_DAYPARTS:
+            if lo <= hour < hi:
+                buckets.setdefault(name, []).append(sample)
+                break
+    daypart_stats = {}
+    for name, _, _ in QUALITY_DAYPARTS:
+        bucket = buckets.get(name) or []
+        if len(bucket) < 3:
+            continue
+        daypart_stats[name] = {
+            "samples": len(bucket),
+            "median_latency_ms": _median([b["latency_ms"] for b in bucket]),
+            "mean_loss_pct": round(
+                sum(b["loss_pct"] or 0 for b in bucket) / len(bucket), 2
+            ),
+            "poor_share": round(
+                sum(1 for b in bucket if b["state"] == "poor") / len(bucket), 2
+            ),
+        }
+    result["dayparts"] = daypart_stats
+    findings = []
+    rated = {
+        name: st for name, st in daypart_stats.items()
+        if st["median_latency_ms"] is not None
+    }
+    if len(rated) >= 2:
+        worst = max(rated, key=lambda n: rated[n]["median_latency_ms"])
+        best = min(rated, key=lambda n: rated[n]["median_latency_ms"])
+        worst_ms = rated[worst]["median_latency_ms"]
+        best_ms = rated[best]["median_latency_ms"]
+        if best_ms > 0 and worst_ms >= best_ms * 1.5 and worst_ms - best_ms >= 20:
+            findings.append(
+                f"{worst.capitalize()} latency is {worst_ms / best_ms:.1f}×"
+                f" worse than {best} (median {round(worst_ms)} ms vs"
+                f" {round(best_ms)} ms)."
+            )
+    if daypart_stats:
+        worst_loss = max(
+            daypart_stats, key=lambda n: daypart_stats[n]["mean_loss_pct"]
+        )
+        worst_loss_pct = daypart_stats[worst_loss]["mean_loss_pct"]
+        other_losses = [
+            st["mean_loss_pct"] for name, st in daypart_stats.items()
+            if name != worst_loss
+        ]
+        if worst_loss_pct >= float(qcfg["loss_warn_pct"]) and (
+            not other_losses
+            or worst_loss_pct >= 2 * max(max(other_losses), 0.01)
+        ):
+            findings.append(
+                f"Packet loss concentrates in the {worst_loss}"
+                f" (average {worst_loss_pct}%)."
+            )
+    half = len(samples) // 2
+    first_half = _median([s["latency_ms"] for s in samples[:half]])
+    second_half = _median([s["latency_ms"] for s in samples[half:]])
+    if first_half and second_half:
+        if second_half >= first_half * 1.25 and second_half - first_half >= 15:
+            findings.append(
+                f"Latency worsened across the window (median"
+                f" {round(first_half)} ms → {round(second_half)} ms)."
+            )
+        elif first_half >= second_half * 1.25 and first_half - second_half >= 15:
+            findings.append(
+                f"Latency improved across the window (median"
+                f" {round(first_half)} ms → {round(second_half)} ms)."
+            )
+    if not findings:
+        overall = _median([s["latency_ms"] for s in samples])
+        good_share = sum(1 for s in samples if s["state"] == "good") / len(samples)
+        if overall is not None and good_share >= 0.9:
+            findings.append(
+                f"No recurring quality problems in the last {days} days —"
+                f" median latency {round(overall)} ms,"
+                f" {round(good_share * 100)}% of samples good."
+            )
+    result["findings"] = findings
+    return result
+
+
 def quality_summary(limit=288):
     """Recent quality samples (oldest first) plus the latest verdict."""
     qcfg = quality_config()
@@ -4804,6 +5678,8 @@ def quality_summary(limit=288):
         "enabled": bool(qcfg.get("enabled", True)),
         "current": current,
         "samples": samples,
+        "findings": quality_findings(),
+        "load_test": latest_load_test(),
         "thresholds": {
             "latency_warn_ms": qcfg["latency_warn_ms"],
             "latency_bad_ms": qcfg["latency_bad_ms"],
@@ -4815,23 +5691,270 @@ def quality_summary(limit=288):
     }
 
 
+def _get_meta(key):
+    with db() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_meta WHERE key=?", (key,)
+        ).fetchone()
+    return row["value"] if row else None
+
+
+def _set_meta(key, value):
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO app_meta(key, value) VALUES(?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+
+
+def _month_bounds(year, month):
+    start = time.mktime((year, month, 1, 0, 0, 0, 0, 0, -1))
+    next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    end = time.mktime((next_year, next_month, 1, 0, 0, 0, 0, 0, -1))
+    return start, end
+
+
+def monthly_digest_lines(year, month):
+    """Plain-language summary lines for one calendar month (local time)."""
+    start, end = _month_bounds(year, month)
+    end = min(end, time.time())
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    prev_start, prev_end = _month_bounds(prev_year, prev_month)
+    with db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM incidents WHERE started < ?"
+            " AND (resolved IS NULL OR resolved > ?)",
+            (end, start))]
+        latencies = [r["latency_ms"] for r in conn.execute(
+            "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
+            (start, end))]
+        prev_latencies = [r["latency_ms"] for r in conn.execute(
+            "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
+            (prev_start, prev_end))]
+    faults = 0
+    false_alarms = 0
+    downtime = 0.0
+    blame = {}
+    longest = None
+    for row in rows:
+        inc = normalize_stored_verdict(row)
+        code = inc.get("diagnosis_code") or inc.get("verdict_code") or ""
+        if inc.get("false_alarm") or code == "all_clear":
+            false_alarms += 1
+            continue
+        faults += 1
+        started = float(inc["started"])
+        resolved = float(inc["resolved"]) if inc.get("resolved") else None
+        clamped = max(0.0, min(resolved or end, end) - max(started, start))
+        downtime += clamped
+        if code:
+            blame[code] = blame.get(code, 0) + 1
+        duration = (resolved or end) - started
+        if longest is None or duration > longest[0]:
+            longest = (duration, inc.get("ref"))
+    span = max(1.0, end - start)
+    uptime_pct = round(max(0.0, 100.0 * (1 - downtime / span)), 2)
+    lines = [f"{faults} incident(s), {false_alarms} false alarm(s)."]
+    if faults:
+        lines.append(
+            f"Downtime {_human_duration(downtime)} — {uptime_pct}% uptime."
+        )
+        if blame:
+            top_code = max(blame, key=blame.get)
+            lines.append(
+                f"Most common fault: {top_code} ({blame[top_code]}×)."
+            )
+        if longest:
+            ref = f" ({longest[1]})" if longest[1] else ""
+            lines.append(
+                f"Longest outage: {_human_duration(longest[0])}{ref}."
+            )
+    else:
+        lines.append("No network faults were confirmed — a clean month.")
+    med = _median(latencies)
+    if med is not None:
+        line = f"Median internet latency: {round(med)} ms"
+        prev_med = _median(prev_latencies)
+        if prev_med is not None and prev_med > 0:
+            change = (med - prev_med) / prev_med * 100
+            if abs(change) >= 10:
+                line += (
+                    f" ({'up' if change > 0 else 'down'}"
+                    f" {abs(round(change))}% vs the month before)"
+                )
+        lines.append(line + ".")
+    return lines
+
+
+def maybe_send_monthly_digest(now=None):
+    """Send one previous-month summary when the local month rolls over.
+    Called from the daily janitor; the sent-marker in app_meta makes it
+    restart-safe and at-most-once per month."""
+    now = now if now is not None else time.time()
+    lt = time.localtime(now)
+    current_month = f"{lt.tm_year:04d}-{lt.tm_mon:02d}"
+    last = _get_meta("monthly_digest_sent")
+    if last == current_month:
+        return False
+    if last is None:
+        # First ever run: arm the marker without sending — there is no
+        # fully-observed previous month to summarize yet.
+        _set_meta("monthly_digest_sent", current_month)
+        return False
+    prev_year, prev_month = (
+        (lt.tm_year - 1, 12) if lt.tm_mon == 1 else (lt.tm_year, lt.tm_mon - 1)
+    )
+    lines = monthly_digest_lines(prev_year, prev_month)
+    month_label = time.strftime(
+        "%B %Y", time.localtime(_month_bounds(prev_year, prev_month)[0])
+    )
+    title = f"Monthly network report — {month_label}"
+    from linkmoth_notify import defer_notification_if_quiet
+    if defer_notification_if_quiet(
+        CFG, db, title, "\n".join(lines), discord=True, push=True,
+    ):
+        _set_meta("monthly_digest_sent", current_month)
+        return True
+    from linkmoth_discord import send_monthly_digest_alert
+    send_monthly_digest_alert(lines, month_label, CFG)
+    if CFG.get("push_notifications_enabled", True):
+        from linkmoth_push import send_push_async
+        send_push_async(
+            STATE_DIR, db, CFG, title, " ".join(lines[:2]),
+            tag="linkmoth-monthly",
+        )
+    _set_meta("monthly_digest_sent", current_month)
+    return True
+
+
+def prometheus_metrics():
+    """Read-only Prometheus text exposition of current state. Served behind
+    the webhook bearer; label values are fixed enum-like strings — never
+    secrets, hostnames, or LAN addresses."""
+    out = []
+
+    def gauge(name, value, help_text, labels=None):
+        out.append(f"# HELP {name} {help_text}")
+        out.append(f"# TYPE {name} gauge")
+        label_str = ""
+        if labels:
+            inner = ",".join(f'{k}="{v}"' for k, v in labels.items())
+            label_str = "{" + inner + "}"
+        out.append(f"{name}{label_str} {value}")
+
+    severity_map = {"ok": 0, "warn": 1, "degraded": 1, "bad": 2, "critical": 2}
+    gauge("linkmoth_info", 1, "Linkmoth build information.",
+          {"version": VERSION})
+    last = None
+    with db() as conn:
+        row = conn.execute(
+            "SELECT severity, code, ts FROM runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row:
+            last = dict(row)
+        qrow = conn.execute(
+            "SELECT latency_ms, jitter_ms, loss_pct, state"
+            " FROM quality_samples ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+    if last:
+        code = normalize_stored_verdict(last).get("code") or "unknown"
+        gauge(
+            "linkmoth_last_verdict_severity",
+            severity_map.get(last["severity"], -1),
+            "Last diagnosis severity (0 ok, 1 degraded, 2 bad, -1 unknown).",
+            {"code": code},
+        )
+        gauge("linkmoth_last_run_timestamp_seconds", round(last["ts"], 3),
+              "Unix time of the last diagnosis run.")
+    inc = ENGINE.open_incident()
+    gauge("linkmoth_incident_open", 1 if inc else 0,
+          "Whether a network incident is currently open.")
+    if inc:
+        gauge("linkmoth_incident_open_duration_seconds",
+              round(time.time() - float(inc["started"])),
+              "Age of the currently open incident.")
+    stats = ENGINE.stats()
+    gauge("linkmoth_incidents_30d", stats["incidents_30d"],
+          "Incidents recorded in the last 30 days.")
+    gauge("linkmoth_false_alarms_30d", stats["false_alarms_30d"],
+          "False alarms recorded in the last 30 days.")
+    gauge("linkmoth_downtime_seconds_30d", stats["downtime_s"],
+          "Downtime recorded in the last 30 days.")
+    if stats["uptime_pct"] is not None:
+        gauge("linkmoth_uptime_percent_30d", stats["uptime_pct"],
+              "Uptime percentage over the last 30 days.")
+    checks = ENGINE.last_run_checks()
+    if checks:
+        out.append("# HELP linkmoth_rung_ok Rung state from the last"
+                   " diagnosis (1 ok, 0 failed, -1 skipped).")
+        out.append("# TYPE linkmoth_rung_ok gauge")
+        for check in checks:
+            value = -1 if check.get("ok") is None else (1 if check["ok"] else 0)
+            out.append(f'linkmoth_rung_ok{{rung="{check["id"]}"}} {value}')
+    if qrow:
+        state_map = {"good": 0, "fair": 1, "poor": 2}
+        if qrow["latency_ms"] is not None:
+            gauge("linkmoth_quality_latency_ms", qrow["latency_ms"],
+                  "Most recent internet-path latency sample.")
+        if qrow["jitter_ms"] is not None:
+            gauge("linkmoth_quality_jitter_ms", qrow["jitter_ms"],
+                  "Most recent internet-path jitter sample.")
+        if qrow["loss_pct"] is not None:
+            gauge("linkmoth_quality_loss_percent", qrow["loss_pct"],
+                  "Most recent internet-path packet-loss sample.")
+        gauge("linkmoth_quality_state", state_map.get(qrow["state"], -1),
+              "Most recent quality classification"
+              " (0 good, 1 fair, 2 poor, -1 unknown).")
+    host = host_stats()
+    for key, metric, help_text in (
+        ("cpu_percent", "linkmoth_host_cpu_percent",
+         "Linkmoth host CPU usage."),
+        ("temperature_c", "linkmoth_host_temperature_celsius",
+         "Linkmoth host temperature."),
+        ("memory_percent", "linkmoth_host_memory_percent",
+         "Linkmoth host memory usage."),
+        ("disk_percent", "linkmoth_host_disk_percent",
+         "Linkmoth host root-disk usage."),
+    ):
+        if host.get(key) is not None:
+            gauge(metric, host[key], help_text)
+    return "\n".join(out) + "\n"
+
+
+def janitor_sweep():
+    cutoff = time.time() - CFG.get("retention_days", 90) * 86400
+    try:
+        with db() as conn:
+            # Keep runs that belong to a still-open incident regardless of
+            # age: they are the incident's evidence trail, and the incident
+            # row itself is only pruned after it resolves.
+            conn.execute(
+                "DELETE FROM runs WHERE ts < ? AND (incident_id IS NULL"
+                " OR incident_id NOT IN"
+                " (SELECT id FROM incidents WHERE resolved IS NULL))",
+                (cutoff,),
+            )
+            conn.execute("DELETE FROM quality_samples WHERE ts < ?", (cutoff,))
+            conn.execute(
+                "DELETE FROM incidents WHERE resolved IS NOT NULL AND resolved < ?",
+                (cutoff,),
+            )
+    except sqlite3.Error as e:
+        print(f"janitor: {e}", file=sys.stderr, flush=True)
+    try:
+        auto_vacuum(ENGINE)
+    except Exception as e:
+        print(f"janitor auto_vacuum: {e}", file=sys.stderr, flush=True)
+    try:
+        maybe_send_monthly_digest()
+    except Exception as e:
+        print(f"monthly digest: {e}", file=sys.stderr, flush=True)
+
+
 def janitor_loop():
     while True:
-        cutoff = time.time() - CFG.get("retention_days", 90) * 86400
-        try:
-            with db() as conn:
-                conn.execute("DELETE FROM runs WHERE ts < ?", (cutoff,))
-                conn.execute("DELETE FROM quality_samples WHERE ts < ?", (cutoff,))
-                conn.execute(
-                    "DELETE FROM incidents WHERE resolved IS NOT NULL AND resolved < ?",
-                    (cutoff,),
-                )
-        except sqlite3.Error as e:
-            print(f"janitor: {e}", file=sys.stderr, flush=True)
-        try:
-            auto_vacuum(ENGINE)
-        except Exception as e:
-            print(f"janitor auto_vacuum: {e}", file=sys.stderr, flush=True)
+        janitor_sweep()
         time.sleep(86400)
 
 
@@ -4919,7 +6042,7 @@ def auth_show_audit():
 
 def main():
     if "--doctor" in sys.argv:
-        sys.exit(doctor())
+        sys.exit(doctor(json_output="--json" in sys.argv))
     if "--auth-set-password" in sys.argv:
         sys.exit(auth_set_password())
     if "--auth-setup-totp" in sys.argv:
@@ -4976,6 +6099,24 @@ def main():
                     ENGINE.trigger("baseline", f"self-detected: {v['code']}")
                     last_incident_probe = now
                 record_quality_sample()
+                # Scheduled bufferbloat runs are opt-in (load_test_hours > 0)
+                # and never start while an incident is open or another test
+                # is already running.
+                try:
+                    load_hours = int(quality_config().get("load_test_hours", 0) or 0)
+                except (TypeError, ValueError):
+                    load_hours = 0
+                if load_hours > 0 and _LOAD_TEST_LOCK.acquire(blocking=False):
+                    try:
+                        last_test = latest_load_test()
+                        if (not last_test
+                                or now - float(last_test["ts"]) >= load_hours * 3600):
+                            run_load_test()
+                    except Exception as e:
+                        print(f"scheduled load test: {e}",
+                              file=sys.stderr, flush=True)
+                    finally:
+                        _LOAD_TEST_LOCK.release()
             time.sleep(max(60, sample_m * 60))
     from linkmoth_notify import quiet_hours_scheduler_loop
     from linkmoth_webhooks import drain_loop, migrate_legacy_webhook

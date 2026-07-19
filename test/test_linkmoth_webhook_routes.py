@@ -225,12 +225,13 @@ class WebhookRouteTests(LinkmothTestBase):
         self.assertEqual(code, 409)
 
     def test_false_alarm_by_ref_flags_resolved_incident(self):
+        resolved_at = time.time()
         with self.linkmoth.db() as conn:
             conn.execute(
                 "INSERT INTO incidents(started, source, detail, ref, resolved,"
                 " verdict_code, verdict_title) VALUES(?,?,?,?,?,?,?)",
                 (time.time() - 100, "test", "seeded", "INC-20260710-0002",
-                 time.time(), "wan_down", "WAN down"),
+                 resolved_at, "wan_down", "WAN down"),
             )
         code, body, _, _ = self._authed(
             "POST", "/api/incident/false-alarm", {"ref": "INC-20260710-0002"},
@@ -239,7 +240,11 @@ class WebhookRouteTests(LinkmothTestBase):
         with self.linkmoth.db() as conn:
             inc = conn.execute("SELECT * FROM incidents").fetchone()
         self.assertEqual(inc["false_alarm"], 1)
-        self.assertEqual(inc["verdict_code"], "wan_down")  # resolution untouched
+        # The verdict is rewritten so the incident stops counting as a
+        # blamed fault in stats/patterns/filters…
+        self.assertEqual(inc["verdict_code"], "all_clear")
+        # …but the original resolution timestamp is untouched.
+        self.assertAlmostEqual(inc["resolved"], resolved_at, delta=0.01)
 
     def test_inbound_info_returns_secret_and_curl(self):
         code, body, _, _ = self._authed("GET", "/api/webhooks/inbound-info")
@@ -357,6 +362,65 @@ class WebhookRouteTests(LinkmothTestBase):
             cookies={"__Host-linkmoth_session": self.cookie},
         )
         self.assertEqual(code, 403)
+
+
+class MetricsRouteTests(LinkmothTestBase):
+    def setUp(self):
+        super().setUp()
+        self._configure_auth()
+
+    def test_metrics_requires_webhook_bearer(self):
+        code, _, _, _ = http("GET", f"{self.base}/metrics")
+        self.assertEqual(code, 401)
+        code, _, _, _ = http(
+            "GET", f"{self.base}/metrics",
+            headers={"Authorization": "Bearer wrong-secret"},
+        )
+        self.assertEqual(code, 401)
+
+    def test_metrics_exposes_read_only_gauges(self):
+        code, body, _, headers = http(
+            "GET", f"{self.base}/metrics",
+            headers={"Authorization": f"Bearer {self.webhook}"},
+        )
+        self.assertEqual(code, 200)
+        text = body.decode("utf-8") if isinstance(body, bytes) else str(body)
+        self.assertIn("text/plain", headers.get("Content-Type", ""))
+        self.assertIn("linkmoth_info{version=", text)
+        self.assertIn("linkmoth_incident_open 0", text)
+        self.assertIn("linkmoth_incidents_30d", text)
+        # No secrets in the exposition.
+        self.assertNotIn(self.webhook, text)
+
+    def test_metrics_reflects_open_incident_and_rungs(self):
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
+                (time.time() - 120, "test", "metrics"),
+            )
+            inc_id = cur.lastrowid
+            checks = json.dumps([
+                {"id": "gateway", "label": "Router", "ok": True,
+                 "detail": "ok", "ms": 1.0, "micro": []},
+                {"id": "raw_ping", "label": "Internet ping", "ok": False,
+                 "detail": "timeout", "ms": None, "micro": []},
+            ])
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title,"
+                " checks) VALUES(?,?,?,?,?,?)",
+                (inc_id, time.time(), "bad", "wan_down", "WAN down", checks),
+            )
+        code, body, _, _ = http(
+            "GET", f"{self.base}/metrics",
+            headers={"Authorization": f"Bearer {self.webhook}"},
+        )
+        self.assertEqual(code, 200)
+        text = body.decode("utf-8") if isinstance(body, bytes) else str(body)
+        self.assertIn("linkmoth_incident_open 1", text)
+        self.assertIn("linkmoth_incident_open_duration_seconds", text)
+        self.assertIn('linkmoth_rung_ok{rung="gateway"} 1', text)
+        self.assertIn('linkmoth_rung_ok{rung="raw_ping"} 0', text)
+        self.assertIn('linkmoth_last_verdict_severity{code="wan_down"} 2', text)
 
 
 if __name__ == "__main__":

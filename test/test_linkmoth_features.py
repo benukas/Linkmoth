@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for guided-troubleshooting verify and outage-correlation patterns."""
 import importlib
+import json
 import os
 import sys
 import tempfile
@@ -80,10 +81,42 @@ class VerifyTests(unittest.TestCase):
                 "SELECT kind FROM runs ORDER BY id DESC LIMIT 1").fetchone()
         self.assertEqual(row["kind"], "verify")
 
-    def test_verify_cooldown(self):
+    def test_verify_cooldown_starts_when_verify_runs(self):
         engine = self.linkmoth.Engine()
+        # Checking the cooldown is read-only: it never starts the window.
         self.assertEqual(engine.verify_cooldown_remaining(), 0.0)
+        self.assertEqual(engine.verify_cooldown_remaining(), 0.0)
+        with mock.patch.object(self.linkmoth, "run_ladder",
+                               return_value=(make_checks(), 1.0)):
+            self.assertIsNotNone(engine.verify_fix())
         self.assertGreater(engine.verify_cooldown_remaining(), 0.0)
+
+    def test_rejected_verify_does_not_burn_cooldown(self):
+        engine = self.linkmoth.Engine()
+        with mock.patch.object(engine, "diagnose_once", return_value=None):
+            self.assertIsNone(engine.verify_fix())
+        self.assertEqual(engine.verify_cooldown_remaining(), 0.0)
+
+    def test_concurrent_triggers_open_single_incident(self):
+        import threading
+
+        engine = self.linkmoth.Engine()
+        # Keep the recheck loop inert so it can't resolve the incident
+        # while the trigger threads race.
+        with mock.patch.object(engine, "_loop", lambda inc_id: None):
+            threads = [
+                threading.Thread(target=engine.trigger, args=(f"t{i}", "race"))
+                for i in range(8)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=10)
+        with self.linkmoth.db() as conn:
+            open_count = conn.execute(
+                "SELECT COUNT(*) FROM incidents WHERE resolved IS NULL"
+            ).fetchone()[0]
+        self.assertEqual(open_count, 1)
 
 
 class PatternTests(unittest.TestCase):
@@ -346,6 +379,452 @@ class ManualUpdateCheckTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "not globally routable"):
                 connection.connect()
         raw_socket.connect.assert_not_called()
+
+
+class IncidentStoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_story_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM runs")
+
+    def _make_incident(self, resolved=None, false_alarm=0, source="baseline"):
+        started = time.time() - 600
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved,"
+                " verdict_code, verdict_title, ref, false_alarm)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (started, source, "self-detected: wan_down", resolved,
+                 "wan_down", "Internet is dead beyond the router",
+                 "INC-20260717-0001", false_alarm),
+            )
+            inc_id = cur.lastrowid
+            checks = json.dumps([
+                {"id": "gateway", "label": "Router", "ok": True,
+                 "detail": "replied", "ms": 2.0, "micro": []},
+                {"id": "raw_ping", "label": "Internet ping", "ok": False,
+                 "detail": "timeout", "ms": None, "micro": []},
+            ])
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?,?)",
+                (inc_id, started, "bad", "wan_down",
+                 "Internet is dead beyond the router", checks),
+            )
+        return inc_id
+
+    def test_closed_incident_story_reads_naturally(self):
+        inc_id = self._make_incident(resolved=time.time() - 60)
+        detail = self.linkmoth.Engine().incident_detail(inc_id=inc_id)
+        story = detail["story"]
+        self.assertIn("Linkmoth's own background check noticed a problem", story)
+        self.assertIn("The first rung to fail was Internet ping", story)
+        self.assertIn("Verdict: Internet is dead beyond the router", story)
+        self.assertIn("The network recovered at", story)
+        self.assertIn("INC-20260717-0001", story)
+
+    def test_open_incident_story_says_still_open(self):
+        inc_id = self._make_incident(resolved=None)
+        detail = self.linkmoth.Engine().incident_detail(inc_id=inc_id)
+        self.assertIn("still open", detail["story"])
+
+    def test_false_alarm_story(self):
+        inc_id = self._make_incident(resolved=time.time() - 60, false_alarm=1)
+        detail = self.linkmoth.Engine().incident_detail(inc_id=inc_id)
+        self.assertIn("false alarm", detail["story"])
+
+    def test_human_duration(self):
+        hd = self.linkmoth._human_duration
+        self.assertEqual(hd(42), "42 s")
+        self.assertEqual(hd(180), "3 min")
+        self.assertEqual(hd(3600), "1 h")
+        self.assertEqual(hd(5400), "1 h 30 min")
+        self.assertEqual(hd(90000), "1 d 1 h")
+
+
+class StatsWindowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_stats_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM runs")
+
+    def _add_incident(self, started, resolved, code="wan_down"):
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved,"
+                " verdict_code, verdict_title, ref) VALUES(?,?,?,?,?,?,?)",
+                (started, "test", "", resolved, code, "t", None),
+            )
+            return cur.lastrowid
+
+    def _add_run(self, ts, incident_id=None):
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title,"
+                " checks) VALUES(?,?,?,?,?,?)",
+                (incident_id, ts, "ok", "all_clear", "t", "[]"),
+            )
+
+    def test_open_incident_older_than_window_still_counts_downtime(self):
+        now = time.time()
+        self._add_run(now - 40 * 86400)  # monitoring since before the window
+        self._add_incident(now - 40 * 86400, None)
+        stats = self.linkmoth.Engine().stats()
+        # Clamped to the 30-day window: huge, but never more than the window.
+        self.assertGreater(stats["downtime_s"], 29 * 86400)
+        self.assertLessEqual(stats["downtime_s"], 30 * 86400 + 60)
+        self.assertEqual(stats["uptime_pct"], 0.0)
+
+    def test_resolved_incident_spanning_cutoff_is_clamped(self):
+        now = time.time()
+        self._add_run(now - 40 * 86400)
+        # Started 35 days ago, resolved 29 days ago: only the last day of it
+        # overlaps the window.
+        self._add_incident(now - 35 * 86400, now - 29 * 86400)
+        stats = self.linkmoth.Engine().stats()
+        self.assertEqual(stats["incidents_30d"], 1)
+        self.assertAlmostEqual(stats["downtime_s"], 86400, delta=60)
+
+
+class IspReportTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_report_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM runs")
+
+    def _add(self, started, resolved, code="wan_down", ref=None, false_alarm=0):
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved,"
+                " verdict_code, verdict_title, ref, false_alarm)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (started, "baseline", "", resolved, code,
+                 "Internet is dead beyond the router" if code == "wan_down"
+                 else code, ref, false_alarm),
+            )
+            conn.execute(
+                "INSERT INTO runs(ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?)",
+                (started - 60, "ok", "all_clear", "ok", "[]"),
+            )
+
+    def test_report_summarizes_and_writes_letter(self):
+        now = time.time()
+        self._add(now - 3 * 86400, now - 3 * 86400 + 1800, ref="INC-A")
+        self._add(now - 2 * 86400, now - 2 * 86400 + 600, ref="INC-B")
+        self._add(now - 86400, now - 86400 + 300, code="router_down", ref="INC-C")
+        self._add(now - 4 * 86400, now - 4 * 86400 + 60, code="all_clear",
+                  ref="INC-FA", false_alarm=1)
+        report = self.linkmoth.Engine().isp_report(30)
+        self.assertEqual(report["incident_count"], 3)
+        self.assertEqual(report["false_alarms"], 1)
+        self.assertEqual(report["isp"]["count"], 2)
+        self.assertEqual(report["isp"]["downtime_s"], 2400)
+        self.assertEqual(report["blame"]["wan_down"]["count"], 2)
+        self.assertEqual(report["longest"]["ref"], "INC-A")
+        letter = report["letter"]
+        self.assertIn("Provider-path outages: 2", letter)
+        self.assertIn("INC-A", letter)
+        self.assertNotIn("INC-C", letter)  # router fault is not ISP evidence
+        self.assertIn("Methodology", letter)
+
+    def test_report_without_isp_faults_says_so(self):
+        now = time.time()
+        self._add(now - 86400, now - 86400 + 300, code="router_down")
+        report = self.linkmoth.Engine().isp_report(30)
+        self.assertEqual(report["isp"]["count"], 0)
+        self.assertIn("No provider-attributable outages", report["letter"])
+
+    def test_report_csv_lists_every_incident(self):
+        now = time.time()
+        self._add(now - 86400, now - 86400 + 300, ref="INC-A")
+        self._add(now - 3600, None, code="router_down", ref="INC-B")
+        report = self.linkmoth.Engine().isp_report(30)
+        csv_text = self.linkmoth.isp_report_csv(report)
+        lines = csv_text.strip().splitlines()
+        self.assertEqual(len(lines), 3)  # header + 2 incidents
+        self.assertIn("ref,started_local", lines[0])
+        self.assertIn("INC-A", csv_text)
+        self.assertIn("INC-B", csv_text)
+        self.assertIn("yes", csv_text)  # the open incident is marked ongoing
+
+    def test_bad_days_value_falls_back_to_30(self):
+        report = self.linkmoth.Engine().isp_report(12345)
+        self.assertEqual(report["days"], 30)
+
+
+class FalseAlarmAccountingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_fa_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM runs")
+
+    def _add(self, code="wan_down", resolved=True, false_alarm=0, ref=None):
+        now = time.time()
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved,"
+                " verdict_code, verdict_title, ref, false_alarm)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (now - 3600, "test", "", (now - 60) if resolved else None,
+                 code, code, ref, false_alarm),
+            )
+            conn.execute(
+                "INSERT INTO runs(ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?)",
+                (now - 7200, "ok", "all_clear", "ok", "[]"),
+            )
+            return cur.lastrowid
+
+    def test_marking_closed_incident_false_alarm_moves_the_stats(self):
+        # The user's exact report: one CLOSED incident, marked false alarm
+        # from History, must show 0 incidents / 1 false alarm — not 1 / 0.
+        self._add(code="wan_down", resolved=True, ref="INC-FA-1")
+        engine = self.linkmoth.Engine()
+        before = engine.stats()
+        self.assertEqual(before["incidents_30d"], 1)
+        self.assertEqual(before["false_alarms_30d"], 0)
+        ok, _ = engine.mark_false_alarm(ref="INC-FA-1")
+        self.assertTrue(ok)
+        after = engine.stats()
+        self.assertEqual(after["incidents_30d"], 0)
+        self.assertEqual(after["false_alarms_30d"], 1)
+        self.assertEqual(after["downtime_s"], 0)
+        self.assertEqual(after["blame"], {})
+        with self.linkmoth.db() as conn:
+            row = conn.execute(
+                "SELECT verdict_code, false_alarm FROM incidents"
+            ).fetchone()
+        self.assertEqual(row["verdict_code"], "all_clear")
+        self.assertEqual(row["false_alarm"], 1)
+
+    def test_legacy_false_alarm_rows_count_correctly(self):
+        # Rows flagged before the verdict rewrite existed keep their old
+        # code — the flag alone must move them to the false-alarm column.
+        self._add(code="wan_down", resolved=True, false_alarm=1)
+        stats = self.linkmoth.Engine().stats()
+        self.assertEqual(stats["incidents_30d"], 0)
+        self.assertEqual(stats["false_alarms_30d"], 1)
+        self.assertEqual(stats["blame"], {})
+
+    def test_false_alarms_leave_patterns_and_filters(self):
+        self._add(code="wan_down", resolved=True, false_alarm=1, ref="INC-L1")
+        self._add(code="wan_down", resolved=True, ref="INC-R1")
+        engine = self.linkmoth.Engine()
+        pattern = engine.patterns(code="wan_down")
+        self.assertEqual(pattern["count"], 1)
+        wan = engine.incidents_list(code="wan_down")
+        self.assertEqual([i["ref"] for i in wan], ["INC-R1"])
+        fa = engine.incidents_list(code="all_clear")
+        self.assertEqual([i["ref"] for i in fa], ["INC-L1"])
+
+    def test_false_alarm_excluded_from_isp_report(self):
+        self._add(code="wan_down", resolved=True, false_alarm=1)
+        report = self.linkmoth.Engine().isp_report(30)
+        self.assertEqual(report["isp"]["count"], 0)
+        self.assertEqual(report["false_alarms"], 1)
+
+
+class JanitorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_jan_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def test_sweep_keeps_runs_of_open_incident(self):
+        old = time.time() - (self.linkmoth.CFG["retention_days"] + 5) * 86400
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM runs")
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
+                (old, "test", "still open"),
+            )
+            open_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title,"
+                " checks) VALUES(?,?,?,?,?,?)",
+                (open_id, old, "critical", "wan_down", "t", "[]"),
+            )
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title,"
+                " checks) VALUES(?,?,?,?,?,?)",
+                (None, old, "ok", "all_clear", "t", "[]"),
+            )
+        self.linkmoth.janitor_sweep()
+        with self.linkmoth.db() as conn:
+            kept = conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE incident_id=?", (open_id,)
+            ).fetchone()[0]
+            unattached = conn.execute(
+                "SELECT COUNT(*) FROM runs WHERE incident_id IS NULL"
+            ).fetchone()[0]
+        self.assertEqual(kept, 1)
+        self.assertEqual(unattached, 0)
+
+
+class MonthlyDigestTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_month_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM quality_samples")
+            conn.execute("DELETE FROM app_meta")
+
+    def _prev_month(self):
+        lt = time.localtime()
+        return (lt.tm_year - 1, 12) if lt.tm_mon == 1 else (lt.tm_year, lt.tm_mon - 1)
+
+    def test_first_run_arms_without_sending(self):
+        with mock.patch("linkmoth_discord.send_monthly_digest_alert") as discord:
+            self.assertFalse(self.linkmoth.maybe_send_monthly_digest())
+        discord.assert_not_called()
+        self.assertIsNotNone(self.linkmoth._get_meta("monthly_digest_sent"))
+
+    def test_month_rollover_sends_once(self):
+        prev_year, prev_month = self._prev_month()
+        start, _ = self.linkmoth._month_bounds(prev_year, prev_month)
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved,"
+                " verdict_code, verdict_title, ref) VALUES(?,?,?,?,?,?,?)",
+                (start + 3600, "baseline", "", start + 5400,
+                 "wan_down", "Internet is dead beyond the router", "INC-M1"),
+            )
+        # Pretend the digest was last sent for the previous month.
+        prev_key = f"{prev_year:04d}-{prev_month:02d}"
+        self.linkmoth._set_meta("monthly_digest_sent", prev_key)
+        with mock.patch(
+            "linkmoth_discord.send_monthly_digest_alert", return_value=True,
+        ) as discord, mock.patch(
+            "linkmoth_push.send_push_async", return_value=False,
+        ):
+            self.assertTrue(self.linkmoth.maybe_send_monthly_digest())
+            self.assertFalse(self.linkmoth.maybe_send_monthly_digest())
+        discord.assert_called_once()
+        lines = discord.call_args.args[0]
+        self.assertTrue(any("1 incident(s)" in line for line in lines))
+        self.assertTrue(any("Downtime" in line for line in lines))
+        lt = time.localtime()
+        self.assertEqual(
+            self.linkmoth._get_meta("monthly_digest_sent"),
+            f"{lt.tm_year:04d}-{lt.tm_mon:02d}",
+        )
+
+    def test_clean_month_reports_clean(self):
+        prev_year, prev_month = self._prev_month()
+        lines = self.linkmoth.monthly_digest_lines(prev_year, prev_month)
+        self.assertTrue(any("clean month" in line for line in lines))
+
+
+class DoctorJsonTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_doc_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+
+    def test_doctor_json_emits_machine_readable_checks(self):
+        import contextlib
+        import io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.linkmoth.doctor(json_output=True)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(payload["schema"], 1)
+        self.assertIsInstance(payload["checks"], list)
+        self.assertGreater(len(payload["checks"]), 5)
+        self.assertIn(rc, (0, 1))
+        statuses = {c["status"] for c in payload["checks"]}
+        self.assertTrue(statuses <= {"ok", "fail", "info"})
+
+
+class ConfigCoercionTests(unittest.TestCase):
+    def _load_with(self, config):
+        import json as _json
+        tmp = Path(tempfile.mkdtemp(prefix="linkmoth_cfg_"))
+        (tmp / "config.json").write_text(_json.dumps(config))
+        os.environ["LINKMOTH_CONFIG"] = str(tmp / "config.json")
+        os.environ["LINKMOTH_STATE_DIR"] = str(tmp)
+        try:
+            if "linkmoth" in sys.modules:
+                del sys.modules["linkmoth"]
+            return importlib.import_module("linkmoth")
+        finally:
+            os.environ.pop("LINKMOTH_CONFIG", None)
+
+    def test_wrong_typed_keys_fall_back_to_defaults(self):
+        lm = self._load_with({
+            "recheck_seconds": 30,
+            "ping_targets": "1.1.1.1",
+            "incident_max_hours": "24",
+            "auth": [],
+        })
+        self.assertEqual(
+            lm.CFG["recheck_seconds"], lm.DEFAULT_CONFIG["recheck_seconds"]
+        )
+        self.assertEqual(lm.CFG["ping_targets"], lm.DEFAULT_CONFIG["ping_targets"])
+        self.assertEqual(
+            lm.CFG["incident_max_hours"], lm.DEFAULT_CONFIG["incident_max_hours"]
+        )
+        self.assertEqual(lm.CFG["auth"], lm.DEFAULT_CONFIG["auth"])
+        # These errors are recoverable: main() must not refuse to start after
+        # the invalid values have been replaced by safe shipped defaults.
+        self.assertIsNone(lm.CONFIG_ERROR)
+
+    def test_valid_config_is_untouched(self):
+        lm = self._load_with({
+            "recheck_seconds": [5, 10],
+            "ping_targets": ["9.9.9.9"],
+            "incident_max_hours": 12,
+        })
+        self.assertEqual(lm.CFG["recheck_seconds"], [5, 10])
+        self.assertEqual(lm.CFG["ping_targets"], ["9.9.9.9"])
+        self.assertEqual(lm.CFG["incident_max_hours"], 12)
+        self.assertIsNone(lm.CONFIG_ERROR)
 
 
 if __name__ == "__main__":

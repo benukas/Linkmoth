@@ -18,6 +18,12 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# Windows venv layout accidentally created at the repo root (Lib/Scripts/
+# pyvenv.cfg), plus venv exe shims that land in the tracked scripts/ dir.
+Lib/
+Scripts/
+scripts/*.exe
+pyvenv.cfg
 
 # Local agent/editor workspace files. These are useful on this machine but are
 # neither Linkmoth source nor part of a public release.

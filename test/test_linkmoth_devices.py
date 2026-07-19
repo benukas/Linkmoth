@@ -375,16 +375,40 @@ class DeviceManagerTests(unittest.TestCase):
         self.assertEqual(recovered["stable_state"], "up")
         self.assertEqual(self.events[-1][2], "recovery")
 
-    def test_error_does_not_advance_counters(self):
+    def test_single_error_does_not_flip_stable_state(self):
         device = self.create(interval=300)
+        self.ping_ok = True
         self.manager.run_device(device["id"], source="scheduled")
-        before = self.manager.get_device(device["id"])
+        self.manager.run_device(device["id"], source="scheduled")
+        self.assertEqual(self.manager.get_device(device["id"])["stable_state"], "up")
         self.raise_ping = True
         result = self.manager.run_device(device["id"], source="scheduled")
         after = self.manager.get_device(device["id"])
         self.assertEqual(result["state"], "error")
-        self.assertEqual(after["failure_streak"], before["failure_streak"])
-        self.assertEqual(after["success_streak"], before["success_streak"])
+        self.assertEqual(after["failure_streak"], 1)
+        self.assertEqual(after["stable_state"], "up")
+        self.assertNotIn("fault", [e[2] for e in self.events])
+
+    def test_persistent_errors_alert_as_down(self):
+        device = self.create(interval=300)
+        self.ping_ok = True
+        self.manager.run_device(device["id"], source="scheduled")
+        self.manager.run_device(device["id"], source="scheduled")
+        self.assertEqual(self.manager.get_device(device["id"])["stable_state"], "up")
+        self.raise_ping = True
+        for _ in range(3):
+            self.manager.run_device(device["id"], source="scheduled")
+        after = self.manager.get_device(device["id"])
+        self.assertEqual(after["stable_state"], "down")
+        self.assertEqual(after["failure_streak"], 3)
+        faults = [e for e in self.events if e[2] == "fault"]
+        self.assertEqual(len(faults), 1)
+        # Recovery after the probes work again follows the normal path.
+        self.raise_ping = False
+        self.manager.run_device(device["id"], source="scheduled")
+        self.manager.run_device(device["id"], source="scheduled")
+        self.assertEqual(self.manager.get_device(device["id"])["stable_state"], "up")
+        self.assertEqual(self.events[-1][2], "recovery")
 
     def test_recent_history_is_bounded(self):
         device = self.create()

@@ -685,7 +685,18 @@ class DeviceManager:
                         if stable not in ("degraded", "down"):
                             event = "fault"
                         stable = state
-                # error leaves stable state and both streaks untouched
+                elif state == "error":
+                    # A probe that errors is still a failed observation: count
+                    # it so a device whose checks persistently raise cannot
+                    # sit in its old stable state forever. The threshold is
+                    # one higher than for a clean "down" so an isolated probe
+                    # hiccup never flips the state on its own.
+                    failure_streak += 1
+                    success_streak = 0
+                    if failure_streak >= 3:
+                        if stable not in ("degraded", "down"):
+                            event = "fault"
+                        stable = "down"
             last_success = now if state == "up" else device.get("last_success")
             last_failure = (
                 now if state in ("degraded", "down") else device.get("last_failure")

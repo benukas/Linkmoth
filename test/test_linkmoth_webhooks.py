@@ -464,6 +464,134 @@ class QueueTests(WebhookDbCase):
             total = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
         self.assertEqual(total, wh.QUEUE_CAP)
 
+    def test_escalation_delays_fault_delivery(self):
+        wh_data = self.make_webhook()
+        wh.update_webhook(self.db, wh_data["id"], {"escalation_minutes": 10})
+        ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        now = time.time()
+        wh.emit_event(self.db, "fault_opened", ctx)
+        with self.db() as conn:
+            row = conn.execute("SELECT * FROM webhook_queue").fetchone()
+        self.assertAlmostEqual(row["next_attempt"], now + 600, delta=2)
+        # Not yet due: a drain right now must not deliver it.
+        with mock.patch.object(wh, "_post", return_value=200) as post:
+            wh.drain_queue_once(self.db, now=now)
+        self.assertEqual(post.call_count, 0)
+
+    def test_recovery_cancels_held_escalation(self):
+        wh_data = self.make_webhook()
+        wh.update_webhook(
+            self.db, wh_data["id"],
+            {"escalation_minutes": 10,
+             "events": ["fault_opened", "fault_recovered"]},
+        )
+        wh.emit_event(
+            self.db, "fault_opened",
+            wh.build_event_context(
+                "fault_opened", verdict={"title": "x"},
+                incident={"ref": "INC-A"},
+            ),
+        )
+        wh.emit_event(
+            self.db, "fault_recovered",
+            wh.build_event_context(
+                "fault_recovered", verdict={"title": "ok"},
+                incident={"ref": "INC-A"},
+            ),
+        )
+        with self.db() as conn:
+            events = [
+                r["event"] for r in conn.execute(
+                    "SELECT event FROM webhook_queue ORDER BY id"
+                )
+            ]
+        # The held fault vanished; only the recovery remains queued.
+        self.assertEqual(events, ["fault_recovered"])
+
+    def test_recovery_keeps_other_incident_escalations(self):
+        wh_data = self.make_webhook()
+        wh.update_webhook(
+            self.db, wh_data["id"],
+            {"escalation_minutes": 10,
+             "events": ["fault_opened", "false_alarm_marked"]},
+        )
+        wh.emit_event(
+            self.db, "fault_opened",
+            wh.build_event_context(
+                "fault_opened", verdict={"title": "active"},
+                incident={"ref": "INC-ACTIVE"},
+            ),
+        )
+        wh.emit_event(
+            self.db, "false_alarm_marked",
+            wh.build_event_context(
+                "false_alarm_marked", verdict={"title": "historical"},
+                incident={"ref": "INC-HISTORICAL"},
+            ),
+        )
+        with self.db() as conn:
+            queued = [
+                (row["event"], json.loads(row["context"])["incident_id"])
+                for row in conn.execute(
+                    "SELECT event, context FROM webhook_queue ORDER BY id"
+                )
+            ]
+        self.assertEqual(queued, [
+            ("fault_opened", "INC-ACTIVE"),
+            ("false_alarm_marked", "INC-HISTORICAL"),
+        ])
+
+    def test_zero_escalation_keeps_immediate_delivery(self):
+        self.make_webhook()
+        now = time.time()
+        wh.emit_event(
+            self.db, "fault_opened",
+            wh.build_event_context("fault_opened", verdict={"title": "x"}),
+        )
+        with self.db() as conn:
+            row = conn.execute("SELECT * FROM webhook_queue").fetchone()
+        self.assertAlmostEqual(row["next_attempt"], now, delta=2)
+
+    def test_escalation_validation_bounds(self):
+        with self.assertRaises(ValueError):
+            wh._clean_escalation(-1)
+        with self.assertRaises(ValueError):
+            wh._clean_escalation(1441)
+        with self.assertRaises(ValueError):
+            wh._clean_escalation("soon")
+        self.assertEqual(wh._clean_escalation(None), 0)
+        self.assertEqual(wh._clean_escalation("15"), 15)
+
+    def test_queue_cap_evicts_noisiest_webhook_not_others(self):
+        # A full backlog from one noisy webhook must not evict another
+        # webhook's only queued delivery.
+        self.make_webhook()
+        ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        with self.db() as conn:
+            conn.execute(
+                "INSERT INTO webhook_queue(webhook_id, event, context, created,"
+                " next_attempt) VALUES(?,?,?,?,?)",
+                ("quiet", "fault_opened", "{}", 0, 0),
+            )
+            for i in range(wh.QUEUE_CAP - 1):
+                conn.execute(
+                    "INSERT INTO webhook_queue(webhook_id, event, context, created,"
+                    " next_attempt) VALUES(?,?,?,?,?)",
+                    ("noisy", "fault_opened", "{}", i + 1, i + 1),
+                )
+        wh.emit_event(self.db, "fault_opened", ctx)
+        with self.db() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+            quiet = conn.execute(
+                "SELECT COUNT(*) FROM webhook_queue WHERE webhook_id='quiet'"
+            ).fetchone()[0]
+            noisy_oldest = conn.execute(
+                "SELECT MIN(created) FROM webhook_queue WHERE webhook_id='noisy'"
+            ).fetchone()[0]
+        self.assertEqual(total, wh.QUEUE_CAP)
+        self.assertEqual(quiet, 1)
+        self.assertGreater(noisy_oldest, 1)
+
     def test_delayed_flag_reaches_payload(self):
         self.make_webhook()
         wh.emit_event(self.db, "fault_opened",

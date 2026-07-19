@@ -332,6 +332,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 }
 .inc-ref { font-family: ui-monospace, monospace; font-size: 15px; color: var(--muted); margin-right: 8px; }
 #hist-stats { font-size: 16px; color: var(--muted); margin: 0; line-height: 1.45; }
+.report-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+#report-summary p { margin: 6px 0; }
 .set-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; flex-wrap: wrap; }
 .set-row label { min-width: 220px; font-size: 17px; font-weight: 600; }
 .set-row input, .set-row select {
@@ -602,7 +604,24 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <div class="action-bar">
       <button id="diagnose" type="button" class="action-btn action-btn-primary">Diagnose now</button>
       <button id="copy-diagnosis" type="button" class="action-btn hidden">Copy support summary</button>
+      <button id="drill-open" type="button" class="action-btn">Fire drill</button>
     </div>
+    <p id="drill-hint" class="hint hidden">New here? Run the one-minute <b>fire drill</b>: unplug your WAN cable and watch Linkmoth catch and diagnose the outage live.</p>
+
+    <section class="card hidden" id="drill-card">
+      <h3>Fire drill — watch Linkmoth catch a real outage</h3>
+      <p class="hint">Takes about a minute and briefly interrupts internet for everyone on this network. Best done when nobody is on a call.</p>
+      <ol>
+        <li><b>Unplug the router's WAN cable</b> — the one coming from the modem or wall socket (not a LAN cable). Then press the first button.</li>
+        <li>When Linkmoth has caught it, <b>plug the cable back in</b> and press the second button to verify recovery.</li>
+      </ol>
+      <p id="drill-status" class="hint"></p>
+      <div class="action-bar">
+        <button type="button" id="drill-go" class="action-btn action-btn-primary">I unplugged it — diagnose</button>
+        <button type="button" id="drill-verify" class="action-btn hidden">It's plugged back in — verify recovery</button>
+        <button type="button" id="drill-dismiss" class="action-btn">Close</button>
+      </div>
+    </section>
     <div id="incident-actions" class="action-bar hidden">
       <button type="button" id="incident-recheck" class="action-btn">Recheck open incident</button>
       <button type="button" id="incident-close" class="action-btn">Close incident</button>
@@ -638,6 +657,10 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         </div>
       </div>
       <p id="q-reasons" class="hint"></p>
+      <p id="q-findings" class="hint"></p>
+      <p id="q-load" class="hint"></p>
+      <p id="q-wifi" class="hint"></p>
+      <button type="button" id="q-load-btn" class="action-btn" title="Downloads up to 25 MB from the configured public test URL while measuring latency — grades how badly your connection bloats under load.">Test under load</button>
     </section>
 
     <section class="card">
@@ -755,6 +778,20 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       </div>
       <p id="hist-stats"></p>
     </div>
+    <section class="card" id="report-card">
+      <h3>Accountability report</h3>
+      <p class="hint">Downtime, blame, and provider-path evidence built from the stored incident history — generated locally, credentials excluded.</p>
+      <div class="report-controls">
+        <select id="report-days" aria-label="Report window">
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="7">Last 7 days</option>
+        </select>
+        <button type="button" id="report-copy" class="action-btn hidden">Copy evidence for ISP</button>
+        <button type="button" id="report-csv" class="action-btn hidden">Download CSV</button>
+      </div>
+      <div id="report-summary"><p class="empty">Loading…</p></div>
+    </section>
     <section class="card">
       <div id="hist-list"><p class="empty">Loading…</p></div>
     </section>
@@ -892,6 +929,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
             <div class="set-row"><label for="wh-url">Destination URL</label><input id="wh-url" type="url" autocomplete="off"></div>
             <p id="wh-url-hint" class="set-hint">Paste the receiving app's webhook URL here.</p>
             <div class="set-row"><label for="wh-enabled">Enabled</label><input id="wh-enabled" type="checkbox" checked></div>
+            <div class="set-row"><label for="wh-escalation">Escalate after (min)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">0 = notify immediately. Any other value turns this webhook into an escalation tier: fault alerts are held and only delivered if the incident is still open after that many minutes. Recoveries cancel held alerts, so short blips never reach this channel.</span></span></label>
+              <input id="wh-escalation" type="number" min="0" max="1440" step="1" value="0"></div>
             <div class="set-section">
               <h4>Events to send</h4>
               <div id="wh-events"></div>
@@ -996,6 +1035,16 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <div class="set-section">
           <h4>Security posture</h4>
           <div id="sec-posture" class="set-hint">Loading…</div>
+        </div>
+
+        <div class="set-section">
+          <h4>Read-only API tokens<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">For dashboards and widgets (Homepage, Glance, Home Assistant REST sensors). A token can only GET /api/status, /api/quality, and /api/report — it can never change settings or read secrets. Shown once at creation; revocable any time.</span></span></h4>
+          <div class="set-row"><label for="sec-token-name">Name</label>
+            <input id="sec-token-name" type="text" placeholder="e.g. homepage widget" maxlength="60"></div>
+          <button type="button" id="sec-token-create" class="action-btn">Create token</button>
+          <pre id="sec-token-value" class="sec-codes hidden"></pre>
+          <div id="sec-token-list"><p class="empty">Loading…</p></div>
+          <span id="sec-token-msg"></span>
         </div>
 
         <div class="set-section">
@@ -1660,6 +1709,13 @@ async function doSetup() {
   });
   const out = await r.json();
   if (!r.ok) {
+    if (r.status === 409) {
+      // This installation already has a password (the onboarding form was
+      // shown from a stale status read) — recover into normal sign-in.
+      showAuthGate("password");
+      $("auth-err").textContent = "This Linkmoth already has a password — sign in below.";
+      return;
+    }
     $("auth-err").textContent = out.error || "Setup failed";
     if (out.retry_after) $("auth-err").textContent += " (retry in " + out.retry_after + "s)";
     return;
@@ -1795,6 +1851,19 @@ function renderQuality(q) {
   reasons.textContent = (c.reasons && c.reasons.length)
     ? c.reasons.join(" · ")
     : (c.state === "good" ? "Latency, jitter, and loss all look healthy." : "");
+  const findings = (q.findings && q.findings.findings) || [];
+  $("q-findings").textContent = findings.length
+    ? "Over the last week: " + findings.join(" ")
+    : "";
+  const lt = q.load_test;
+  if (lt && lt.grade) {
+    const age = lt.ts ? fmtAge(Date.now() / 1000 - lt.ts) : "";
+    const speed = lt.throughput_mbps ? ` · ~${lt.throughput_mbps} Mbps down` : "";
+    $("q-load").textContent =
+      `Bufferbloat grade ${lt.grade} — +${Math.round(lt.bloat_ms)} ms under load (${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms)${speed}${age ? ` · tested ${age}` : ""}`;
+  } else {
+    $("q-load").textContent = "Bufferbloat not tested yet — a load test grades how latency holds up while the line is busy.";
+  }
 }
 
 function fmtBytesShort(bytes) {
@@ -1874,6 +1943,13 @@ async function refresh() {
   renderHostHealth(s.host);
   if (s.local_dns) localDnsRuntime = s.local_dns;
   renderQuality(s.quality);
+  $("q-wifi").textContent = s.wifi_note || "";
+  try {
+    if (!localStorage.getItem("linkmothDrillSeen")
+        && !localStorage.getItem("linkmothDrillDone")) {
+      $("drill-hint").classList.remove("hidden");
+    }
+  } catch (e) { /* private browsing */ }
   if (s.settings) {
     refreshSec = s.settings.ui_refresh_seconds || 5;
     if (!settingsLoaded) {
@@ -2048,6 +2124,9 @@ function renderPacket(d) {
   if (inc.ref) {
     lines.push(`<p><span class="k">Reference:</span> <span class="inc-ref">${esc(inc.ref)}</span></p>`);
   }
+  if (d.story) {
+    lines.push(`<div class="diffbox story-box"><span class="k">In plain language:</span><p class="incident-story">${esc(d.story)}</p><button type="button" class="action-btn copy-story-btn">Copy story</button></div>`);
+  }
   if (d.first_failure) {
     lines.push(`<p><span class="k">First failure:</span> <b>${esc(d.first_failure.label)}</b> – ${esc(d.first_failure.detail)}${d.first_failure_note ? `<br><small>${esc(d.first_failure_note)}</small>` : ""}</p>`);
   }
@@ -2118,6 +2197,77 @@ function incidentSummaryHtml(inc) {
   const ref = inc.ref ? `<span class="inc-ref">${esc(inc.ref)}</span>` : "";
   return `<summary><span class="inc-summary-title">${ref}${esc(title)}</span><span class="inc-summary-meta"><span class="when">${fmtTs(inc.started)} · </span>${pill}</span></summary>`;
 }
+
+let lastReport = null;
+
+async function loadReport() {
+  if (!authReady) return;
+  const days = $("report-days").value;
+  let report;
+  try {
+    const resp = await fetch(`/api/report?days=${encodeURIComponent(days)}`);
+    if (resp.status === 401) { await ensureAuth(); return; }
+    report = await resp.json();
+  } catch (e) {
+    $("report-summary").innerHTML = `<p class="empty">Can't reach Linkmoth.</p>`;
+    return;
+  }
+  lastReport = report;
+  const parts = [];
+  const uptime = report.uptime_pct != null ? `${report.uptime_pct}% uptime · ` : "";
+  parts.push(`<p>${report.incident_count} incident(s) and ${report.false_alarms} false alarm(s) in the last ${report.days} days · ${uptime}${fmtDur(report.downtime_s)} total downtime.</p>`);
+  if (report.isp && report.isp.count) {
+    const peak = report.isp.peak_hours
+      ? `, clustering ${String(report.isp.peak_hours.start_hour).padStart(2, "0")}:00–${String(report.isp.peak_hours.end_hour).padStart(2, "0")}:00 local time`
+      : "";
+    parts.push(`<p><b>${report.isp.count} provider-path outage(s)</b> totalling ${fmtDur(report.isp.downtime_s)}${peak}.</p>`);
+  } else {
+    parts.push(`<p>No provider-path outages recorded in this window.</p>`);
+  }
+  if (report.longest) {
+    parts.push(`<p>Longest incident: <span class="inc-ref">${esc(report.longest.ref || "–")}</span> · ${fmtDur(report.longest.duration_s)}${report.longest.open ? " (ongoing)" : ""} · ${esc(report.longest.title || report.longest.code || "")}.</p>`);
+  }
+  const blame = Object.entries(report.blame || {});
+  if (blame.length) {
+    parts.push(`<p class="hint">${blame.map(([code, b]) => `${esc(code)}: ${b.count}× (${fmtDur(b.downtime_s)})`).join(" · ")}</p>`);
+  }
+  $("report-summary").innerHTML = parts.join("");
+  $("report-copy").classList.remove("hidden");
+  $("report-csv").classList.remove("hidden");
+}
+
+$("report-days").addEventListener("change", loadReport);
+
+$("report-copy").addEventListener("click", async () => {
+  const btn = $("report-copy");
+  try {
+    await copyPlainText((lastReport && lastReport.letter) || "");
+    btn.textContent = "Copied";
+  } catch (e) {
+    btn.textContent = "Copy failed";
+  }
+  setTimeout(() => { btn.textContent = "Copy evidence for ISP"; }, 1800);
+});
+
+$("report-csv").addEventListener("click", async () => {
+  const btn = $("report-csv");
+  btn.disabled = true;
+  const days = $("report-days").value;
+  try {
+    const resp = await fetch(`/api/report.csv?days=${encodeURIComponent(days)}`);
+    if (!resp.ok) throw new Error("report unavailable");
+    const blob = await resp.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `linkmoth-report-${days}d.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } catch (e) {
+    alert(e.message || "Could not build the CSV");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 async function loadHistory() {
   if (!authReady) return;
@@ -2630,6 +2780,7 @@ function openWebhookForm(webhook) {
   $("wh-preset").value = webhook ? webhook.preset : "generic";
   $("wh-url").value = webhook ? webhook.url : "";
   $("wh-enabled").checked = webhook ? !!webhook.enabled : true;
+  $("wh-escalation").value = webhook ? (webhook.escalation_minutes || 0) : 0;
   $("wh-headers").value = whHeadersToText(webhook && webhook.headers);
   $("wh-template").value = (webhook && webhook.template) || "";
   const selected = new Set(webhook ? webhook.events : ["fault_opened", "degradation_detected", "fault_recovered"]);
@@ -2670,6 +2821,7 @@ async function saveWebhook() {
     headers,
     events,
     template: preset === "custom" ? $("wh-template").value : null,
+    escalation_minutes: Math.max(0, parseInt($("wh-escalation").value, 10) || 0),
   };
   $("wh-save").disabled = true;
   msg.textContent = "Saving…";
@@ -2826,7 +2978,7 @@ function showTab(name) {
     $("nav-" + t).classList.toggle("active", t === name);
   }
   if (name === "devices") loadDevices(false);
-  if (name === "history") loadHistory();
+  if (name === "history") { loadHistory(); if (!lastReport) loadReport(); }
   if (name === "settings") showSettingsSubtab(currentSettingsSubtab);
   closeNavMenu();
   // Reflect the tab in the URL fragment so PWA shortcuts (/#history) and
@@ -3092,8 +3244,57 @@ const QR = (() => {
 
 // ---- Security tab ----
 async function loadSecurity() {
-  await Promise.all([loadSecurityPosture(), loadAuditLog()]);
+  await Promise.all([loadSecurityPosture(), loadAuditLog(), loadTokens()]);
 }
+
+async function loadTokens() {
+  try {
+    const r = await fetch("/api/auth/tokens");
+    if (r.status === 401) { await ensureAuth(); return; }
+    if (!r.ok) { $("sec-token-list").innerHTML = `<p class="empty">Could not load tokens.</p>`; return; }
+    const body = await r.json();
+    const tokens = body.tokens || [];
+    if (!tokens.length) {
+      $("sec-token-list").innerHTML = `<p class="empty">No tokens yet.</p>`;
+      return;
+    }
+    $("sec-token-list").innerHTML = tokens.map((t) =>
+      `<div class="sec-audit-row"><span class="ev">${esc(t.name || "token")}</span>` +
+      `<span class="when">created ${fmtTs(t.created)}</span>` +
+      `<button type="button" class="action-btn sec-token-revoke" data-id="${esc(t.id)}">Revoke</button></div>`
+    ).join("");
+  } catch (e) {
+    $("sec-token-list").innerHTML = `<p class="empty">Could not reach Linkmoth.</p>`;
+  }
+}
+
+$("sec-token-create").addEventListener("click", async () => {
+  const name = $("sec-token-name").value.trim();
+  const { ok, body } = await secPost("/api/auth/tokens", { name });
+  if (!ok) { secMsg("sec-token-msg", body.error || "Could not create the token.", false); return; }
+  $("sec-token-value").textContent =
+    `${body.token}\n\nThis token is shown only once — store it now.\n` +
+    `Use it as:  Authorization: Bearer ${body.token}`;
+  $("sec-token-value").classList.remove("hidden");
+  $("sec-token-name").value = "";
+  secMsg("sec-token-msg", "", true);
+  loadTokens();
+});
+
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".sec-token-revoke");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/auth/tokens/${encodeURIComponent(btn.dataset.id)}`, {
+      method: "DELETE", headers: authHeaders(),
+    });
+    if (r.status === 401) { await ensureAuth(); return; }
+    loadTokens();
+  } catch (e) {
+    btn.disabled = false;
+  }
+});
 
 async function loadSecurityPosture() {
   try {
@@ -3161,6 +3362,7 @@ async function secPost(path, payload) {
   });
   let body = {};
   try { body = await r.json(); } catch (e) { /* ignore */ }
+  if (r.status === 401) { await ensureAuth(); }
   return { ok: r.ok, status: r.status, body };
 }
 
@@ -3414,13 +3616,15 @@ $("update-check").addEventListener("click", async () => {
       setTimeout(() => { copyBtn.textContent = "Copy command"; }, 1800);
     });
     result.appendChild(copyBtn);
-    const link = document.createElement("a");
-    link.className = "update-release-link";
-    link.href = data.release_url;
-    link.textContent = "View official release";
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    result.appendChild(link);
+    if (/^https:\/\//i.test(data.release_url || "")) {
+      const link = document.createElement("a");
+      link.className = "update-release-link";
+      link.href = data.release_url;
+      link.textContent = "View official release";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      result.appendChild(link);
+    }
   } catch (error) {
     result.textContent = error.message || "Update check failed";
   } finally {
@@ -3464,6 +3668,122 @@ $("copy-diagnosis").addEventListener("click", async () => {
     button.textContent = "Copy failed";
   }
   setTimeout(() => { button.textContent = "Copy support summary"; }, 1800);
+});
+
+function drillStatus(text, ok) {
+  const el = $("drill-status");
+  el.textContent = text;
+  el.className = "hint" + (ok === true ? " ok" : ok === false ? " bad" : "");
+}
+
+async function drillPollStatus(predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const r = await fetch("/api/status");
+      if (r.status === 401) { await ensureAuth(); return null; }
+      if (!r.ok) continue;
+      const s = await r.json();
+      if (predicate(s)) return s;
+    } catch (e) { /* server may be mid-diagnosis; keep polling */ }
+  }
+  return null;
+}
+
+$("drill-open").addEventListener("click", () => {
+  $("drill-card").classList.remove("hidden");
+  $("drill-hint").classList.add("hidden");
+  try { localStorage.setItem("linkmothDrillSeen", "1"); } catch (e) { /* private mode */ }
+  drillStatus("");
+  $("drill-card").scrollIntoView({ behavior: "smooth", block: "center" });
+});
+
+$("drill-dismiss").addEventListener("click", () => {
+  $("drill-card").classList.add("hidden");
+});
+
+$("drill-go").addEventListener("click", async () => {
+  const btn = $("drill-go");
+  btn.disabled = true;
+  drillStatus("Diagnosing — Linkmoth is walking the fault ladder…");
+  try {
+    await fetch("/api/diagnose", { method: "POST", headers: authHeaders() });
+  } catch (e) { /* poll regardless */ }
+  const caught = await drillPollStatus(
+    (s) => s.last_run && s.last_run.severity !== "ok", 60000,
+  );
+  btn.disabled = false;
+  if (caught) {
+    drillStatus(
+      `Caught it: "${caught.last_run.title}". That verdict, its evidence, and the playbook are now on this page and in History. Plug the cable back in, wait ~10 seconds, then verify.`,
+      true,
+    );
+    $("drill-verify").classList.remove("hidden");
+  } else {
+    drillStatus(
+      "No fault appeared within a minute. Is the WAN cable really unplugged? (If your router keeps a backup link like LTE, Linkmoth is correctly reporting the network as still up.)",
+      false,
+    );
+  }
+});
+
+$("drill-verify").addEventListener("click", async () => {
+  const btn = $("drill-verify");
+  btn.disabled = true;
+  drillStatus("Verifying recovery with a fresh diagnosis…");
+  try {
+    const r = await fetch("/api/verify", { method: "POST", headers: authHeaders() });
+    const out = await r.json().catch(() => ({}));
+    if (r.status === 429) {
+      drillStatus(`Give it a moment — try again in ${out.retry_after || "a few"} s.`, false);
+      return;
+    }
+    if (r.ok && out.verdict && out.verdict.severity === "ok") {
+      drillStatus(
+        "Drill complete — outage caught, diagnosed, and recovery confirmed. The incident closes itself after two clean loop passes; its story is in History.",
+        true,
+      );
+      $("drill-verify").classList.add("hidden");
+      try { localStorage.setItem("linkmothDrillDone", "1"); } catch (e) { /* private mode */ }
+    } else {
+      drillStatus(
+        "Still seeing a fault. Check the cable is fully seated and the router's WAN light is on, then verify again.",
+        false,
+      );
+    }
+  } catch (e) {
+    drillStatus("Could not reach Linkmoth — it may still be diagnosing. Try again.", false);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("q-load-btn").addEventListener("click", async () => {
+  const btn = $("q-load-btn");
+  btn.disabled = true;
+  btn.textContent = "Testing…";
+  try {
+    const r = await fetch("/api/quality/load-test", {
+      method: "POST", headers: authHeaders(),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (r.status === 401) { await ensureAuth(); return; }
+    if (!r.ok) {
+      $("q-load").textContent = body.error || "Load test could not start.";
+      return;
+    }
+    $("q-load").textContent = "Testing under load — takes about 20 seconds…";
+    // The test runs server-side; refresh the quality card once it's done.
+    setTimeout(refresh, 22000);
+  } catch (e) {
+    $("q-load").textContent = "Load test could not start.";
+  } finally {
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Test under load";
+    }, 22000);
+  }
 });
 
 async function runVerifyFix(resultEl) {
@@ -3552,6 +3872,19 @@ document.addEventListener("click", async (ev) => {
     btn.textContent = "Copy failed";
   }
   setTimeout(() => { btn.textContent = "Copy support summary"; }, 1800);
+});
+
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".copy-story-btn");
+  if (!btn) return;
+  const story = btn.closest(".story-box")?.querySelector(".incident-story")?.textContent || "";
+  try {
+    await copyPlainText(story);
+    btn.textContent = "Copied";
+  } catch (e) {
+    btn.textContent = "Copy failed";
+  }
+  setTimeout(() => { btn.textContent = "Copy story"; }, 1800);
 });
 
 $("save-settings").addEventListener("click", async () => {

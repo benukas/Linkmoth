@@ -419,9 +419,15 @@ BACKUP_APP=""
 BACKUP_UNIT=""
 # Track what THIS run created so a failed fresh install (no previous version to
 # restore) can undo it completely — most importantly the system CA trust anchor.
+# Config and state directories that predate this run (e.g. kept by an earlier
+# uninstall without --purge) are never deleted by the rollback.
 USER_CREATED=0
 CA_TRUST_INSTALLED=0
 UNITS_COPIED=0
+ETC_EXISTED=0
+[ -d "$ETC" ] && ETC_EXISTED=1
+STATE_EXISTED=0
+[ -d "$STATE" ] && STATE_EXISTED=1
 cleanup_and_rollback() {
   local rc=$?
   trap - EXIT
@@ -456,7 +462,17 @@ cleanup_and_rollback() {
       systemctl daemon-reload 2>/dev/null || true
     fi
     [ "$CA_TRUST_INSTALLED" -eq 1 ] && remove_ca_trust
-    rm -rf "$APP" "$ETC" "$STATE" "$RENEW_SCRIPT"
+    rm -rf "$APP" "$RENEW_SCRIPT"
+    if [ "$ETC_EXISTED" -eq 0 ]; then
+      rm -rf "$ETC"
+    else
+      echo "kept pre-existing $ETC" >&2
+    fi
+    if [ "$STATE_EXISTED" -eq 0 ]; then
+      rm -rf "$STATE"
+    else
+      echo "kept pre-existing $STATE" >&2
+    fi
     [ "$USER_CREATED" -eq 1 ] && userdel linkmoth 2>/dev/null || true
   fi
   [ -n "$STAGE" ] && rm -rf "$STAGE"

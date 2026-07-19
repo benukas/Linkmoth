@@ -663,5 +663,58 @@ class PowerSupplyTests(unittest.TestCase):
         self.assertIn("5.1V", detail)
 
 
+class WifiWiredDifferentialTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault(
+            "LINKMOTH_STATE_DIR", tempfile.mkdtemp(prefix="linkmoth_wifi_")
+        )
+        if "linkmoth" in sys.modules:
+            cls.lm = sys.modules["linkmoth"]
+        else:
+            cls.lm = importlib.import_module("linkmoth")
+
+    def _checks(self, wlan_ok, wlan_ms=None, gateway_ok=True, gateway_ms=2.0,
+                ping_ok=True):
+        return [
+            {"id": "gateway", "label": "Router", "ok": gateway_ok,
+             "detail": "d", "ms": gateway_ms, "micro": []},
+            {"id": "router_wlan", "label": "Router Wi-Fi", "ok": wlan_ok,
+             "detail": "d", "ms": wlan_ms, "micro": []},
+            {"id": "raw_ping", "label": "Internet ping", "ok": ping_ok,
+             "detail": "d", "ms": 12.0, "micro": []},
+        ]
+
+    def test_silent_wifi_with_healthy_wired_path_notes_wifi(self):
+        note = self.lm.wifi_wired_differential(self._checks(wlan_ok=False))
+        self.assertIsNotNone(note)
+        self.assertIn("not your provider", note)
+
+    def test_no_note_when_wired_path_is_also_down(self):
+        self.assertIsNone(self.lm.wifi_wired_differential(
+            self._checks(wlan_ok=False, ping_ok=False)
+        ))
+        self.assertIsNone(self.lm.wifi_wired_differential(
+            self._checks(wlan_ok=False, gateway_ok=False)
+        ))
+
+    def test_no_note_when_wifi_not_configured(self):
+        self.assertIsNone(self.lm.wifi_wired_differential(
+            self._checks(wlan_ok=None)
+        ))
+
+    def test_slow_wifi_vs_fast_wired_notes_radio_gap(self):
+        note = self.lm.wifi_wired_differential(
+            self._checks(wlan_ok=True, wlan_ms=250.0, gateway_ms=2.0)
+        )
+        self.assertIsNotNone(note)
+        self.assertIn("radio side", note)
+
+    def test_healthy_wifi_yields_no_note(self):
+        self.assertIsNone(self.lm.wifi_wired_differential(
+            self._checks(wlan_ok=True, wlan_ms=5.0)
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

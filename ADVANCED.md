@@ -2,10 +2,11 @@
 
 Everything that didn't fit in the main [README](README.md): provenance and
 manual updates, evidence exports, how the fault ladder works, LAN devices,
-the full Uptime Kuma/webhook integration, the configuration reference,
-network assumptions, the CLI, ports/endpoints, authentication internals, TLS
-certificate trust, verified releases, branding, security posture, on-disk
-layout, updating, uninstalling, and troubleshooting.
+connecting an existing monitor (optional), outbound webhooks, the
+configuration reference, network assumptions, the CLI, ports/endpoints,
+authentication internals, TLS certificate trust, verified releases,
+branding, security posture, on-disk layout, updating, uninstalling, and
+troubleshooting.
 
 ## Sigstore-verified installation
 
@@ -91,8 +92,8 @@ exposing topology. Remote witnesses remain deferred for this feature beta.
 
 ## How it works
 
-On a trigger (Uptime Kuma webhook, dashboard button, or a background baseline
-run) Linkmoth runs the fault ladder — host power (including PoE/USB-PD telemetry
+On a trigger (a background baseline run, the dashboard button, or an inbound
+webhook from a monitor you already run) Linkmoth runs the fault ladder — host power (including PoE/USB-PD telemetry
 when present) → own link (speed/duplex negotiation) → router → optional
 router Wi-Fi client pings → Local DNS resolver → upstream DNS by IP → raw
 ping → HTTPS — and maps the evidence pattern to one verdict. Redundant DNS,
@@ -116,21 +117,25 @@ Background **latency history** samples run on a separate interval from
 baseline only controls how often Linkmoth may auto-open an incident when idle.
 Set `baseline_minutes` to `0` to disable unsolicited incident opening.
 
-When many Uptime Kuma monitors fire at once, a **10-second ladder cache**
-(with request coalescing) reuses the first diagnosis instead of hammering the
-network with duplicate pings.
+When an external monitor fires many webhooks at once, a **10-second ladder
+cache** (with request coalescing) reuses the first diagnosis instead of
+hammering the network with duplicate pings.
 
 The dashboard has five tabs: **Today** (current verdict, open-incident
-reference, fault ladder, latency trends, blame board), **History** (filterable
-timeline — paste an incident reference to jump straight to its evidence
-packet: verdict confidence **and why it is limited**, the first failed
-dependency, what Linkmoth ruled out, a plain-English diff vs the last healthy
-check, and repeat-fault evidence (typical duration and recurrence timing), and
-every diagnosis run with raw per-rung timings), **Devices** (independent LAN
-device status), **Settings** (including Discord webhooks, Wi-Fi client IPs,
-and SQLite maintenance), and **Security**. Today and incident packets can copy
-a credential-free plain-text support summary with the verdict, confidence,
-per-target evidence, and timeline.
+reference, fault ladder, latency trends and plain-language quality findings,
+bufferbloat testing, the guided fire drill, blame board), **History**
+(filterable timeline — paste an incident reference to jump straight to its
+evidence packet: a plain-language story paragraph, verdict confidence **and
+why it is limited**, the first failed dependency, what Linkmoth ruled out, a
+plain-English diff vs the last healthy check, and repeat-fault evidence
+(typical duration and recurrence timing), and every diagnosis run with raw
+per-rung timings — plus the **accountability report** with its "evidence for
+ISP support" letter and CSV export), **Devices** (independent LAN device
+status), **Settings** (including Discord webhooks, Wi-Fi client IPs, and
+SQLite maintenance), and **Security** (password, 2FA, read-only API tokens,
+audit log). Today and incident packets can copy a credential-free plain-text
+support summary with the verdict, confidence, per-target evidence, and
+timeline.
 
 ## LAN devices
 
@@ -166,6 +171,14 @@ appliance, but doing so encrypts traffic without verifying the appliance's
 identity; the dashboard displays this as an unsafe mode.
 
 ## Connecting a monitor: Uptime Kuma or anything else
+
+This whole section is **optional** — Linkmoth detects and diagnoses network
+faults on its own schedule without any external monitor (see `baseline_minutes`
+in the configuration reference). Pairing adds one thing: when a monitor you
+already run notices one of *its* targets is down, Linkmoth diagnoses the
+network at that exact moment and answers "is it the network, or just that
+service?" — and suppresses the monitor's noisy per-service alerts during a
+confirmed network-wide outage.
 
 Linkmoth isn't tied to one monitoring tool. Anything that can send an HTTP
 webhook, whether that's Uptime Kuma, Zabbix, Grafana alerting, Healthchecks.io,
@@ -262,11 +275,27 @@ morning digest after quiet hours end. If a global outage is still active, the
 digest waits until the network recovers. Outbound webhooks are not silenced by
 quiet hours; their own persistent retry queue continues normally.
 
+**Monthly network report.** On the first daily maintenance pass of each new
+month, Linkmoth sends one summary of the previous month through the same
+Discord/push channels (respecting quiet hours): incident and false-alarm
+counts, downtime and uptime, the most common fault, the longest outage, and
+median latency versus the month before. It is at-most-once per month and
+restart-safe; the first month after installation is skipped because it was
+not fully observed.
+
 ### Outbound webhooks
 
 **Settings → Outbound webhooks** manages up to 20 outbound integrations, each
-with its own preset, event subscriptions, custom headers, and test buttons
-(**Send test fault** / **Send test recovery**).
+with its own preset, event subscriptions, custom headers, an optional
+**escalation delay**, and test buttons (**Send test fault** / **Send test
+recovery**).
+
+**Escalation tiers.** Set "Escalate after (min)" on a webhook to make it a
+second-stage channel: `fault_opened` and `degradation_detected` deliveries
+are held for that many minutes, and if the incident recovers, closes, or is
+marked a false alarm before the delay elapses, the held delivery is
+cancelled — the escalation channel only ever hears about sustained outages.
+`0` (the default) delivers immediately.
 
 Presets: **Generic JSON**, **ntfy** (title/priority/tags headers), **Gotify**
 (title/message/priority), **Home Assistant** (webhook trigger), **Discord**
@@ -353,6 +382,9 @@ into one **Generic JSON** webhook subscribed to the events it used to receive.
 | `quiet_hours_enabled` | `false` | Hold Discord and browser-push alerts during the configured local-time window |
 | `quiet_hours_start` | `22:00` | Quiet-hours start in 24-hour Linkmoth host local time |
 | `quiet_hours_end` | `07:00` | Quiet-hours end and morning-digest time in 24-hour Linkmoth host local time |
+| `quality.load_test_url` | Cloudflare speed endpoint | Public HTTPS URL downloaded during a bufferbloat test; must resolve to public addresses |
+| `quality.load_test_hours` | `0` | Scheduled bufferbloat test interval in hours (`0` = manual button only — scheduled runs consume real data) |
+| `quality.load_test_seconds`, `quality.load_test_max_mb` | `10`, `25` | Bounds on one bufferbloat test; the transfer stops at whichever is hit first |
 | `notify_webhook_url` | `""` | Legacy single-webhook URL — migrated once into Settings → Outbound webhooks, then unused |
 | `notify_webhook_enabled` | `false` | Legacy flag for the above (kept so old configs stay valid) |
 
@@ -452,6 +484,7 @@ extras (power telemetry) switch off when the hardware does not expose them.
 
 ```bash
 python3 linkmoth.py --doctor   # check environment without starting anything
+python3 linkmoth.py --doctor --json  # same checks as machine-readable JSON
 python3 linkmoth.py --once     # run one diagnosis, print JSON verdict
 python3 linkmoth.py            # run the server (dev mode: state/config in ./)
 python3 linkmoth.py --auth-onboarding-token # show/create the first-run setup token
@@ -465,12 +498,16 @@ python3 linkmoth.py --auth-audit 50       # show recent login/security events
 ## Ports and endpoints
 
 - HTTPS `:8686` — dashboard (`/`), `GET /api/status`, `GET /api/incidents`,
-  `GET /api/incident?id=N` or `?ref=INC-YYYYMMDD-NNNN` (full evidence packet),
-  `POST /api/diagnose`, `POST /api/settings` (including `{ "action": "vacuum" }`
-  for SQLite maintenance), `POST /trigger` (Uptime Kuma diagnose webhook),
-  `POST /api/webhooks/kuma` (Uptime Kuma smart proxy),
-  `POST /api/webhooks/inbound` (generic inbound trigger), `GET /health`
-  (monitor this in Uptime Kuma).
+  `GET /api/incident?id=N` or `?ref=INC-YYYYMMDD-NNNN` (full evidence packet,
+  including the plain-language story paragraph), `GET /api/quality`,
+  `GET /api/report?days=7|30|90` and `GET /api/report.csv` (accountability
+  report + CSV), `POST /api/diagnose`, `POST /api/quality/load-test`
+  (bufferbloat test), `POST /api/settings` (including `{ "action": "vacuum" }`
+  for SQLite maintenance), `POST /trigger` (inbound diagnose webhook for any
+  monitor), `POST /api/webhooks/kuma` (Uptime Kuma smart proxy),
+  `POST /api/webhooks/inbound` (generic inbound trigger), `GET /metrics`
+  (Prometheus text exposition; requires the webhook bearer), `GET /health`
+  (for any LAN watchdog to poll).
 - Devices: `GET/POST /api/devices`, `PUT/DELETE /api/devices/{id}`,
   `POST /api/devices/{id}/run`, and `GET /api/devices/{id}/history`.
 - Outbound webhooks: `GET/POST /api/webhooks`, `PUT/DELETE /api/webhooks/{id}`,
@@ -478,6 +515,11 @@ python3 linkmoth.py --auth-audit 50       # show recent login/security events
   `POST /api/incident/false-alarm`.
 - Authentication: `GET /api/auth/status`, one-time `POST /api/auth/setup`,
   `POST /api/auth/login`, `POST /api/auth/totp`, `POST /api/auth/logout`.
+- Read-only API tokens (Security tab): `GET/POST /api/auth/tokens`,
+  `DELETE /api/auth/tokens/{id}`. A token (`Authorization: Bearer lmro_…`)
+  is accepted **only** on `GET /api/status`, `GET /api/quality`, and
+  `GET /api/report` — for Homepage/Glance widgets and Home Assistant REST
+  sensors. Stored hashed, shown once at creation, revocable, limit 10.
 - Security management (session + CSRF): `POST /api/auth/change-password`,
   `POST /api/auth/totp/{setup,activate,disable,recovery-codes}`;
   read-only `GET /api/auth/audit` and `GET /api/auth/security`.
@@ -526,7 +568,7 @@ they do not leak through shell history or process listings.
 
 Dashboard data, history, diagnosis, and settings APIs always require a browser
 session;
-`/health` stays open for Uptime Kuma; `/trigger` requires
+`/health` stays open for LAN watchdogs; `/trigger` requires
 `Authorization: Bearer <webhook-secret>` (not the login cookie). Authenticated
 state-changing POSTs require a CSRF header (`X-CSRF-Token`) matching the
 session; the one-time setup POST uses the bootstrap token instead.
@@ -561,8 +603,8 @@ Rotate a leaked or routinely aged webhook secret with:
 sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --auth-rotate-webhook
 ```
 
-The old secret stops working immediately. Update every Uptime Kuma webhook
-before its next notification. To review recent auth activity:
+The old secret stops working immediately. Update every monitor webhook that
+targets Linkmoth before its next notification. To review recent auth activity:
 
 ```bash
 sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --auth-audit 100
@@ -702,13 +744,15 @@ extracts or installs anything. Verification failure is a hard stop.
 ## Branding
 
 The project icon is [`linkmoth.svg`](linkmoth.svg) (500×500 SVG) used as the
-dashboard favicon and in the page header. [`linkmoth.svg`](linkmoth.svg) is
-the same mark for contexts that don't support SVG (this README, social previews).
-Linkmoth serves the following without authentication:
+dashboard favicon and in the page header; `linkmoth-white.ico` and the PNG
+icons cover contexts that don't support SVG (legacy browsers, PWA installs,
+social previews). Linkmoth serves the following without authentication:
 
 - `/linkmoth.svg` — preferred SVG favicon (modern browsers)
 - `/favicon.ico` — legacy tab/bookmark icon, served from `linkmoth-white.ico`
-- `/linkmoth.svg` — browser and PWA icon (SVG)
+- `/linkmoth-mark-white.svg` — dashboard header logo
+- `/linkmoth-icon-192.png`, `/linkmoth-icon-512.png`,
+  `/linkmoth-maskable.svg` — PWA install icons from the web manifest
 
 After the page loads, the browser tab and dashboard header show the Linkmoth logo. Re-run
 `install.sh` after upgrading if an icon file was added in a newer release.
@@ -808,9 +852,15 @@ way you would any other credential, and delete copies you no longer need.
 
 ## Updating
 
-Get the new code (`git pull` in the cloned folder, or re-copy it), then
-re-run the installer — it's safe to run repeatedly and never touches your
-config or data:
+If you installed with the quick-start bootstrap (the normal path), update by
+downloading and verifying the new release's bootstrap exactly as in
+[Sigstore-verified installation](#sigstore-verified-installation) with the
+new version number — the installer is safe to run repeatedly and never
+touches your config or data. **Check for update** in the dashboard's
+Settings prints the version-pinned command for you.
+
+From a source checkout instead, get the new code (`git pull` in the cloned
+folder, or re-copy it), then re-run the installer:
 
 ```bash
 cd linkmoth && git pull && sudo bash install.sh

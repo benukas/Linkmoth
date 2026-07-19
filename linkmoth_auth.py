@@ -788,8 +788,12 @@ class AuthManager:
             if row["expires"] <= now or (now - last_activity) > idle:
                 conn.execute("DELETE FROM auth_sessions WHERE id=?", (stored_id,))
                 return None
-            # Slide the idle window, but avoid a write on every request.
-            if now - last_activity > 60:
+            # Slide the idle window, but avoid a write on every request. The
+            # slide threshold stays a fraction of the idle window so frequent
+            # dashboard polling on the default 30-minute idle only writes
+            # every 5 minutes, while short configured windows still slide in
+            # time to keep an active session alive.
+            if now - last_activity > min(300, idle // 4):
                 conn.execute(
                     "UPDATE auth_sessions SET last_activity=? WHERE id=?",
                     (now, stored_id),
@@ -894,6 +898,85 @@ class AuthManager:
         token = auth_header[7:].strip()
         expected = self.ensure_webhook_secret()
         return hmac.compare_digest(token, expected)
+
+    # Read-only API tokens: a separate credential class for widgets and
+    # scrapers (Homepage, Glance, Home Assistant REST sensors). They can
+    # only be accepted on explicitly read-only GET endpoints — never for
+    # settings, incidents management, or anything state-changing — and are
+    # stored hashed, like sessions.
+    READONLY_TOKEN_PREFIX = "lmro_"
+    READONLY_TOKEN_LIMIT = 10
+
+    def create_readonly_token(self, name: str):
+        """Create a token; the plain value is returned once, then only its
+        hash is kept."""
+        name = str(name or "").strip()[:60] or "token"
+        value = self.READONLY_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        entry = {
+            "id": secrets.token_hex(4),
+            "name": name,
+            "hash": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+            "created": time.time(),
+        }
+        with self._lock:
+            store = self._load_store_unlocked()
+            tokens = [
+                t for t in store.get("readonly_tokens", [])
+                if isinstance(t, dict)
+            ]
+            if len(tokens) >= self.READONLY_TOKEN_LIMIT:
+                raise ValueError(
+                    f"at most {self.READONLY_TOKEN_LIMIT} read-only tokens;"
+                    " revoke one first"
+                )
+            tokens.append(entry)
+            store["readonly_tokens"] = tokens
+            self._save_store_unlocked(store)
+        self.audit_event("readonly_token_created", detail=name)
+        return value, {k: entry[k] for k in ("id", "name", "created")}
+
+    def list_readonly_tokens(self) -> List[dict]:
+        return [
+            {
+                "id": t.get("id"),
+                "name": t.get("name"),
+                "created": t.get("created"),
+            }
+            for t in self.load_store().get("readonly_tokens", [])
+            if isinstance(t, dict)
+        ]
+
+    def revoke_readonly_token(self, token_id: str) -> bool:
+        with self._lock:
+            store = self._load_store_unlocked()
+            tokens = [
+                t for t in store.get("readonly_tokens", [])
+                if isinstance(t, dict)
+            ]
+            kept = [t for t in tokens if t.get("id") != token_id]
+            if len(kept) == len(tokens):
+                return False
+            store["readonly_tokens"] = kept
+            self._save_store_unlocked(store)
+        self.audit_event("readonly_token_revoked", detail=str(token_id))
+        return True
+
+    def verify_readonly_token(self, auth_header: Optional[str]) -> bool:
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return False
+        value = auth_header[7:].strip()
+        if not value.startswith(self.READONLY_TOKEN_PREFIX):
+            return False
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        matched = False
+        for token in self.load_store().get("readonly_tokens", []):
+            if isinstance(token, dict) and hmac.compare_digest(
+                str(token.get("hash") or ""), digest
+            ):
+                # Keep scanning so timing depends on the token count, not
+                # on where the match sits in the list.
+                matched = True
+        return matched
 
     def public_status(self, session: Optional[dict]) -> dict:
         out = {
