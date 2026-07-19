@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- Dashboard and copied support-summary timestamps now use readable local date
+  and time formatting instead of exposing raw ISO strings with a trailing
+  `Z` UTC marker.
+- The accountability report window picker now uses Linkmoth's custom
+  button-style selector rather than the browser's unstyled native dropdown.
+
 ## 0.4.0
 
 ### Added

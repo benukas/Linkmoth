@@ -69,6 +69,22 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_user_visible_times_are_local_and_do_not_expose_iso_z(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertNotIn(".toISOString()", dashboard)
+        self.assertIn("function fmtFullTs(ts)", dashboard)
+        self.assertIn("Initial diagnosis (local time): ${fmtFullTs(run.ts)}", dashboard)
+        self.assertIn("Incident started (local time): ${fmtFullTs(inc.started)}", dashboard)
+        self.assertIn("published ${fmtDateValue(data.published_at)}", dashboard)
+
+    def test_accountability_window_uses_custom_button_selector(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="report-days-trigger"', dashboard)
+        self.assertIn('class="action-btn custom-select-trigger" id="report-days-trigger"', dashboard)
+        self.assertIn('id="report-days-menu" role="listbox"', dashboard)
+        self.assertIn('id="report-days" class="sr-only"', dashboard)
+        self.assertIn('wrapId: "report-days-wrap"', dashboard)
+
     def test_stat_cards_keep_primary_metrics_visually_prominent(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(
