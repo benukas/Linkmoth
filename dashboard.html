@@ -1329,6 +1329,9 @@ function fmtDur(sec) {
   if (sec < 5400) return Math.round(sec / 60) + " min";
   return (sec / 3600).toFixed(1) + " h";
 }
+function countPhrase(count, singular, plural) {
+  return `${count} ${count === 1 ? singular : (plural || singular + "s")}`;
+}
 
 function spark(svgId, hist, key, color, label, detailId) {
   const svg = $(svgId);
@@ -1593,7 +1596,7 @@ function renderDatabaseInfo(db) {
     ? "AUTO_VACUUM is off (legacy database) – daily cleanup may run full VACUUM when many free pages remain."
     : `AUTO_VACUUM is ${db.auto_vacuum_label} – daily cleanup reclaims free pages; manual VACUUM fully repacks the file.`;
   $("db-status").textContent =
-    `File size ${fmtBytes(db.size_bytes)} · ${db.freelist_count} free page(s) · ${avNote}`;
+    `File size ${fmtBytes(db.size_bytes)} · ${countPhrase(db.freelist_count, "free page")} · ${avNote}`;
 }
 
 async function loadDatabaseInfo() {
@@ -1889,7 +1892,7 @@ function renderHostHealth(host) {
   const cpu = host.cpu_percent;
   const cpuText = cpu === null ? "–" : (cpu < 10 ? `${cpu.toFixed(1)}%` : `${Math.round(cpu)}%`);
   renderHostMetric("host-cpu", cpuText,
-    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% (5-second average) · load: ${host.load_1m ?? "–"} · ${host.cpu_cores || 1} core(s)`,
+    cpu === null ? "CPU usage is still sampling" : `CPU usage: ${cpu}% (5-second average) · load: ${host.load_1m ?? "–"} · ${countPhrase(host.cpu_cores || 1, "core")}`,
     cpu >= 95 ? "bad" : cpu >= 80 ? "warn" : "");
   const temp = host.temperature_c;
   renderHostMetric("host-temp", temp === null ? "–" : `${Math.round(temp)}°`,
@@ -2119,11 +2122,15 @@ function renderPacket(d) {
   const inc = d.incident;
   const lines = [];
   const conf = d.confidence ? `<span class="pill conf" title="${esc(d.confidence_reason || "")}">confidence: ${esc(d.confidence)}</span>` : "";
-  lines.push(`<p><span class="k">Incident:</span> ${fmtTs(inc.started)} · ${d.runs.length} recorded run(s)</p>`);
+  lines.push(`<p><span class="k">Incident:</span> ${fmtTs(inc.started)} · ${countPhrase(d.runs.length, "recorded run")}</p>`);
   lines.push(`<p><span class="k">Trigger:</span> ${esc(inc.detail || inc.source)}</p>`);
   if (inc.ref) {
     lines.push(`<p><span class="k">Reference:</span> <span class="inc-ref">${esc(inc.ref)}</span></p>`);
   }
+  lines.push(`<p><span class="k">Network recovered:</span> ${inc.recovered_at ? fmtTs(inc.recovered_at) : "Not yet observed"}<br>
+    <span class="k">Incident closed:</span> ${inc.resolved ? fmtTs(inc.resolved) : "Still open"}<br>
+    <span class="k">Observed downtime:</span> ${fmtDur(d.downtime_s || 0)}<br>
+    <span class="k">Incident duration:</span> ${fmtDur(d.incident_duration_s || 0)}</p>`);
   if (d.story) {
     lines.push(`<div class="diffbox story-box"><span class="k">In plain language:</span><p class="incident-story">${esc(d.story)}</p><button type="button" class="action-btn copy-story-btn">Copy story</button></div>`);
   }
@@ -2170,7 +2177,7 @@ function renderPacket(d) {
   if (d.stayed_healthy.length) {
     lines.push(`<details class="packet-section"><summary>What stayed healthy</summary><p>${d.stayed_healthy.map(esc).join(", ")}</p></details>`);
   }
-  lines.push(`<details class="packet-section"><summary>Diagnosis timeline (${d.runs.length} runs) ${conf}</summary><ul class="timeline">` + d.runs.map((r, index) =>
+  lines.push(`<details class="packet-section"><summary>Diagnosis timeline (${countPhrase(d.runs.length, "run")}) ${conf}</summary><ul class="timeline">` + d.runs.map((r, index) =>
     `<li><details class="timeline-run" data-run-index="${index}"><summary><span class="dot ${r.severity}"></span>${fmtTime(r.ts)} – ${esc(r.title)}</summary><div class="rawruns"></div></details></li>`
   ).join("") + `</ul></details>`);
   return `<div class="packet">${lines.join("")}</div>`;
@@ -2190,7 +2197,7 @@ function renderRunEvidence(run) {
 function incidentSummaryHtml(inc) {
   const open = !inc.resolved;
   const pill = open ? '<span class="pill open">open</span>'
-    : '<span class="pill done">' + fmtDur(inc.resolved - inc.started) + "</span>";
+    : '<span class="pill done">' + fmtDur(inc.observed_downtime_s || 0) + " down</span>";
   const title = inc.lifecycle === "recovered-awaiting-confirmation" ? "Recovered awaiting confirmation"
     : inc.lifecycle === "false-alarm" ? "False alarm"
     : open ? "Active – diagnosing" : (inc.diagnosis_title || inc.verdict_title || inc.verdict_code || "Closed");
@@ -2215,17 +2222,19 @@ async function loadReport() {
   lastReport = report;
   const parts = [];
   const uptime = report.uptime_pct != null ? `${report.uptime_pct}% uptime · ` : "";
-  parts.push(`<p>${report.incident_count} incident(s) and ${report.false_alarms} false alarm(s) in the last ${report.days} days · ${uptime}${fmtDur(report.downtime_s)} total downtime.</p>`);
+  parts.push(`<p>${countPhrase(report.incident_count, "incident")} and ${countPhrase(report.false_alarms, "false alarm")} in the last ${report.days} days · ${uptime}${fmtDur(report.downtime_s)} total downtime.</p>`);
   if (report.isp && report.isp.count) {
     const peak = report.isp.peak_hours
       ? `, clustering ${String(report.isp.peak_hours.start_hour).padStart(2, "0")}:00–${String(report.isp.peak_hours.end_hour).padStart(2, "0")}:00 local time`
       : "";
-    parts.push(`<p><b>${report.isp.count} provider-path outage(s)</b> totalling ${fmtDur(report.isp.downtime_s)}${peak}.</p>`);
+    parts.push(`<p><b>${countPhrase(report.isp.count, "provider-path outage")}</b> totalling ${fmtDur(report.isp.downtime_s)}${peak}.</p>`);
   } else {
     parts.push(`<p>No provider-path outages recorded in this window.</p>`);
   }
   if (report.longest) {
-    parts.push(`<p>Longest incident: <span class="inc-ref">${esc(report.longest.ref || "–")}</span> · ${fmtDur(report.longest.duration_s)}${report.longest.open ? " (ongoing)" : ""} · ${esc(report.longest.title || report.longest.code || "")}.</p>`);
+    const recovered = report.longest.recovered_at ? fmtTs(report.longest.recovered_at) : "not yet observed";
+    const closed = report.longest.resolved ? fmtTs(report.longest.resolved) : "still open";
+    parts.push(`<p>Longest outage: <span class="inc-ref">${esc(report.longest.ref || "–")}</span> · ${fmtDur(report.longest.window_downtime_s)} observed downtime · ${fmtDur(report.longest.incident_duration_s)} incident duration · network recovered ${esc(recovered)} · incident closed ${esc(closed)} · ${esc(report.longest.title || report.longest.code || "")}.</p>`);
   }
   const blame = Object.entries(report.blame || {});
   if (blame.length) {
@@ -3317,8 +3326,8 @@ async function loadSecurityPosture() {
       : "";
     const exposure = s.public_exposure_recent || {};
     const exposureWarning = exposure.count
-      ? `<p class="device-warning"><b>Public exposure blocked:</b> Linkmoth refused ${exposure.count} ` +
-        `connection attempt(s) from a public IP address, most recently ${esc(fmtAge(Date.now() / 1000 - exposure.last_ts))}. ` +
+      ? `<p class="device-warning"><b>Public exposure blocked:</b> Linkmoth refused ` +
+        `${countPhrase(exposure.count, "connection attempt")} from a public IP address, most recently ${esc(fmtAge(Date.now() / 1000 - exposure.last_ts))}. ` +
         `If you didn't intentionally expose Linkmoth to the internet (e.g. via a VPN or reverse proxy you configured), ` +
         `check your router's port-forwarding rules.</p>`
       : "";
@@ -3989,7 +3998,7 @@ function renderTodayBanner(s) {
     const lastTxt = last
       ? `${esc(last.title)} (${fmtAge(s.now - last.ts)} ago)`
       : "waiting for first recheck";
-    lines.push(`<b>Open incident ${esc(m.ref || ("#" + m.id))}</b> – ${m.run_count} run(s) · last loop: ${lastTxt}${m.diagnosing ? " · diagnosing…" : ""}`);
+    lines.push(`<b>Open incident ${esc(m.ref || ("#" + m.id))}</b> – ${countPhrase(m.run_count, "run")} · last loop: ${lastTxt}${m.diagnosing ? " · diagnosing…" : ""}`);
     if (last && last.severity === "ok" && s.last_run && s.last_run.severity === "ok") {
       lines.push(`Live ladder is green; incident closes after two consecutive healthy loop runs (up to ~10 min apart).`);
     }
