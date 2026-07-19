@@ -388,6 +388,11 @@ into one **Generic JSON** webhook subscribed to the events it used to receive.
 | `notify_webhook_url` | `""` | Legacy single-webhook URL — migrated once into Settings → Outbound webhooks, then unused |
 | `notify_webhook_enabled` | `false` | Legacy flag for the above (kept so old configs stay valid) |
 
+The bufferbloat result shows the grade, added latency, and an estimated
+download speed calculated from the bytes transferred during the bounded test.
+Because the transfer is capped, treat that Mbps value as a useful local
+estimate rather than a replacement for a full line-speed benchmark.
+
 Restart after editing `/etc/linkmoth/config.json`: `sudo systemctl restart linkmoth`
 
 ### Bind address: why not always `0.0.0.0`

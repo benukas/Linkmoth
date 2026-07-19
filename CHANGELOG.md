@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Bufferbloat results now show the measured download estimate as a dedicated
+  metric alongside the grade and added latency, rather than burying it in the
+  result sentence.
+
 ## 0.4.0
 
 ### Added
