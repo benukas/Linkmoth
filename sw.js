@@ -5,13 +5,27 @@
  * /api/ is ever cached: Linkmoth is a live network-diagnosis tool, and
  * serving a stale diagnosis while offline would be actively misleading.
  */
-const SHELL_CACHE = "linkmoth-shell-v2";
-const SHELL_URLS = ["/", "/manifest.webmanifest", "/linkmoth.svg", "/linkmoth-white.ico"];
+const SHELL_CACHE = "linkmoth-shell-v3";
+const SHELL_URLS = [
+  "/",
+  "/manifest.webmanifest",
+  "/linkmoth.svg",
+  "/linkmoth-white.ico",
+  "/linkmoth-mark-white.svg",
+  "/linkmoth-icon-192.png",
+  "/linkmoth-icon-512.png",
+  "/linkmoth-maskable.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE)
-      .then((cache) => cache.addAll(SHELL_URLS))
+      .then((cache) =>
+        // The document is the one asset the offline shell cannot live
+        // without; a missing icon must not abort the whole install.
+        cache.add("/").then(() => Promise.allSettled(
+          SHELL_URLS.filter((u) => u !== "/").map((u) => cache.add(u)),
+        )))
       .then(() => self.skipWaiting()),
   );
 });

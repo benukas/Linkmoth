@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import socket
+import sqlite3
 import ssl
 import sys
 import threading
@@ -173,6 +174,13 @@ def init_webhook_db(conn):
             ON webhook_queue(next_attempt);
         """
     )
+    try:
+        conn.execute(
+            "ALTER TABLE webhooks ADD COLUMN escalation_minutes"
+            " INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
 
 # ---------------------------------------------------------------------------
@@ -351,10 +359,25 @@ def _clean_template(preset, value):
     return template
 
 
+def _clean_escalation(value):
+    """0 = deliver immediately (default); N = only deliver fault events if
+    the incident is still open after N minutes (escalation tier)."""
+    if value in (None, ""):
+        return 0
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        raise ValueError("escalation_minutes must be a whole number") from None
+    if isinstance(value, bool) or minutes < 0 or minutes > 1440:
+        raise ValueError("escalation_minutes must be between 0 and 1440")
+    return minutes
+
+
 def validate_webhook(data, stored_headers=None, stored_url=None):
     if not isinstance(data, dict):
         raise ValueError("expected a JSON object")
-    allowed = {"name", "enabled", "url", "preset", "headers", "events", "template"}
+    allowed = {"name", "enabled", "url", "preset", "headers", "events",
+               "template", "escalation_minutes"}
     if set(data) - allowed:
         raise ValueError("webhook contains an unknown field")
     preset = str(data.get("preset") or "generic").strip().lower()
@@ -371,6 +394,7 @@ def validate_webhook(data, stored_headers=None, stored_url=None):
         "headers": _clean_headers(data.get("headers"), stored=stored_headers),
         "events": _clean_events(data.get("events")),
         "template": _clean_template(preset, data.get("template")),
+        "escalation_minutes": _clean_escalation(data.get("escalation_minutes")),
     }
     if preset == "custom":
         _check_template_output(clean)
@@ -449,11 +473,13 @@ def create_webhook(db_connect, data):
             raise WebhookLimitReached(f"webhook limit reached ({MAX_WEBHOOKS})")
         conn.execute(
             "INSERT INTO webhooks(id, name, enabled, url, preset, headers,"
-            " events, template, created, updated) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            " events, template, escalation_minutes, created, updated)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (
                 webhook_id, clean["name"], int(clean["enabled"]), clean["url"],
                 clean["preset"], json.dumps(clean["headers"]),
-                json.dumps(clean["events"]), clean["template"], now, now,
+                json.dumps(clean["events"]), clean["template"],
+                clean["escalation_minutes"], now, now,
             ),
         )
     return get_webhook(db_connect, webhook_id)
@@ -465,7 +491,8 @@ def update_webhook(db_connect, webhook_id, data):
         raise ValueError("expected a JSON object")
     base = {
         key: current[key]
-        for key in ("name", "enabled", "url", "preset", "headers", "events", "template")
+        for key in ("name", "enabled", "url", "preset", "headers", "events",
+                    "template", "escalation_minutes")
     }
     base.update(data)
     clean = validate_webhook(
@@ -476,11 +503,12 @@ def update_webhook(db_connect, webhook_id, data):
     with db_connect() as conn:
         conn.execute(
             "UPDATE webhooks SET name=?, enabled=?, url=?, preset=?, headers=?,"
-            " events=?, template=?, updated=? WHERE id=?",
+            " events=?, template=?, escalation_minutes=?, updated=? WHERE id=?",
             (
                 clean["name"], int(clean["enabled"]), clean["url"], clean["preset"],
                 json.dumps(clean["headers"]), json.dumps(clean["events"]),
-                clean["template"], time.time(), webhook_id,
+                clean["template"], clean["escalation_minutes"],
+                time.time(), webhook_id,
             ),
         )
     return get_webhook(db_connect, webhook_id)
@@ -874,6 +902,15 @@ def wake_drain():
     DRAIN_WAKE.set()
 
 
+# Network-fault events a per-webhook escalation delay may hold back, and the
+# resolution events that cancel a still-held escalation (the incident ended
+# before the delay elapsed, so channel B never needs to hear about it).
+ESCALATABLE_EVENTS = frozenset({"fault_opened", "degradation_detected"})
+ESCALATION_CLEAR_EVENTS = frozenset({
+    "fault_recovered", "fault_closed", "false_alarm_marked",
+})
+
+
 def emit_event(db_connect, event, ctx):
     """Queue one delivery per enabled webhook subscribed to this event."""
     if event not in EVENT_IDS:
@@ -882,33 +919,80 @@ def emit_event(db_connect, event, ctx):
     queued = 0
     with db_connect() as conn:
         rows = conn.execute(
-            "SELECT id, events FROM webhooks WHERE enabled=1"
+            "SELECT id, events, escalation_minutes FROM webhooks WHERE enabled=1"
         ).fetchall()
+        if event in ESCALATION_CLEAR_EVENTS:
+            # A historical incident can be marked false-alarm while another
+            # incident is active. Only cancel held faults for the incident that
+            # actually recovered/closed; never clear the whole escalation queue.
+            incident_id = str(ctx.get("incident_id") or "")
+            pending = conn.execute(
+                "SELECT id, context FROM webhook_queue"
+                " WHERE attempts=0 AND next_attempt > ?"
+                " AND event IN ('fault_opened','degradation_detected')",
+                (now,),
+            ).fetchall() if incident_id else []
+            cancel_ids = [
+                row["id"] for row in pending
+                if str(_json_or(row["context"], {}).get("incident_id") or "")
+                == incident_id
+            ]
+            cancelled = 0
+            if cancel_ids:
+                placeholders = ",".join("?" for _ in cancel_ids)
+                cancelled = conn.execute(
+                    f"DELETE FROM webhook_queue WHERE id IN ({placeholders})",
+                    cancel_ids,
+                ).rowcount
+            if cancelled:
+                print(
+                    f"escalation cancelled — {cancelled} held fault"
+                    f" delivery(ies) resolved before their delay",
+                    file=sys.stderr, flush=True,
+                )
         targets = [
-            row["id"] for row in rows
+            (row["id"], int(row["escalation_minutes"] or 0)) for row in rows
             if event in _json_or(row["events"], [])
         ]
-        for webhook_id in targets:
+        for webhook_id, escalation in targets:
+            delay = (
+                escalation * 60
+                if escalation and event in ESCALATABLE_EVENTS else 0
+            )
             conn.execute(
                 "INSERT INTO webhook_queue(webhook_id, event, context, created, next_attempt)"
                 " VALUES(?,?,?,?,?)",
-                (webhook_id, event, json.dumps(ctx), now, now),
+                (webhook_id, event, json.dumps(ctx), now, now + delay),
             )
             queued += 1
         if queued:
             overflow = conn.execute(
                 "SELECT COUNT(*) FROM webhook_queue"
             ).fetchone()[0] - QUEUE_CAP
-            if overflow > 0:
-                conn.execute(
+            # Trim the webhook with the deepest backlog first so one noisy
+            # webhook sheds its own oldest deliveries instead of evicting
+            # other webhooks' queued events.
+            while overflow > 0:
+                noisiest = conn.execute(
+                    "SELECT webhook_id, COUNT(*) AS n FROM webhook_queue"
+                    " GROUP BY webhook_id ORDER BY n DESC, MIN(id) ASC LIMIT 1"
+                ).fetchone()
+                if noisiest is None:
+                    break
+                cur = conn.execute(
                     "DELETE FROM webhook_queue WHERE id IN ("
-                    " SELECT id FROM webhook_queue ORDER BY id ASC LIMIT ?)",
-                    (overflow,),
+                    " SELECT id FROM webhook_queue WHERE webhook_id=?"
+                    " ORDER BY id ASC LIMIT ?)",
+                    (noisiest["webhook_id"], min(overflow, noisiest["n"])),
                 )
+                overflow -= cur.rowcount
                 print(
-                    f"webhook queue full — dropped {overflow} oldest deliveries",
+                    f"webhook queue full — dropped {cur.rowcount} oldest"
+                    f" deliveries for webhook {noisiest['webhook_id']}",
                     file=sys.stderr, flush=True,
                 )
+                if cur.rowcount == 0:
+                    break
     if queued:
         wake_drain()
     return queued

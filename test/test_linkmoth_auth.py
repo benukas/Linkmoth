@@ -103,6 +103,20 @@ class LinkmothTestBase(unittest.TestCase):
         self.linkmoth.init_db()
         self.auth = self.linkmoth.get_auth()
 
+        # Route tests exercise trigger authorization and incident creation,
+        # not the long-running recheck scheduler. Keep any spawned loop alive
+        # until tearDown, then release and join it before deleting this test's
+        # temporary database so it cannot leak into the next module reload.
+        self.incident_loop_release = threading.Event()
+
+        def held_incident_loop(_inc_id):
+            self.incident_loop_release.wait(timeout=30)
+
+        self.incident_loop_patch = patch.object(
+            self.linkmoth.ENGINE, "_loop", new=held_incident_loop,
+        )
+        self.incident_loop_patch.start()
+
         self.port = self._free_port()
         self.config["port"] = self.port
         self.config_path.write_text(json.dumps(self.config))
@@ -116,6 +130,11 @@ class LinkmothTestBase(unittest.TestCase):
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
+        self.incident_loop_release.set()
+        loop_thread = self.linkmoth.ENGINE.loop_thread
+        if loop_thread is not None:
+            loop_thread.join(timeout=2)
+        self.incident_loop_patch.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
         os.environ.pop("LINKMOTH_CONFIG", None)
         os.environ.pop("LINKMOTH_STATE_DIR", None)
@@ -1628,6 +1647,85 @@ class SessionIdleTests(unittest.TestCase):
             self.assertIsNone(auth.get_session(sid))  # absolute-expired
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class ReadonlyTokenTests(LinkmothTestBase):
+    def setUp(self):
+        super().setUp()
+        self._configure_auth()
+
+    def test_token_lifecycle_and_hashed_storage(self):
+        value, entry = self.auth.create_readonly_token("widget")
+        self.assertTrue(value.startswith("lmro_"))
+        listed = self.auth.list_readonly_tokens()
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["name"], "widget")
+        self.assertNotIn("hash", listed[0])
+        # The plain value never lands in the store.
+        raw = self.auth.auth_path.read_text(encoding="utf-8")
+        self.assertNotIn(value, raw)
+        self.assertTrue(self.auth.verify_readonly_token(f"Bearer {value}"))
+        self.assertFalse(self.auth.verify_readonly_token("Bearer lmro_wrong"))
+        self.assertFalse(self.auth.verify_readonly_token(None))
+        self.assertTrue(self.auth.revoke_readonly_token(entry["id"]))
+        self.assertFalse(self.auth.verify_readonly_token(f"Bearer {value}"))
+        self.assertFalse(self.auth.revoke_readonly_token(entry["id"]))
+
+    def test_token_limit_enforced(self):
+        for i in range(self.auth.READONLY_TOKEN_LIMIT):
+            self.auth.create_readonly_token(f"t{i}")
+        with self.assertRaises(ValueError):
+            self.auth.create_readonly_token("one too many")
+
+    def test_webhook_secret_is_not_a_readonly_token(self):
+        self.assertFalse(
+            self.auth.verify_readonly_token(f"Bearer {self.webhook}")
+        )
+
+    def test_token_reads_status_but_nothing_else(self):
+        value, _ = self.auth.create_readonly_token("widget")
+        headers = {"Authorization": f"Bearer {value}"}
+        for path in ("/api/status", "/api/quality", "/api/report"):
+            code, body, _, _ = http("GET", f"{self.base}{path}", headers=headers)
+            self.assertEqual(code, 200, path)
+        # Status via token must not carry a CSRF token.
+        code, body, _, _ = http("GET", f"{self.base}/api/status", headers=headers)
+        self.assertNotIn("csrf_token", body.get("auth", {}))
+        # Outside the allowlist: 401.
+        for path in ("/api/incidents?limit=5", "/api/auth/tokens",
+                     "/api/auth/audit", "/api/webhooks"):
+            code, _, _, _ = http("GET", f"{self.base}{path}", headers=headers)
+            self.assertEqual(code, 401, path)
+        # Never for POST, even on an allowlisted-looking path.
+        code, _, _, _ = http(
+            "POST", f"{self.base}/api/diagnose", {}, headers=headers,
+        )
+        self.assertEqual(code, 401)
+
+    def test_token_routes_require_session(self):
+        code, _, _, _ = http("GET", f"{self.base}/api/auth/tokens")
+        self.assertEqual(code, 401)
+        _, _, cookie, csrf = self._login()
+        code, body, _, _ = http(
+            "POST", f"{self.base}/api/auth/tokens", {"name": "from ui"},
+            headers={"X-CSRF-Token": csrf},
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(body["token"].startswith("lmro_"))
+        code, listing, _, _ = http(
+            "GET", f"{self.base}/api/auth/tokens",
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(len(listing["tokens"]), 1)
+        code, _, _, _ = http(
+            "DELETE", f"{self.base}/api/auth/tokens/{body['id']}",
+            headers={"X-CSRF-Token": csrf},
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(self.auth.list_readonly_tokens(), [])
 
 
 if __name__ == "__main__":

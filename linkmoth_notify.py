@@ -14,7 +14,10 @@ RECOVERY_DEDUPE_SECONDS = 45
 MAX_QUIET_EVENTS = 500
 QUIET_SCHEDULER_SECONDS = 30
 _lock = threading.Lock()
-_last_recovery_mono = 0.0
+# Recovery dedupe is keyed per incident/fault so two *different* recoveries
+# inside the window both notify; only true duplicates of the same recovery
+# (e.g. retriggered digests for one outage) are suppressed.
+_recovery_sent_mono = {}
 
 
 def init_notification_db(conn) -> None:
@@ -209,15 +212,30 @@ def quiet_hours_scheduler_loop(cfg: dict, state_dir, db_connect) -> None:
         time.sleep(QUIET_SCHEDULER_SECONDS)
 
 
-def _recovery_recently_sent() -> bool:
-    with _lock:
-        return (time.monotonic() - _last_recovery_mono) < RECOVERY_DEDUPE_SECONDS
+def _recovery_dedupe_key(incident: Optional[dict]) -> str:
+    """Incident recoveries dedupe per incident; every non-incident recovery
+    (outage tracker, Kuma digest) shares one 'global' key so the same
+    network-wide recovery reported by two paths still sends only once."""
+    if incident and incident.get("id") is not None:
+        return f"inc:{incident['id']}"
+    return "global"
 
 
-def _mark_recovery_sent() -> None:
-    global _last_recovery_mono
+def _recovery_recently_sent(key: str) -> bool:
     with _lock:
-        _last_recovery_mono = time.monotonic()
+        sent = _recovery_sent_mono.get(key)
+        return sent is not None and (time.monotonic() - sent) < RECOVERY_DEDUPE_SECONDS
+
+
+def _mark_recovery_sent(key: str) -> None:
+    with _lock:
+        now = time.monotonic()
+        _recovery_sent_mono[key] = now
+        for stale in [
+            k for k, ts in _recovery_sent_mono.items()
+            if now - ts >= RECOVERY_DEDUPE_SECONDS
+        ]:
+            del _recovery_sent_mono[stale]
 
 
 def notify_recovery(
@@ -233,7 +251,8 @@ def notify_recovery(
     source: str = "linkmoth",
 ) -> bool:
     """Single recovery path for outage tracker, incident loop, and Kuma digest."""
-    if _recovery_recently_sent():
+    dedupe_key = _recovery_dedupe_key(incident)
+    if _recovery_recently_sent(dedupe_key):
         return False
     from linkmoth_discord import (
         outage_recovery_push_text,
@@ -247,7 +266,7 @@ def notify_recovery(
         cfg, db_connect, title, body,
         discord=True, push=True,
     ):
-        _mark_recovery_sent()
+        _mark_recovery_sent(dedupe_key)
         return True
 
     sent = False
@@ -272,8 +291,8 @@ def notify_recovery(
         sent = True
 
     if sent or digest:
-        _mark_recovery_sent()
-    return True
+        _mark_recovery_sent(dedupe_key)
+    return sent or bool(digest)
 
 
 def notify_fault(

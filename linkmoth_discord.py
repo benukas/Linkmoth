@@ -535,6 +535,33 @@ def send_quiet_hours_digest_alert(
     return True
 
 
+def send_monthly_digest_alert(
+    lines: List[str],
+    month_label: str,
+    cfg: Optional[dict] = None,
+) -> bool:
+    """One summary of the previous month's network health."""
+    if not lines or not discord_alerts_active(cfg):
+        return False
+    url = discord_webhook_url(cfg)
+    payload = {
+        "embeds": [{
+            "title": f"📊 Network report — {month_label}",
+            "description": _truncate("\n".join(lines), 4096),
+            "color": RECOVERY_COLOR,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "footer": {"text": "Linkmoth · monthly report"},
+        }],
+    }
+    threading.Thread(
+        target=_send_payload_sync,
+        args=(url, payload, "monthly digest"),
+        daemon=True,
+        name="discord-monthly-digest",
+    ).start()
+    return True
+
+
 def send_outage_recovery_alert(
     prior_fault: dict,
     recovery_verdict: dict,

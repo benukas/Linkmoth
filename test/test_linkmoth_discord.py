@@ -246,7 +246,7 @@ class EngineDiscordIntegrationTests(unittest.TestCase):
         self.engine = self.linkmoth.Engine()
         self.sent = []
         import linkmoth_notify
-        linkmoth_notify._last_recovery_mono = 0.0
+        linkmoth_notify._recovery_sent_mono.clear()
         # OUTAGE_TRACKER is a process-wide singleton; reset its in-memory
         # counter so state from an earlier test file can't leak in.
         from linkmoth_outage import OUTAGE_TRACKER

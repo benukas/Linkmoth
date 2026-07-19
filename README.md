@@ -2,29 +2,67 @@
 
 <img src="linkmoth-white.svg" alt="Linkmoth" width="180">
 
-[![CI](https://github.com/benukas/linkmoth/actions/workflows/ci.yml/badge.svg)](https://github.com/benukas/linkmoth/actions/workflows/ci.yml)
+[![CI](https://github.com/benukas/Linkmoth/actions/workflows/ci.yml/badge.svg)](https://github.com/benukas/Linkmoth/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776AB.svg)](https://www.python.org/)
 [![Status: Early Access / Beta](https://img.shields.io/badge/status-early--access%20%2F%20beta-orange.svg)](CHANGELOG.md)
 
-A network flight recorder for your home LAN. When something breaks, it
-tells you **whose fault it is** in plain language:
+**A flight recorder for your home internet.** Linkmoth runs on a small
+always-on Linux box (a Raspberry Pi is perfect), watches the network by
+itself, and when something breaks it tells you **whose fault it is** in
+plain language:
 
 - *"Local DNS resolver stopped answering — internet itself is fine"*
 - *"Internet is dead beyond the router — likely internet provider outage or router WAN cable fault"*
 - *"Router isn't answering on the LAN"*
 - *"Nothing wrong seen from the network side"* (false alarm)
 
-It works standalone, checking the network itself every few minutes. If you
-already run a watcher, [Uptime Kuma](https://github.com/louislam/uptime-kuma)
-or any other tool that can send a webhook, Linkmoth can pair with it instead:
-your monitor notices *that* something is down, Linkmoth works out *why*, and
-both show up on a simple LAN-only dashboard.
+<!-- TODO: 15-second demo GIF here — fault appears, ladder pinpoints it,
+     verdict + evidence packet, recovery. Worth more than any paragraph. -->
+
+Everything runs and stays on your LAN: no cloud account, no telemetry, no
+subscription, standard-library Python only.
+
+## What it does, on its own
+
+Linkmoth is a standalone appliance. It needs no other monitoring software —
+though it will happily [pair with one you already run](#already-running-a-monitor-optional).
+
+- **Finds the failing layer, not just "it's down."** Host power, own link,
+  router, router Wi-Fi, local DNS, upstream DNS, raw internet reachability,
+  and HTTPS are checked in dependency order, so the verdict points at where
+  the failure *started* — and every verdict comes with a "what to do next"
+  playbook, safest steps first.
+- **Keeps evidence.** Every incident gets a readable reference
+  (`INC-20260705-0042`), its trigger, every recheck, which rungs changed,
+  the recovery, an honest confidence statement, and a plain-language story
+  paragraph you can paste into a chat — exportable with credentials removed.
+- **Turns history into ammunition.** The accountability report totals your
+  downtime, blames the right layer, spots time-of-day clustering, and writes
+  a copyable evidence letter for your ISP support ticket (CSV export
+  included).
+- **Watches connection quality, not just up/down.** Latency, jitter, and
+  packet loss are sampled continuously, classified good/fair/poor, and
+  summarized in plain language ("evening latency is 3× worse than
+  morning") — plus an on-demand **bufferbloat test** that grades how your
+  line holds up under load.
+- **Monitors your LAN devices** — printer, NAS, access point — with
+  debounced up/down alerts that never pollute the network verdict.
+- **Tells you — or politely doesn't.** Discord, browser push, ntfy, Gotify,
+  Slack, Home Assistant, n8n, or any webhook. Quiet hours hold alerts
+  overnight and deliver one morning digest.
+- **Knows when the messenger is down.** During a confirmed network-wide
+  outage, outbound alerts queue in SQLite and deliver the moment the WAN
+  returns, marked as delayed.
+- **Shows its own health** (CPU, temperature, RAM, disk) in the header, so
+  an overloaded Pi doesn't get mistaken for a network fault.
+- **Fits your homelab.** A Prometheus `/metrics` endpoint and scoped
+  read-only API tokens (for Homepage/Glance widgets and Home Assistant
+  sensors) — both read-only and token-gated.
 
 **Linkmoth is early access / beta.** It's actively developed by a single
 maintainer; expect rough edges, and please report what you find (see
-[Reporting issues](#reporting-issues) below). Local and dependency-free: no
-cloud account, no telemetry, standard-library Python only. See
+[Reporting issues](#reporting-issues) below). See
 [CHANGELOG.md](CHANGELOG.md) for recent changes.
 
 | OS | Status |
@@ -79,39 +117,42 @@ step-by-step instructions per device are in
 pick a password (12+ characters), and press **Diagnose now**. You should see
 a green "All clear" within a few seconds.
 
-That's it. Linkmoth already checks the network on its own and opens
-incidents when it finds a fault.
+That's it. Linkmoth is already checking the network on its own, opens
+incidents when it finds a fault, and keeps the evidence.
 
-**4. Already run a monitor? Connect it (optional).** Uptime Kuma, Zabbix,
-Grafana alerting, or any tool/script that can send a webhook works (tested
-primarily with Uptime Kuma). In your monitor, add a webhook notification
-pointed at the same address printed by the installer, replacing `/setup`
-with `/trigger`: `https://<host-ip>:8686/trigger`. A LAN address can be used
-by monitors on this host or elsewhere on the LAN. If the installer printed
-`127.0.0.1`, only software running on the Linkmoth host can reach it. Use
-content type `application/json`, header
-`Authorization: Bearer <webhook-secret>` (the installer printed this secret;
-reprint it with `sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py
---auth-show-webhook`). Now any monitor going down makes Linkmoth diagnose
-the network too. A richer, alert-suppressing integration (including a
-dedicated Uptime Kuma endpoint) is in
+## Already running a monitor? (optional)
+
+Linkmoth diagnoses the network without any help. But if you already run
+Uptime Kuma, Zabbix, Grafana alerting, or any tool/script that can send a
+webhook, you can point it at Linkmoth so that when *your* monitor notices
+something is down, Linkmoth immediately works out *why* — and suppresses the
+noisy per-service alerts during a confirmed network-wide outage, summarizing
+them once after recovery.
+
+In your monitor, add a webhook notification pointed at the address the
+installer printed, replacing `/setup` with `/trigger`:
+`https://<host-ip>:8686/trigger`. Use content type `application/json` and the
+header `Authorization: Bearer <webhook-secret>` (the installer printed this
+secret; reprint it with `sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py
+--auth-show-webhook`). If the installer printed `127.0.0.1`, only software on
+the Linkmoth host itself can reach it.
+
+The richer integration — including a dedicated Uptime Kuma endpoint that
+understands its native payload and forwards clean alerts to Discord — is in
 [ADVANCED.md](ADVANCED.md#connecting-a-monitor-uptime-kuma-or-anything-else).
 
 ## What makes it different
 
-Most monitors just answer "is it down?" Linkmoth checks host power, local
-link, router, local DNS, upstream DNS, raw internet reachability, and HTTPS
-in dependency order (plus Wi-Fi client pings, if you configure them), so it
-can tell you where the failure actually started.
+Most tools answer "is it down?" Your ISP's app answers "have you tried
+rebooting the router?" Linkmoth answers the question you actually have at
+11 pm: **what, specifically, is broken — and is it something I can fix, or
+something I should be on the phone about?**
 
-A few other things it does:
-
-- Shows Linkmoth's own CPU, temperature, RAM, and disk use in the header, so
-  an overloaded Pi doesn't get mistaken for a network fault.
-- Keeps a full evidence trail per incident: the trigger, rechecks, which
-  rungs changed, the recovery, and a readable reference number.
-- Defers noisy service alerts during a confirmed network-wide outage and
-  summarizes them once it recovers.
+It does that by checking the network in dependency order (plus Wi-Fi client
+pings, if you configure them), keeping a full evidence trail per incident,
+and refusing to guess: verdicts state their confidence and its limits, a
+lone ambiguous witness is a warning rather than proof, and "nothing wrong
+seen from the network side" is a first-class answer.
 
 ## Scope and security
 
@@ -131,15 +172,16 @@ for its configuration); see
 ## Learn more
 
 [ADVANCED.md](ADVANCED.md) covers everything that didn't fit here:
-configuration reference, the full Uptime Kuma/Discord/webhook integration,
-TLS certificate trust (do this properly, since it's the one step where a LAN
-attacker could trick you), the CLI, security posture, updating, backups,
-uninstalling, and troubleshooting.
+configuration reference, how the fault ladder works, LAN device monitoring,
+connecting an existing monitor, outbound webhooks, TLS certificate trust (do
+this properly, since it's the one step where a LAN attacker could trick
+you), the CLI, security posture, updating, backups, uninstalling, and
+troubleshooting.
 
 ## Reporting issues
 
 - **Bugs and compatibility reports:** open a
-  [GitHub Issue](https://github.com/benukas/linkmoth/issues) — see
+  [GitHub Issue](https://github.com/benukas/Linkmoth/issues) — see
   [CONTRIBUTING.md](CONTRIBUTING.md) for what makes a report useful (version,
   distribution, safe reproduction steps).
 - **Security vulnerabilities:** do **not** use a public issue. Follow the
@@ -173,6 +215,17 @@ Generated locally by Linkmoth. Credentials are excluded; this summary may includ
 
 `sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --doctor` (environment
 and health check, no secrets) is also useful to attach for either audience.
+
+## Supporting Linkmoth
+
+If Linkmoth called an outage correctly for you — or better, helped you win
+an argument with your ISP — the most useful things you can do today are
+starring the repository, reporting a compatibility result for your
+distribution, and telling the story where other people with flaky internet
+will find it.
+
+<!-- TODO: add a funding link here (GitHub Sponsors / Ko-fi / Liberapay)
+     and a .github/FUNDING.yml so the repo shows a Sponsor button. -->
 
 ## License, attribution, and official development
 

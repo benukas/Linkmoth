@@ -30,12 +30,13 @@ rm -f /etc/systemd/system/linkmoth.service \
   /etc/systemd/system/linkmoth-cert-renew.timer \
   /etc/polkit-1/rules.d/51-linkmoth.rules \
   /usr/local/lib/linkmoth/renew-cert.sh
+rmdir /usr/local/lib/linkmoth 2>/dev/null || true
 remove_ca_trust
 systemctl daemon-reload
 rm -rf /opt/linkmoth
 
 if [ "${1:-}" = "--purge" ]; then
-  rm -rf /etc/linkmoth /var/lib/linkmoth
+  rm -rf /etc/linkmoth /var/lib/linkmoth /etc/systemd/system/linkmoth.service.d
   userdel linkmoth 2>/dev/null || true
   echo "removed service, config, data, and the linkmoth user"
 else

@@ -140,7 +140,7 @@ class QuietHoursTests(unittest.TestCase):
 
 class NotifyRecoveryDedupeTests(unittest.TestCase):
     def setUp(self):
-        linkmoth_notify._last_recovery_mono = 0.0
+        linkmoth_notify._recovery_sent_mono.clear()
 
     def test_dedupe_blocks_second_recovery(self):
         cfg = {"discord_notifications_enabled": False, "notify_webhook_enabled": False}
@@ -152,6 +152,69 @@ class NotifyRecoveryDedupeTests(unittest.TestCase):
                 cfg, Path("/tmp"), lambda: None, prior, recovery, [], ["• svc"], 60,
             ))
             self.assertFalse(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], ["• svc"], 60,
+            ))
+
+    def test_distinct_incident_recoveries_both_notify(self):
+        cfg = {"discord_notifications_enabled": False, "notify_webhook_enabled": False}
+        prior = {"code": "router_down", "title": "Router down", "started": time.time() - 60}
+        recovery = {"severity": "ok", "code": "all_clear", "title": "All clear",
+                    "explain": "", "hint": ""}
+        with mock.patch(
+            "linkmoth_discord.send_discord_alert", return_value=True,
+        ), mock.patch(
+            "linkmoth_discord.incident_payload", return_value={},
+        ):
+            self.assertTrue(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], [], 60,
+                incident={"id": 1}, source="incident-loop",
+            ))
+            self.assertTrue(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], [], 60,
+                incident={"id": 2}, source="incident-loop",
+            ))
+            self.assertFalse(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], [], 60,
+                incident={"id": 1}, source="incident-loop",
+            ))
+
+    def test_incident_recovery_does_not_block_global_recovery(self):
+        cfg = {"discord_notifications_enabled": False, "notify_webhook_enabled": False}
+        prior = {"code": "router_down", "title": "Router down", "started": time.time() - 60}
+        recovery = {"severity": "ok", "code": "all_clear", "title": "All clear",
+                    "explain": "", "hint": ""}
+        with mock.patch(
+            "linkmoth_discord.send_discord_alert", return_value=True,
+        ), mock.patch(
+            "linkmoth_discord.incident_payload", return_value={},
+        ), mock.patch(
+            "linkmoth_discord.send_outage_recovery_alert", return_value=True,
+        ):
+            self.assertTrue(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], [], 60,
+                incident={"id": 1}, source="incident-loop",
+            ))
+            self.assertTrue(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], ["• svc"], 60,
+                source="outage-tracker",
+            ))
+
+    def test_returns_false_when_nothing_sent(self):
+        cfg = {"discord_notifications_enabled": False, "notify_webhook_enabled": False}
+        prior = {"code": "wan_down", "title": "WAN down", "started": time.time() - 60}
+        recovery = {"severity": "ok", "code": "all_clear", "title": "All clear",
+                    "explain": "", "hint": ""}
+        with mock.patch(
+            "linkmoth_discord.send_outage_recovery_alert", return_value=False,
+        ), mock.patch(
+            "linkmoth_push.send_push_async", return_value=False,
+        ):
+            self.assertFalse(linkmoth_notify.notify_recovery(
+                cfg, Path("/tmp"), lambda: None, prior, recovery, [], [], 60,
+            ))
+        # Nothing was sent, so nothing should be deduped away next time.
+        with mock.patch("linkmoth_discord.send_outage_recovery_alert", return_value=True):
+            self.assertTrue(linkmoth_notify.notify_recovery(
                 cfg, Path("/tmp"), lambda: None, prior, recovery, [], ["• svc"], 60,
             ))
 
@@ -192,11 +255,22 @@ class ResumeIncidentTests(unittest.TestCase):
                 "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
                 (time.time(), "test", "open"),
             )
-            inc_id = cur.lastrowid
-        self.engine.resume_after_startup()
-        self.assertTrue(self.engine.loop_thread is not None)
-        self.assertTrue(self.engine.loop_thread.is_alive())
-        self.engine.loop_thread.join(timeout=2)
+            self.assertIsNotNone(cur.lastrowid)
+        started = threading.Event()
+        release = threading.Event()
+
+        def held_loop(_inc_id):
+            started.set()
+            release.wait(timeout=5)
+
+        with mock.patch.object(self.engine, "_loop", side_effect=held_loop):
+            self.engine.resume_after_startup()
+            self.assertTrue(started.wait(timeout=2))
+            self.assertTrue(self.engine.loop_thread is not None)
+            self.assertTrue(self.engine.loop_thread.is_alive())
+            release.set()
+            self.engine.loop_thread.join(timeout=2)
+        self.assertFalse(self.engine.loop_thread.is_alive())
 
 
 class CloseIncidentTests(unittest.TestCase):

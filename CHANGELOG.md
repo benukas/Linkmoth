@@ -2,6 +2,94 @@
 
 ## Unreleased
 
+### Added
+
+- **Incident stories**: every incident's evidence packet now includes a
+  plain-language narrative paragraph with a copy button — the story you'd
+  paste into a chat to explain what happened.
+- **Accountability report** (History tab, `GET /api/report`, `/api/report.csv`):
+  downtime, blame breakdown, longest outage, and time-of-day clustering over
+  7/30/90 days, plus a copyable "evidence for ISP support" letter and a CSV
+  export. Read-only over data already stored.
+- **Quality findings**: plain-language recurring patterns over the last week
+  of quality samples ("evening latency is 3× worse than morning", loss
+  concentration, week-over-week trend), shown on the quality card and in
+  `/api/quality`.
+- **Bufferbloat / latency-under-load test**: a bounded download (default
+  ≤ 25 MB / ≤ 10 s, public HTTPS target only) while pinging, graded A–F by
+  latency inflation, with rough downstream throughput. Manual button on the
+  quality card; scheduled runs are opt-in via `quality.load_test_hours`.
+- **Wi-Fi vs wired differential**: when Wi-Fi witnesses are configured and
+  disagree with a healthy wired path, the dashboard says "it's your Wi-Fi,
+  not your provider" explicitly.
+- **Prometheus `/metrics`**: read-only text exposition (verdict, per-rung
+  gauges, incident counters, quality and host gauges) behind the webhook
+  bearer token.
+- **Read-only API tokens** (Security tab, `/api/auth/tokens`): a separate
+  hashed credential class for widgets and scrapers, accepted only on
+  `GET /api/status`, `/api/quality`, and `/api/report`; revocable, at most
+  10, shown once at creation.
+- **Monthly network report**: on the first janitor pass of each month,
+  a summary of the previous month (incidents, downtime, uptime, top fault,
+  latency vs the month before) through Discord/push, honoring quiet hours.
+- **Notification escalation tiers**: per-webhook "escalate after N minutes"
+  holds fault deliveries and cancels them when the incident resolves first,
+  so a second channel only hears about real, sustained outages.
+- **Fire drill**: a guided one-minute exercise on the Today tab — unplug
+  the WAN cable, watch Linkmoth catch and diagnose it live, then verify
+  recovery.
+- **`--doctor --json`**: machine-readable environment check output.
+
+### Fixed
+
+- Marking an already-closed incident as a false alarm now actually moves it
+  out of the incident/blame statistics: the dashboard counts it as a false
+  alarm, and it no longer feeds repeat-fault patterns, the ISP report,
+  similar-incident lists, or per-fault History filters. Incidents flagged
+  before this fix are honored via their false-alarm flag.
+- If the sign-in screen ever shows the first-run onboarding form on an
+  installation that already has a password (a stale status read), submitting
+  it now switches cleanly to normal sign-in instead of dead-ending on
+  "onboarding is already complete".
+- Concurrent triggers (for example a webhook arriving while the built-in
+  checker fires) can no longer create a second open incident that never gets
+  a recheck loop and never resolves.
+- "Verify fix" no longer consumes its cooldown when it is rejected because a
+  diagnosis is already running.
+- Wrong JSON types in a hand-edited `config.json` (such as `recheck_seconds`
+  as a number or `ping_targets` as a string) now fall back to the shipped
+  defaults with a warning instead of crashing background threads.
+- Bufferbloat downloads now pin the validated public address, refuse
+  redirects, verify the connected peer, and obey the byte cap exactly, so a
+  later DNS answer or redirect cannot retarget a test at a LAN service.
+- Closing or marking one incident as a false alarm now cancels delayed webhook
+  escalation only for that incident, preserving alerts for any other active
+  incident.
+- Retention cleanup no longer deletes probe runs that belong to a still-open
+  incident, preserving its evidence trail.
+- The 30-day uptime and downtime statistics now count incidents that span the
+  window boundary correctly: long-running open incidents are included and
+  each incident's downtime is clamped to the window.
+- Recovery notifications are deduplicated per incident instead of globally,
+  so two distinct recoveries within 45 seconds both notify; `notify_recovery`
+  also reports honestly whether anything was sent.
+- When the outbound webhook queue is full, the webhook with the deepest
+  backlog now sheds its own oldest deliveries instead of evicting other
+  webhooks' queued events.
+- Devices whose probes persistently error (rather than cleanly failing) now
+  alert as down after three consecutive errors instead of silently staying in
+  their last stable state forever.
+- The offline app shell now caches the header logo and PWA icons, and a
+  single failed asset no longer blocks service-worker installation.
+- Dashboard security actions re-prompt for login when the session has
+  expired, and the update check only renders `https:` release links.
+- A failed fresh install no longer deletes `/etc/linkmoth` or
+  `/var/lib/linkmoth` when they predate the run (for example, kept by an
+  earlier uninstall without `--purge`); the uninstaller now also removes its
+  helper directory and, with `--purge`, any service drop-ins.
+- Session idle tracking writes to the database at most every five minutes on
+  the default idle window instead of every minute.
+
 ## 0.3.0
 
 ### Security
