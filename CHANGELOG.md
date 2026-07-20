@@ -9,6 +9,16 @@
   `Z` UTC marker.
 - The accountability report window picker now uses Linkmoth's custom
   button-style selector rather than the browser's unstyled native dropdown.
+- Bufferbloat results now show the measured download estimate as a dedicated
+  metric alongside the grade and added latency, rather than burying it in the
+  result sentence.
+- Accountability reports now separate observed network downtime from the full
+  incident lifetime. Recovery confirmation no longer inflates downtime,
+  uptime loss, longest-outage figures, monthly summaries, or incident stories;
+  a fault that returns during confirmation adds another outage segment to the
+  same incident.
+- Incident, false-alarm, diagnosis-run, recheck, and related dashboard counts
+  now use natural singular and plural wording.
 
 ## 0.4.0
 

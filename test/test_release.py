@@ -92,6 +92,17 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_bufferbloat_promotes_download_speed_as_a_result_metric(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="q-load-results"', dashboard)
+        self.assertIn('id="q-download"', dashboard)
+        self.assertIn("download speed (est.)", dashboard)
+        self.assertIn('`~${throughput} Mbps`', dashboard)
+        self.assertIn(
+            "Download speed is an estimate from the bounded test transfer.",
+            dashboard,
+        )
+
     def test_settings_subtabs_match_the_main_navigation_treatment(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(
@@ -122,6 +133,22 @@ class PublicReleaseTests(unittest.TestCase):
         )
         self.assertIn('if (!everythingAnswers && openInc && openInc.ref)', dashboard)
         self.assertIn('.action-bar.hidden { display: none; }', dashboard)
+
+    def test_incident_reports_separate_recovery_close_and_downtime(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        source = (ROOT / "linkmoth.py").read_text(encoding="utf-8")
+        for label in (
+            "Network recovered:",
+            "Incident closed:",
+            "Observed downtime:",
+            "Incident duration:",
+        ):
+            self.assertIn(label, dashboard)
+        for stale_plural in (
+            "incident(s)", "false alarm(s)", "recorded run(s)", "time(s)",
+        ):
+            self.assertNotIn(stale_plural, dashboard)
+            self.assertNotIn(stale_plural, source)
 
     def test_push_buttons_follow_this_device_subscription(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")

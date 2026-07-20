@@ -104,6 +104,14 @@ outage. During an incident it re-checks at +30 s, +1 m,
 +2 m, +5 m, then every 10 min until two consecutive all-clears, and stores
 every run.
 
+An incident's lifetime and its observed downtime are deliberately separate.
+The first healthy recheck records when network connectivity returned; the
+incident remains open through the recovery-confirmation window and records a
+later close time. If the fault returns during that window, Linkmoth keeps the
+same incident reference and starts another outage segment. Reports add the
+failed segments together for downtime, uptime, and longest-outage figures;
+they do not count healthy confirmation time as downtime.
+
 Each incident gets a human-readable reference such as `INC-20260705-0042`
 (shown in the dashboard, Discord alerts, and searchable from the History tab).
 When a ladder step fails, Linkmoth can drill down with **micro-steps**. The
@@ -389,6 +397,11 @@ into one **Generic JSON** webhook subscribed to the events it used to receive.
 | `quality.load_test_seconds`, `quality.load_test_max_mb` | `10`, `25` | Bounds on one bufferbloat test; the transfer stops at whichever is hit first |
 | `notify_webhook_url` | `""` | Legacy single-webhook URL — migrated once into Settings → Outbound webhooks, then unused |
 | `notify_webhook_enabled` | `false` | Legacy flag for the above (kept so old configs stay valid) |
+
+The bufferbloat result shows the grade, added latency, and an estimated
+download speed calculated from the bytes transferred during the bounded test.
+Because the transfer is capped, treat that Mbps value as a useful local
+estimate rather than a replacement for a full line-speed benchmark.
 
 Restart after editing `/etc/linkmoth/config.json`: `sudo systemctl restart linkmoth`
 
