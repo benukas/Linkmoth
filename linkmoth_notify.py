@@ -249,8 +249,17 @@ def notify_recovery(
     duration_s: float,
     incident: Optional[dict] = None,
     source: str = "linkmoth",
+    fault_checks: Optional[List[dict]] = None,
 ) -> bool:
-    """Single recovery path for outage tracker, incident loop, and Kuma digest."""
+    """Single recovery path for outage tracker, incident loop, and Kuma digest.
+
+    `checks` is the just-confirmed *healthy* ladder that triggered recovery —
+    by definition it can't show what broke. `fault_checks`, when available,
+    is the ladder from when the fault was actually confirmed (or last
+    reconfirmed), and is what the "what was actually wrong" fields in the
+    notification should be built from; callers fall back to `checks` when
+    they have no historical snapshot to offer.
+    """
     dedupe_key = _recovery_dedupe_key(incident)
     if _recovery_recently_sent(dedupe_key):
         return False
@@ -279,11 +288,13 @@ def notify_recovery(
         payload = incident_payload(
             incident, recovery_verdict, "recovery", prior_fault=prior,
             checks=checks, suppressed_digest=digest,
+            fault_checks=fault_checks,
         )
         if send_discord_alert(payload, "recovery", cfg):
             sent = True
     elif send_outage_recovery_alert(
         prior_fault, recovery_verdict, checks, digest, cfg, duration_s,
+        fault_checks=fault_checks,
     ):
         sent = True
 

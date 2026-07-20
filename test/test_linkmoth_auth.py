@@ -1685,7 +1685,7 @@ class ReadonlyTokenTests(LinkmothTestBase):
     def test_token_reads_status_but_nothing_else(self):
         value, _ = self.auth.create_readonly_token("widget")
         headers = {"Authorization": f"Bearer {value}"}
-        for path in ("/api/status", "/api/quality", "/api/report"):
+        for path in ("/api/status", "/api/quality", "/api/report", "/api/history"):
             code, body, _, _ = http("GET", f"{self.base}{path}", headers=headers)
             self.assertEqual(code, 200, path)
         # Status via token must not carry a CSRF token.

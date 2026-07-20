@@ -41,7 +41,7 @@ class OutageTracker:
                 if not active:
                     self._enter(db_connect, verdict, checks)
                 else:
-                    self._touch(db_connect, verdict)
+                    self._touch(db_connect, verdict, checks)
                 return
 
             if active:
@@ -72,26 +72,30 @@ class OutageTracker:
     def _load(self, db_connect):
         with db_connect() as conn:
             row = conn.execute(
-                "SELECT code, title, explain, started, updated FROM network_outage"
-                " WHERE id=1 AND active=1"
+                "SELECT code, title, explain, started, updated, checks"
+                " FROM network_outage WHERE id=1 AND active=1"
             ).fetchone()
         return dict(row) if row else None
 
     def _enter(self, db_connect, verdict: dict, checks: list):
         now = time.time()
+        checks_json = json.dumps(checks)
         with db_connect() as conn:
             conn.execute(
-                "INSERT INTO network_outage(id, active, code, title, explain, started, updated)"
-                " VALUES(1, 1, ?, ?, ?, ?, ?)"
+                "INSERT INTO network_outage(id, active, code, title, explain,"
+                " started, updated, checks)"
+                " VALUES(1, 1, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET"
                 " active=1, code=excluded.code, title=excluded.title,"
-                " explain=excluded.explain, started=excluded.started, updated=excluded.updated",
+                " explain=excluded.explain, started=excluded.started,"
+                " updated=excluded.updated, checks=excluded.checks",
                 (
                     verdict.get("code"),
                     verdict.get("title"),
                     verdict.get("explain"),
                     now,
                     now,
+                    checks_json,
                 ),
             )
         record_suppressed(
@@ -103,15 +107,20 @@ class OutageTracker:
             "global outage detected by Linkmoth — alerts deferred until recovery",
         )
 
-    def _touch(self, db_connect, verdict: dict):
+    def _touch(self, db_connect, verdict: dict, checks: list):
+        # Keep the most recently observed *broken* fault ladder, not just the
+        # onset one — a long outage can shift which rung is failing, and the
+        # eventual recovery notification should reflect the latest bad state.
         with db_connect() as conn:
             conn.execute(
-                "UPDATE network_outage SET updated=?, code=?, title=?, explain=? WHERE id=1",
+                "UPDATE network_outage SET updated=?, code=?, title=?,"
+                " explain=?, checks=? WHERE id=1",
                 (
                     time.time(),
                     verdict.get("code"),
                     verdict.get("title"),
                     verdict.get("explain"),
+                    json.dumps(checks),
                 ),
             )
 
@@ -124,6 +133,10 @@ class OutageTracker:
             "explain": active.get("explain"),
             "started": active.get("started"),
         }
+        try:
+            fault_checks = json.loads(active.get("checks") or "null")
+        except (json.JSONDecodeError, TypeError):
+            fault_checks = None
         with db_connect() as conn:
             conn.execute(
                 "UPDATE network_outage SET active=0, updated=? WHERE id=1",
@@ -133,6 +146,7 @@ class OutageTracker:
             prior_fault=prior,
             recovery_verdict=verdict,
             checks=checks,
+            fault_checks=fault_checks,
             digest=digest,
             cfg=cfg,
             duration_s=max(0.0, recovery_ts - float(active.get("started") or recovery_ts)),
@@ -153,10 +167,14 @@ def init_outage_db(conn):
             title TEXT,
             explain TEXT,
             started REAL,
-            updated REAL
+            updated REAL,
+            checks TEXT
         );
         """
     )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(network_outage)")}
+    if "checks" not in columns:
+        conn.execute("ALTER TABLE network_outage ADD COLUMN checks TEXT")
 
 
 OUTAGE_TRACKER = OutageTracker()

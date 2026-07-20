@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added
+
+- **Expanded latency history**: the Internet/router sparklines on Today and
+  each device's sparkline on Devices now have an **Expand** button that opens
+  a larger chart in a modal, with range controls for network and device
+  history.
+
+### Fixed
+
+- Dashboard sections that change while they are visible now refresh without
+  collapsing open incident or device details. This includes the History list,
+  accountability report, Security status and audit log, and device checks.
+- Installed PWA sessions now detect a changed server version. Reopening the app
+  reloads it automatically; an active foreground session shows a reload banner
+  so an in-progress action is not interrupted.
+- Home Screen installs on iOS now use the Linkmoth icon through an
+  `apple-touch-icon` link.
+- Small database sizes in Settings now display in KB, making reclaimed space
+  visible after a manual VACUUM.
+- Discord and outbound-webhook recovery notifications for network-wide outages
+  now retain the fault ladder that established the outage instead of replacing
+  it with the final healthy ladder.
+
 ## 0.4.1
 
 ### Fixed
@@ -14,6 +37,21 @@
 - Bufferbloat results now show the measured download estimate as a dedicated
   metric alongside the grade and added latency, rather than burying it in the
   result sentence.
+- The bufferbloat/download-speed result no longer disappears when there is
+  no periodic connection-quality sample yet (fresh install, or the
+  background checker disabled): a manual "Test under load" run now renders
+  its grade, download estimate, and added latency independently of that
+  unrelated sample.
+- The "Test under load" button now has a visible line stating that it
+  downloads a bounded test file from the configured public server (by
+  default Cloudflare's speed-test endpoint) to measure the line under load,
+  instead of that only being discoverable via a hover tooltip.
+- The "Testing under load — takes about 20 seconds…" status no longer
+  disappears mid-test on a short dashboard auto-refresh interval; the
+  periodic refresh now leaves that status alone until the test actually
+  finishes, instead of overwriting it with the still-stale server result on
+  every tick. A load test that fails to start also re-enables the button
+  immediately instead of leaving it stuck on "Testing…" for 20 seconds.
 - Accountability reports now separate observed network downtime from the full
   incident lifetime. Recovery confirmation no longer inflates downtime,
   uptime loss, longest-outage figures, monthly summaries, or incident stories;
@@ -49,8 +87,8 @@
   bearer token.
 - **Read-only API tokens** (Security tab, `/api/auth/tokens`): a separate
   hashed credential class for widgets and scrapers, accepted only on
-  `GET /api/status`, `/api/quality`, and `/api/report`; revocable, at most
-  10, shown once at creation.
+  `GET /api/status`, `/api/quality`, `/api/report`, and `/api/history`;
+  revocable, at most 10, shown once at creation.
 - **Monthly network report**: on the first janitor pass of each month,
   a summary of the previous month (incidents, downtime, uptime, top fault,
   latency vs the month before) through Discord/push, honoring quiet hours.

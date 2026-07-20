@@ -264,6 +264,29 @@ class LoadTestTests(unittest.TestCase):
         summary = self.lm.quality_summary(limit=5)
         self.assertEqual(summary["load_test"]["grade"], "A")
 
+    def test_summary_load_test_present_without_a_current_sample(self):
+        # A fresh install (or baseline_minutes=0 "explainer" role) may have
+        # no periodic ping sample yet — the load-test result must still be
+        # reported so the dashboard isn't blocked from showing it.
+        with self.lm.db() as conn:
+            conn.execute("DELETE FROM quality_samples")
+            conn.execute(
+                "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms,"
+                " grade, throughput_mbps, bytes, seconds)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (1000.0, 20.0, 45.0, 25.0, "A", 88.2, 9999, 10.0),
+            )
+        summary = self.lm.quality_summary(limit=5)
+        self.assertIsNone(summary["current"])
+        self.assertEqual(summary["load_test"]["grade"], "A")
+
+    def test_summary_carries_load_test_config(self):
+        summary = self.lm.quality_summary(limit=5)
+        cfg = summary["load_test_config"]
+        self.assertEqual(cfg["host"], "speed.cloudflare.com")
+        self.assertEqual(cfg["max_mb"], 25)
+        self.assertEqual(cfg["seconds"], 10)
+
 
 class QualityFindingsTests(unittest.TestCase):
     @classmethod

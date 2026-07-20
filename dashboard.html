@@ -8,6 +8,11 @@
 <title>Linkmoth</title>
 <link rel="icon" href="/linkmoth.svg" type="image/svg+xml">
 <link rel="icon" href="/linkmoth-white.ico" sizes="any">
+<!-- iOS "Add to Home Screen" ignores the Web App Manifest's icons array
+     entirely — it only ever looks at apple-touch-icon link tags. Without
+     this, Safari falls back to a screenshot of the page as the icon. -->
+<link rel="apple-touch-icon" href="/linkmoth-icon-192.png">
+<link rel="apple-touch-icon" sizes="512x512" href="/linkmoth-icon-512.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
@@ -142,6 +147,37 @@ h3 { font-size: 18px; color: var(--muted); font-weight: 600; margin: 0 0 6px; }
 svg.spark { width: 100%; height: 72px; display: block; cursor: crosshair; touch-action: pan-y; }
 svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; border-radius: 4px; }
 .spark-detail { min-height: 24px; margin: 4px 0 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.hist-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.hist-title-row h3 { margin: 0; }
+.hist-expand-btn { padding: 8px 14px; font-size: 15px; }
+#history-modal {
+  position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 55%, transparent);
+  z-index: 150; display: flex; justify-content: center;
+  padding: 5vh 16px 16px; overflow-y: auto;
+}
+#history-modal.hidden { display: none; }
+.modal-box {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 20px 22px; max-width: 900px; width: 100%; height: fit-content;
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--bg) 40%, black 20%);
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.modal-head h3 { margin: 0; font-size: 19px; color: var(--text); }
+.modal-head-controls { display: flex; align-items: center; gap: 10px; }
+.modal-close {
+  width: 40px; height: 40px; padding: 0; font-size: 22px; line-height: 1;
+  border-radius: 10px; flex: none;
+}
+.modal-range-select {
+  font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.spark-wrap-lg { margin-top: 14px; }
+svg.spark-lg { height: 260px; }
+.hist-modal-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 15px; }
+.hist-modal-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.hist-modal-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.hist-modal-note { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
 .q-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .q-badge {
   font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -579,6 +615,13 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     </div>
   </div>
 
+  <div id="update-banner" class="banner hidden">
+    <p>Linkmoth was updated on the server since this page loaded — reload to pick up the new version.</p>
+    <div class="banner-actions">
+      <button id="update-reload-btn" type="button" class="action-btn">Reload now</button>
+    </div>
+  </div>
+
   <button id="nav-burger" class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="main-nav">☰ Menu</button>
   <nav id="main-nav">
     <button id="nav-today" class="active">Today</button>
@@ -635,7 +678,10 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <div class="statgrid" id="stats"></div>
 
     <section class="card">
-      <h3>Latency history</h3>
+      <div class="hist-title-row">
+        <h3>Latency history</h3>
+        <button type="button" id="hist-expand-btn" class="action-btn hist-expand-btn">Expand</button>
+      </div>
       <p id="hist-meta" class="set-hint mt0">Loading history…</p>
       <div class="spark-wrap">
         <svg class="spark" id="spark-inet" viewBox="0 0 600 72" preserveAspectRatio="none" tabindex="0"></svg>
@@ -669,7 +715,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       </div>
       <p id="q-load" class="hint"></p>
       <p id="q-wifi" class="hint"></p>
-      <button type="button" id="q-load-btn" class="action-btn" title="Downloads up to 25 MB from the configured public test URL while measuring latency — grades how badly your connection bloats under load.">Test under load</button>
+      <p id="q-load-info" class="hint">Downloads a bounded test file from a public server to measure your line under real load.</p>
+      <button type="button" id="q-load-btn" class="action-btn" title="Downloads a bounded test file from a public server while measuring latency — grades how badly your connection bloats under load.">Test under load</button>
     </section>
 
     <section class="card">
@@ -1055,7 +1102,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         </div>
 
         <div class="set-section">
-          <h4>Read-only API tokens<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">For dashboards and widgets (Homepage, Glance, Home Assistant REST sensors). A token can only GET /api/status, /api/quality, and /api/report — it can never change settings or read secrets. Shown once at creation; revocable any time.</span></span></h4>
+          <h4>Read-only API tokens<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">For dashboards and widgets (Homepage, Glance, Home Assistant REST sensors). A token can only GET /api/status, /api/quality, /api/report, and /api/history — it can never change settings or read secrets. Shown once at creation; revocable any time.</span></span></h4>
           <div class="set-row"><label for="sec-token-name">Name</label>
             <input id="sec-token-name" type="text" placeholder="e.g. homepage widget" maxlength="60"></div>
           <button type="button" id="sec-token-create" class="action-btn">Create token</button>
@@ -1084,6 +1131,25 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     · <span>Copyright © 2026 Benas Urniežius · No warranty</span>
   </footer>
 </main>
+
+<div id="history-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="history-modal-title">Latency history</h3>
+      <div class="modal-head-controls">
+        <select id="history-modal-range" class="modal-range-select" aria-label="History range"></select>
+        <button type="button" id="history-modal-close" class="action-btn modal-close" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div class="spark-wrap spark-wrap-lg">
+      <svg class="spark spark-lg" id="history-modal-chart" viewBox="0 0 1000 260" preserveAspectRatio="none" tabindex="0"></svg>
+      <p class="spark-detail" id="history-modal-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
+    </div>
+    <div id="history-modal-legend" class="hist-modal-legend"></div>
+    <p id="history-modal-note" class="hist-modal-note"></p>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 
@@ -1106,10 +1172,18 @@ let csrfToken = null;
 let authReady = false;
 let holdAuthForRecoveryCodes = false;
 let localDnsRuntime = null;
+// The server version this page was loaded against. A standalone PWA (no
+// browser chrome, no pull-to-refresh — especially on iOS) can otherwise
+// keep running old JS against an upgraded server indefinitely, since
+// nothing ever tells the already-open window to reload.
+let loadedAppVersion = null;
+let reloadingForUpdate = false;
 let deviceData = [];
 let deviceMeta = null;
 let editingDeviceId = null;
 let devicesLoading = false;
+let historyLoading = false;
+let reportLoading = false;
 let latestStatus = null;
 const packetCache = {};
 function clearPacketCache() {
@@ -1450,6 +1524,232 @@ function spark(svgId, hist, key, color, label, detailId) {
   return valid[valid.length - 1];
 }
 
+function sparkMulti(svgId, hist, series, detailId) {
+  // Multi-series sibling of spark(): draws one line per entry in `series`
+  // (each { key, color, label }) sharing one x-axis and one hover cursor,
+  // for the expanded history modal. spark() itself stays single-series and
+  // untouched so the compact Today/device sparklines keep working exactly
+  // as before.
+  const svg = $(svgId);
+  const detail = $(detailId);
+  const box = svg.viewBox.baseVal;
+  const W = box && box.width ? box.width : 1000;
+  const H = box && box.height ? box.height : 260;
+  const PAD = 6;
+  svg.setAttribute(
+    "aria-label",
+    `${series.map((s) => s.label).join(" and ")} latency history. Hover or use the left and right arrow keys to inspect samples.`,
+  );
+  const allValid = series.some((s) => hist.some((h) => h.ms[s.key] != null));
+  if (!hist.length || !allValid) {
+    svg.innerHTML = "";
+    detail.textContent = "No latency samples available yet for this range.";
+    return;
+  }
+  const max = Math.max(
+    1,
+    ...series.flatMap((s) => hist.map((h) => h.ms[s.key]).filter((v) => v != null)),
+  ) * 1.15;
+  const timestamps = hist.map((h) => Number(h.ts));
+  const hasTimestamps = timestamps.every((ts) => Number.isFinite(ts));
+  const minTs = hasTimestamps ? Math.min(...timestamps) : 0;
+  const maxTs = hasTimestamps ? Math.max(...timestamps) : 0;
+  const hasTimeSpan = hasTimestamps && maxTs > minTs;
+  const x = (i) => {
+    if (hist.length === 1) return W / 2;
+    const ratio = hasTimeSpan
+      ? (timestamps[i] - minTs) / (maxTs - minTs)
+      : i / (hist.length - 1);
+    return PAD + ratio * (W - 2 * PAD);
+  };
+  const nearestIndexAtRatio = (ratio) => {
+    const targetX = PAD + ratio * (W - 2 * PAD);
+    let nearest = 0;
+    let distance = Infinity;
+    hist.forEach((_, i) => {
+      const candidate = Math.abs(x(i) - targetX);
+      if (candidate < distance) {
+        nearest = i;
+        distance = candidate;
+      }
+    });
+    return nearest;
+  };
+  const y = (v) => H - PAD - (v / max) * (H - 2 * PAD);
+  let marks = "";
+  hist.forEach((h, i) => {
+    if (h.severity === "bad") {
+      marks += `<line x1="${x(i).toFixed(1)}" y1="${PAD}" x2="${x(i).toFixed(1)}" y2="${H - PAD}" stroke="var(--bad-text)" stroke-width="2" opacity="0.5"/>`;
+    }
+  });
+  let paths = "";
+  for (const s of series) {
+    let d = "", pen = false;
+    hist.forEach((h, i) => {
+      const v = h.ms[s.key];
+      if (v == null) { pen = false; return; }
+      d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1);
+      pen = true;
+    });
+    paths += `<path data-series="${esc(s.key)}" d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+  }
+  svg.innerHTML = marks + paths
+    + `<line class="spark-cursor" visibility="hidden" stroke="var(--muted)" stroke-width="1" opacity="0.75"/>`
+    + series.map((s) =>
+      `<circle data-series="${esc(s.key)}" class="spark-point" visibility="hidden" r="4" fill="var(--card)" stroke="${s.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`
+    ).join("");
+  const cursor = svg.querySelector(".spark-cursor");
+  const points = {};
+  series.forEach((s) => { points[s.key] = svg.querySelector(`circle[data-series="${s.key}"]`); });
+  let selected = -1;
+
+  function nearestValid(index) {
+    const hasAny = (i) => series.some((s) => hist[i] && hist[i].ms[s.key] != null);
+    if (hasAny(index)) return index;
+    for (let offset = 1; offset < hist.length; offset += 1) {
+      if (hasAny(index - offset)) return index - offset;
+      if (hasAny(index + offset)) return index + offset;
+    }
+    return -1;
+  }
+  function show(index) {
+    selected = nearestValid(Math.max(0, Math.min(hist.length - 1, index)));
+    if (selected < 0) return;
+    const sample = hist[selected];
+    const px = x(selected);
+    cursor.setAttribute("x1", px.toFixed(1));
+    cursor.setAttribute("x2", px.toFixed(1));
+    cursor.setAttribute("y1", String(PAD));
+    cursor.setAttribute("y2", String(H - PAD));
+    cursor.setAttribute("visibility", "visible");
+    const parts = [];
+    for (const s of series) {
+      const v = sample.ms[s.key];
+      const point = points[s.key];
+      if (v == null) { point.setAttribute("visibility", "hidden"); continue; }
+      point.setAttribute("cx", px.toFixed(1));
+      point.setAttribute("cy", y(v).toFixed(1));
+      point.setAttribute("visibility", "visible");
+      parts.push(`${s.label} ${Math.round(v)} ms`);
+    }
+    const countNote = sample.sample_count > 1 ? ` (avg of ${sample.sample_count})` : "";
+    detail.textContent = `${fmtTs(sample.ts)} · ${parts.join(" · ")}${countNote}`;
+  }
+  function clear() {
+    selected = -1;
+    cursor.setAttribute("visibility", "hidden");
+    Object.values(points).forEach((p) => p.setAttribute("visibility", "hidden"));
+    detail.textContent = "Hover or focus the chart to inspect a sample.";
+  }
+  svg.onpointermove = (event) => {
+    const rect = svg.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    show(nearestIndexAtRatio(ratio));
+  };
+  svg.onpointerleave = () => { if (document.activeElement !== svg) clear(); };
+  svg.onfocus = () => show(hist.length - 1);
+  svg.onblur = clear;
+  svg.onkeydown = (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") show(0);
+    else if (event.key === "End") show(hist.length - 1);
+    else show((selected < 0 ? hist.length - 1 : selected) + (event.key === "ArrowLeft" ? -1 : 1));
+  };
+}
+
+const NETWORK_HISTORY_RANGES = [
+  ["6", "Last 6 hours"], ["24", "Last 24 hours"],
+  ["168", "Last 7 days"], ["720", "Last 30 days"],
+];
+const DEVICE_SPARK_HISTORY_MAX = 200;
+const DEVICE_HISTORY_RANGES = [
+  ["50", "Last 50 checks"], ["100", "Last 100 checks"],
+  [String(DEVICE_SPARK_HISTORY_MAX), `All available (up to ${DEVICE_SPARK_HISTORY_MAX})`],
+];
+
+let historyModal = null; // { kind: "network" } or { kind: "device", id, name }
+let historyModalOpener = null; // element to restore focus to on close
+
+function populateHistoryModalRangeOptions(kind) {
+  const sel = $("history-modal-range");
+  const options = kind === "network" ? NETWORK_HISTORY_RANGES : DEVICE_HISTORY_RANGES;
+  sel.innerHTML = options.map(([value, label]) =>
+    `<option value="${esc(value)}">${esc(label)}</option>`
+  ).join("");
+  sel.value = kind === "network" ? "24" : "100";
+}
+
+function historyModalLegendHtml(series) {
+  return series.map((s) =>
+    `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`
+  ).join("");
+}
+
+async function loadHistoryModalData() {
+  if (!historyModal) return;
+  const detail = $("history-modal-detail");
+  const note = $("history-modal-note");
+  detail.textContent = "Loading…";
+  note.textContent = "";
+  const range = $("history-modal-range").value;
+  try {
+    if (historyModal.kind === "network") {
+      const r = await fetch(`/api/history?hours=${encodeURIComponent(range)}`);
+      if (r.status === 401) { closeHistoryModal(); await ensureAuth(); return; }
+      if (!r.ok) throw new Error("history request failed");
+      const out = await r.json();
+      const hist = out.samples || [];
+      const series = [
+        { key: "raw_ping", color: "var(--line)", label: "Internet ping" },
+        { key: "gateway", color: "var(--line2)", label: "Router ping" },
+      ];
+      sparkMulti("history-modal-chart", hist, series, "history-modal-detail");
+      $("history-modal-legend").innerHTML = historyModalLegendHtml(series);
+      note.textContent = out.bucketed
+        ? `${hist.length} time buckets, averaged over ~${fmtDur(out.bucket_seconds)} each, to keep a long range readable.`
+        : `${hist.length} individual samples.`;
+    } else {
+      const r = await fetch(`/api/devices/${encodeURIComponent(historyModal.id)}/history?limit=${encodeURIComponent(range)}`);
+      if (r.status === 401) { closeHistoryModal(); await ensureAuth(); return; }
+      if (!r.ok) throw new Error("history request failed");
+      const out = await r.json();
+      const rows = out.history || [];
+      const hist = rows.map((run) => ({
+        ts: run.ts, severity: run.state === "down" ? "bad" : "ok",
+        ms: { latency: run.duration_ms },
+      }));
+      const series = [{ key: "latency", color: "var(--line)", label: "Check latency" }];
+      sparkMulti("history-modal-chart", hist, series, "history-modal-detail");
+      $("history-modal-legend").innerHTML = "";
+      note.textContent = `${hist.length} recent check(s). Devices keep up to ${DEVICE_SPARK_HISTORY_MAX} — this isn't a fixed calendar window.`;
+    }
+  } catch (e) {
+    detail.textContent = "Could not load history.";
+    $("history-modal-chart").innerHTML = "";
+  }
+}
+
+function openHistoryModal(kind, opts) {
+  historyModal = { kind, ...(opts || {}) };
+  historyModalOpener = document.activeElement;
+  $("history-modal-title").textContent =
+    kind === "network" ? "Latency history" : `${(opts && opts.name) || "Device"} — check latency`;
+  populateHistoryModalRangeOptions(kind);
+  $("history-modal").classList.remove("hidden");
+  loadHistoryModalData();
+  $("history-modal-close").focus();
+}
+
+function closeHistoryModal() {
+  historyModal = null;
+  $("history-modal").classList.add("hidden");
+  if (historyModalOpener && typeof historyModalOpener.focus === "function") {
+    historyModalOpener.focus();
+  }
+  historyModalOpener = null;
+}
+
 function checkState(c) {
   if (c.state) return c.state;
   if (c.ok === null) return "skipped";
@@ -1615,9 +1915,14 @@ async function copyPlainText(text) {
 }
 
 function fmtBytes(n) {
+  // Below 10 MB, stay in KB (0.1 KB / ~100-byte precision): Linkmoth's
+  // state.db is typically only a few MB, and a manual VACUUM often reclaims
+  // just a handful of KB. At 2-decimal MB precision that reclaim rounds
+  // away to nothing, so the size line reads as unchanged right next to a
+  // "reclaimed N KB" message that says otherwise.
   if (n == null || n < 0) return "–";
   if (n < 1024) return n + " B";
-  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  if (n < 1024 * 1024 * 10) return (n / 1024).toFixed(1) + " KB";
   return (n / 1048576).toFixed(2) + " MB";
 }
 
@@ -1861,38 +2166,21 @@ $("auth-totp-btn").addEventListener("click", doTotp);
 $("auth-totp").addEventListener("keydown", (e) => { if (e.key === "Enter") doTotp(); });
 $("logout-btn").addEventListener("click", doLogout);
 
-function renderQuality(q) {
-  const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
-  const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
-  const fmtMs = (v) => (v === null || v === undefined) ? "–" : Math.round(v) + " ms";
-  const fmtPct = (v) => (v === null || v === undefined) ? "–" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
-  if (!q || q.enabled === false) {
-    meta.textContent = q ? "Quality checks are off (enable in config)." : "Quality data unavailable.";
-    setBadge("q-unknown", "–");
-    $("q-latency").textContent = $("q-jitter").textContent = $("q-loss").textContent = "–";
-    reasons.textContent = "";
-    return;
-  }
-  const c = q.current;
-  if (!c) {
-    meta.textContent = "Measuring… first sample appears within a few minutes.";
-    setBadge("q-unknown", "–");
-    return;
-  }
-  setBadge("q-" + (c.state || "unknown"), c.state || "unknown");
-  $("q-latency").textContent = fmtMs(c.latency_ms);
-  $("q-jitter").textContent = fmtMs(c.jitter_ms);
-  $("q-loss").textContent = fmtPct(c.loss_pct);
-  const ago = c.ts ? Math.max(0, Math.round((Date.now() / 1000 - c.ts) / 60)) : null;
-  meta.textContent = "Internet path" + (ago !== null ? ` · updated ${ago} min ago` : "");
-  reasons.textContent = (c.reasons && c.reasons.length)
-    ? c.reasons.join(" · ")
-    : (c.state === "good" ? "Latency, jitter, and loss all look healthy." : "");
-  const findings = (q.findings && q.findings.findings) || [];
-  $("q-findings").textContent = findings.length
-    ? "Over the last week: " + findings.join(" ")
-    : "";
-  const lt = q.load_test;
+// True while a client-initiated load test is in flight. The periodic
+// auto-refresh tick (every ui_refresh_seconds, as low as 2s) re-renders the
+// whole quality card from the server's last-known result — which is still
+// the *previous* test, or none, for the ~20s the new one is running. Without
+// this guard, the very next tick would stomp the "Testing under load…"
+// status text right back to the stale result.
+let loadTestRunning = false;
+
+function renderLoadTest(lt) {
+  // Deliberately independent of the periodic ping sample (q.current):
+  // the load test runs on demand via its own button and can complete
+  // (and be worth showing) long before — or even without — a periodic
+  // quality sample ever landing, e.g. on a fresh install or when the
+  // background checker is disabled.
+  if (loadTestRunning) return;
   const loadResults = $("q-load-results");
   if (lt && lt.grade) {
     const age = lt.ts ? fmtAge(Date.now() / 1000 - lt.ts) : "";
@@ -1912,6 +2200,50 @@ function renderQuality(q) {
     loadResults.classList.add("hidden");
     $("q-load").textContent = "Bufferbloat not tested yet — a load test grades how latency holds up while the line is busy.";
   }
+}
+
+function renderLoadTestInfo(q) {
+  const cfg = q && q.load_test_config;
+  $("q-load-info").textContent = cfg && cfg.host
+    ? `Downloads up to ${cfg.max_mb || 25} MB from ${cfg.host} over up to ${cfg.seconds || 10} s to measure your line under load — normal data usage for one test.`
+    : "Downloads a bounded test file from a public server to measure your line under real load.";
+}
+
+function renderQuality(q) {
+  const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
+  const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
+  const fmtMs = (v) => (v === null || v === undefined) ? "–" : Math.round(v) + " ms";
+  const fmtPct = (v) => (v === null || v === undefined) ? "–" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
+  renderLoadTestInfo(q);
+  if (!q || q.enabled === false) {
+    meta.textContent = q ? "Quality checks are off (enable in config)." : "Quality data unavailable.";
+    setBadge("q-unknown", "–");
+    $("q-latency").textContent = $("q-jitter").textContent = $("q-loss").textContent = "–";
+    reasons.textContent = "";
+    renderLoadTest(q && q.load_test);
+    return;
+  }
+  const c = q.current;
+  if (!c) {
+    meta.textContent = "Measuring… first sample appears within a few minutes.";
+    setBadge("q-unknown", "–");
+    renderLoadTest(q.load_test);
+    return;
+  }
+  setBadge("q-" + (c.state || "unknown"), c.state || "unknown");
+  $("q-latency").textContent = fmtMs(c.latency_ms);
+  $("q-jitter").textContent = fmtMs(c.jitter_ms);
+  $("q-loss").textContent = fmtPct(c.loss_pct);
+  const ago = c.ts ? Math.max(0, Math.round((Date.now() / 1000 - c.ts) / 60)) : null;
+  meta.textContent = "Internet path" + (ago !== null ? ` · updated ${ago} min ago` : "");
+  reasons.textContent = (c.reasons && c.reasons.length)
+    ? c.reasons.join(" · ")
+    : (c.state === "good" ? "Latency, jitter, and loss all look healthy." : "");
+  const findings = (q.findings && q.findings.findings) || [];
+  $("q-findings").textContent = findings.length
+    ? "Over the last week: " + findings.join(" ")
+    : "";
+  renderLoadTest(q.load_test);
 }
 
 function fmtBytesShort(bytes) {
@@ -1953,6 +2285,45 @@ function renderHostHealth(host) {
     disk >= 95 ? "bad" : disk >= 85 ? "warn" : "");
 }
 
+function checkAppVersion(appInfo) {
+  const version = appInfo && appInfo.version;
+  if (!version) return;
+  if (loadedAppVersion === null) {
+    // First observation this page load — this becomes the baseline every
+    // later check compares against, not a "must reload" event.
+    loadedAppVersion = version;
+    return;
+  }
+  if (version !== loadedAppVersion && !reloadingForUpdate) {
+    $("update-banner").classList.remove("hidden");
+  }
+}
+
+$("update-reload-btn").addEventListener("click", () => {
+  reloadingForUpdate = true;
+  location.reload();
+});
+
+// A standalone PWA has no address bar to pull-to-refresh and, on iOS
+// especially, is often just resumed from a frozen/suspended state rather
+// than freshly navigated to — so nothing else here would ever notice the
+// server was upgraded while it was in the background. Reopening the app is
+// exactly the safe moment to reload automatically: the user just switched
+// back in, so nothing mid-interaction gets yanked away underneath them.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || reloadingForUpdate || !authReady) return;
+  fetch("/api/status")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((s) => {
+      const version = s && s.app && s.app.version;
+      if (version && loadedAppVersion !== null && version !== loadedAppVersion) {
+        reloadingForUpdate = true;
+        location.reload();
+      }
+    })
+    .catch(() => {});
+});
+
 async function refresh() {
   if (!authReady || holdAuthForRecoveryCodes) return;
   let s;
@@ -1969,6 +2340,7 @@ async function refresh() {
     $("age").textContent = "dashboard can't reach Linkmoth";
     return;
   }
+  checkAppVersion(s.app);
   try {
   if (s.auth) {
     csrfToken = s.auth.csrf_token || csrfToken;
@@ -2158,6 +2530,20 @@ async function refresh() {
   }
   if (!$("tab-devices").classList.contains("hidden")) loadDevices(true);
   if (!$("tab-settings").classList.contains("hidden")) loadWebhooks(true);
+  if (!$("tab-history").classList.contains("hidden")) {
+    loadHistory(true);
+    loadReport();
+  }
+  if (!$("tab-settings").classList.contains("hidden")
+      && !$("subtab-security").classList.contains("hidden")
+      // Not mid-TOTP-enrollment: loadSecurityPosture() hides the QR/secret
+      // card whenever totp_enabled is still false, which is exactly the
+      // state a fresh, not-yet-confirmed enrollment is in — a periodic
+      // refresh here would tear the in-progress setup off the screen.
+      && $("sec-totp-enroll").classList.contains("hidden")) {
+    loadAuditLog();
+    loadSecurityPosture();
+  }
   } catch (e) {
     console.error("refresh render failed", e);
   }
@@ -2253,41 +2639,46 @@ function incidentSummaryHtml(inc) {
 let lastReport = null;
 
 async function loadReport() {
-  if (!authReady) return;
-  const days = $("report-days").value;
-  let report;
+  if (!authReady || reportLoading) return;
+  reportLoading = true;
   try {
-    const resp = await fetch(`/api/report?days=${encodeURIComponent(days)}`);
-    if (resp.status === 401) { await ensureAuth(); return; }
-    report = await resp.json();
-  } catch (e) {
-    $("report-summary").innerHTML = `<p class="empty">Can't reach Linkmoth.</p>`;
-    return;
+    const days = $("report-days").value;
+    let report;
+    try {
+      const resp = await fetch(`/api/report?days=${encodeURIComponent(days)}`);
+      if (resp.status === 401) { await ensureAuth(); return; }
+      report = await resp.json();
+    } catch (e) {
+      $("report-summary").innerHTML = `<p class="empty">Can't reach Linkmoth.</p>`;
+      return;
+    }
+    lastReport = report;
+    const parts = [];
+    const uptime = report.uptime_pct != null ? `${report.uptime_pct}% uptime · ` : "";
+    parts.push(`<p>${countPhrase(report.incident_count, "incident")} and ${countPhrase(report.false_alarms, "false alarm")} in the last ${report.days} days · ${uptime}${fmtDur(report.downtime_s)} total downtime.</p>`);
+    if (report.isp && report.isp.count) {
+      const peak = report.isp.peak_hours
+        ? `, clustering ${String(report.isp.peak_hours.start_hour).padStart(2, "0")}:00–${String(report.isp.peak_hours.end_hour).padStart(2, "0")}:00 local time`
+        : "";
+      parts.push(`<p><b>${countPhrase(report.isp.count, "provider-path outage")}</b> totalling ${fmtDur(report.isp.downtime_s)}${peak}.</p>`);
+    } else {
+      parts.push(`<p>No provider-path outages recorded in this window.</p>`);
+    }
+    if (report.longest) {
+      const recovered = report.longest.recovered_at ? fmtTs(report.longest.recovered_at) : "not yet observed";
+      const closed = report.longest.resolved ? fmtTs(report.longest.resolved) : "still open";
+      parts.push(`<p>Longest outage: <span class="inc-ref">${esc(report.longest.ref || "–")}</span> · ${fmtDur(report.longest.window_downtime_s)} observed downtime · ${fmtDur(report.longest.incident_duration_s)} incident duration · network recovered ${esc(recovered)} · incident closed ${esc(closed)} · ${esc(report.longest.title || report.longest.code || "")}.</p>`);
+    }
+    const blame = Object.entries(report.blame || {});
+    if (blame.length) {
+      parts.push(`<p class="hint">${blame.map(([code, b]) => `${esc(code)}: ${b.count}× (${fmtDur(b.downtime_s)})`).join(" · ")}</p>`);
+    }
+    $("report-summary").innerHTML = parts.join("");
+    $("report-copy").classList.remove("hidden");
+    $("report-csv").classList.remove("hidden");
+  } finally {
+    reportLoading = false;
   }
-  lastReport = report;
-  const parts = [];
-  const uptime = report.uptime_pct != null ? `${report.uptime_pct}% uptime · ` : "";
-  parts.push(`<p>${countPhrase(report.incident_count, "incident")} and ${countPhrase(report.false_alarms, "false alarm")} in the last ${report.days} days · ${uptime}${fmtDur(report.downtime_s)} total downtime.</p>`);
-  if (report.isp && report.isp.count) {
-    const peak = report.isp.peak_hours
-      ? `, clustering ${String(report.isp.peak_hours.start_hour).padStart(2, "0")}:00–${String(report.isp.peak_hours.end_hour).padStart(2, "0")}:00 local time`
-      : "";
-    parts.push(`<p><b>${countPhrase(report.isp.count, "provider-path outage")}</b> totalling ${fmtDur(report.isp.downtime_s)}${peak}.</p>`);
-  } else {
-    parts.push(`<p>No provider-path outages recorded in this window.</p>`);
-  }
-  if (report.longest) {
-    const recovered = report.longest.recovered_at ? fmtTs(report.longest.recovered_at) : "not yet observed";
-    const closed = report.longest.resolved ? fmtTs(report.longest.resolved) : "still open";
-    parts.push(`<p>Longest outage: <span class="inc-ref">${esc(report.longest.ref || "–")}</span> · ${fmtDur(report.longest.window_downtime_s)} observed downtime · ${fmtDur(report.longest.incident_duration_s)} incident duration · network recovered ${esc(recovered)} · incident closed ${esc(closed)} · ${esc(report.longest.title || report.longest.code || "")}.</p>`);
-  }
-  const blame = Object.entries(report.blame || {});
-  if (blame.length) {
-    parts.push(`<p class="hint">${blame.map(([code, b]) => `${esc(code)}: ${b.count}× (${fmtDur(b.downtime_s)})`).join(" · ")}</p>`);
-  }
-  $("report-summary").innerHTML = parts.join("");
-  $("report-copy").classList.remove("hidden");
-  $("report-csv").classList.remove("hidden");
 }
 
 $("report-copy").addEventListener("click", async () => {
@@ -2321,51 +2712,111 @@ $("report-csv").addEventListener("click", async () => {
   }
 });
 
-async function loadHistory() {
-  if (!authReady) return;
-  const code = $("hist-filter").value;
-  let data;
+function openDetailKeys(root) {
+  const keys = new Set();
+  root.querySelectorAll("details[open]").forEach((details) => {
+    const summary = Array.from(details.children).find((child) => child.tagName === "SUMMARY");
+    const runIndex = details.dataset.runIndex || "";
+    keys.add(`${details.className}|${runIndex}|${summary ? summary.textContent.trim() : ""}`);
+  });
+  return keys;
+}
+
+function renderPacketSlot(slot, packet, savedOpenKeys) {
+  const keys = savedOpenKeys || openDetailKeys(slot);
+  slot.innerHTML = renderPacket(packet) + falseAlarmActionHtml(packet.incident);
+  slot.querySelectorAll("details").forEach((details) => {
+    const summary = Array.from(details.children).find((child) => child.tagName === "SUMMARY");
+    const runIndex = details.dataset.runIndex || "";
+    const key = `${details.className}|${runIndex}|${summary ? summary.textContent.trim() : ""}`;
+    if (keys.has(key)) details.open = true;
+  });
+}
+
+async function refreshOpenIncidentPackets() {
+  // Refresh changing evidence in place while retaining nested sections the
+  // reader expanded. Resolved packets are final and need no further fetches.
+  const openDetails = document.querySelectorAll("details.inc[open]");
+  for (const el of openDetails) {
+    const id = el.dataset.id;
+    const cached = packetCache[id];
+    if (cached && cached.incident && cached.incident.resolved) continue;
+    try {
+      const pr = await fetch("/api/incident?id=" + id);
+      if (pr.status === 401) return;
+      packetCache[id] = await pr.json();
+      const slot = el.querySelector(".packet-slot");
+      if (slot) renderPacketSlot(slot, packetCache[id]);
+    } catch (e) { /* keep showing the last good copy */ }
+  }
+}
+
+async function loadHistory(silent) {
+  if (!authReady || historyLoading) return;
+  const openPackets = new Map();
+  document.querySelectorAll("details.inc[open]").forEach((details) => {
+    const slot = details.querySelector(".packet-slot");
+    openPackets.set(details.dataset.id, slot ? openDetailKeys(slot) : new Set());
+  });
+  historyLoading = true;
   try {
+    const code = $("hist-filter").value;
+    let data;
     const resp = await fetch("/api/incidents?limit=100" + (code ? "&code=" + encodeURIComponent(code) : ""));
     if (resp.status === 401) { await ensureAuth(); return; }
+    if (!resp.ok) throw new Error("history request failed");
     data = await resp.json();
-  } catch (e) {
-    $("hist-list").innerHTML = `<p class="empty">Can't reach Linkmoth.</p>`;
-    return;
-  }
-  if (lastStats) {
-    let statsLine =
-      `30 days: ${lastStats.uptime_pct}% uptime · ${lastStats.incidents_30d} incidents · ${lastStats.downtime_s ? fmtDur(lastStats.downtime_s) + " down" : "no downtime"}`;
-    if (data.pattern) {
-      const extra = formatPattern(data.pattern, code);
-      if (extra) statsLine += ` · ${extra}`;
-    }
-    $("hist-stats").textContent = statsLine;
-  }
-  const list = data.incidents || [];
-  if (!list.length) {
-    $("hist-list").innerHTML = `<p class="empty">Nothing here. Either it never broke, or the filter is too picky.</p>`;
-    return;
-  }
-  $("hist-list").innerHTML = list.map((i) =>
-    `<details class="inc" data-id="${i.id}"${i.ref ? ` data-ref="${esc(i.ref)}"` : ""}>${incidentSummaryHtml(i)}
-      <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`
-  ).join("");
-  document.querySelectorAll("details.inc").forEach((el) => {
-    el.addEventListener("toggle", async () => {
-      if (!el.open) return;
-      const id = el.dataset.id;
-      if (!packetCache[id]) {
-        try {
-          const pr = await fetch("/api/incident?id=" + id);
-          if (pr.status === 401) return;
-          packetCache[id] = await pr.json();
-        } catch (e) { return; }
+    if (lastStats) {
+      let statsLine =
+        `30 days: ${lastStats.uptime_pct}% uptime · ${lastStats.incidents_30d} incidents · ${lastStats.downtime_s ? fmtDur(lastStats.downtime_s) + " down" : "no downtime"}`;
+      if (data.pattern) {
+        const extra = formatPattern(data.pattern, code);
+        if (extra) statsLine += ` · ${extra}`;
       }
-      el.querySelector(".packet-slot").innerHTML =
-        renderPacket(packetCache[id]) + falseAlarmActionHtml(packetCache[id].incident);
+      $("hist-stats").textContent = statsLine;
+    }
+    const list = data.incidents || [];
+    if (!list.length) {
+      $("hist-list").innerHTML = `<p class="empty">Nothing here. Either it never broke, or the filter is too picky.</p>`;
+      return;
+    }
+    $("hist-list").innerHTML = list.map((i) =>
+      `<details class="inc" data-id="${i.id}"${i.ref ? ` data-ref="${esc(i.ref)}"` : ""}>${incidentSummaryHtml(i)}
+        <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`
+    ).join("");
+    document.querySelectorAll("details.inc").forEach((el) => {
+      el.addEventListener("toggle", async () => {
+        if (!el.open) return;
+        const id = el.dataset.id;
+        if (!packetCache[id]) {
+          try {
+            const pr = await fetch("/api/incident?id=" + id);
+            if (pr.status === 401) return;
+            packetCache[id] = await pr.json();
+          } catch (e) { return; }
+        }
+        renderPacketSlot(el.querySelector(".packet-slot"), packetCache[id]);
+      });
+      const savedOpenKeys = openPackets.get(el.dataset.id);
+      if (savedOpenKeys) {
+        el.open = true;
+        if (packetCache[el.dataset.id]) {
+          renderPacketSlot(
+            el.querySelector(".packet-slot"),
+            packetCache[el.dataset.id],
+            savedOpenKeys,
+          );
+        }
+      }
     });
-  });
+    await refreshOpenIncidentPackets();
+  } catch (e) {
+    if (!silent) {
+      $("hist-list").innerHTML = `<p class="empty">Can't reach Linkmoth.</p>`;
+    }
+  } finally {
+    historyLoading = false;
+  }
 }
 
 function falseAlarmActionHtml(inc) {
@@ -2406,6 +2857,7 @@ function renderDeviceCard(d) {
       <svg class="spark" id="spark-dev-${esc(d.id)}" viewBox="0 0 600 72" preserveAspectRatio="none" tabindex="0"></svg>
       <p class="spark-detail" id="spark-dev-${esc(d.id)}-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
       <div class="spark-label"><span>Check latency</span><span>${d.latency && d.latency.length ? Math.round(d.latency[d.latency.length - 1].ms) + " ms" : "–"}</span></div>
+      <button type="button" class="action-btn hist-expand-btn" data-device-action="expand-history" data-device-id="${esc(d.id)}">Expand</button>
     </div>
     <div class="device-actions">
       <button type="button" class="action-btn" data-device-action="run" data-device-id="${esc(d.id)}"${!d.enabled || d.running ? " disabled" : ""}>Run now</button>
@@ -2419,15 +2871,15 @@ function renderDeviceCard(d) {
   </section>`;
 }
 
-async function loadDeviceHistory(details) {
+async function loadDeviceHistory(details, silent) {
   const id = details.dataset.deviceHistory;
   const slot = details.querySelector(".device-history-list");
-  slot.innerHTML = `<p class="empty">Loading…</p>`;
+  if (!silent) slot.innerHTML = `<p class="empty">Loading…</p>`;
   try {
     const r = await fetch(`/api/devices/${encodeURIComponent(id)}/history?limit=20`);
     const out = await r.json();
     if (!r.ok) {
-      slot.innerHTML = `<p class="empty">${esc(out.error || "Could not load history.")}</p>`;
+      if (!silent) slot.innerHTML = `<p class="empty">${esc(out.error || "Could not load history.")}</p>`;
       return;
     }
     const rows = out.history || [];
@@ -2440,7 +2892,9 @@ async function loadDeviceHistory(details) {
        <span class="when">· ${esc(run.source)}</span><br><span class="when">${esc(run.summary)}</span></div>`
     ).join("");
   } catch (e) {
-    slot.innerHTML = `<p class="empty">Could not reach Linkmoth.</p>`;
+    // A background refresh failing is not worth replacing a working panel
+    // with an error message; just keep showing the last good copy.
+    if (!silent) slot.innerHTML = `<p class="empty">Could not reach Linkmoth.</p>`;
   }
 }
 
@@ -2467,6 +2921,10 @@ function bindDeviceCards() {
         if (device) openDeviceForm(device);
       }
       if (button.dataset.deviceAction === "delete") deleteDevice(id);
+      if (button.dataset.deviceAction === "expand-history") {
+        const device = deviceData.find((item) => item.id === id);
+        openHistoryModal("device", { id, name: device ? device.name : "Device" });
+      }
     });
   });
   $("device-list").querySelectorAll("[data-device-history]").forEach((details) => {
@@ -2481,10 +2939,11 @@ function bindDeviceCards() {
 
 async function loadDevices(silent) {
   if (!authReady || devicesLoading) return;
-  if (silent && (
-    !$("device-form").classList.contains("hidden")
-    || $("device-list").querySelector("details[open]")
-  )) return;
+  if (silent && !$("device-form").classList.contains("hidden")) return;
+  const openDeviceIds = new Set(
+    Array.from($("device-list").querySelectorAll("details.device-history[open]"))
+      .map((details) => details.dataset.deviceHistory),
+  );
   devicesLoading = true;
   try {
     const r = await fetch("/api/devices");
@@ -2507,6 +2966,14 @@ async function loadDevices(silent) {
       $("device-list").innerHTML = deviceData.map(renderDeviceCard).join("");
       bindDeviceCards();
       renderDeviceSparks(deviceData);
+      const historyRefreshes = [];
+      $("device-list").querySelectorAll("details.device-history").forEach((details) => {
+        if (!openDeviceIds.has(details.dataset.deviceHistory)) return;
+        details.dataset.loaded = "true";
+        details.open = true;
+        historyRefreshes.push(loadDeviceHistory(details, true));
+      });
+      await Promise.all(historyRefreshes);
     }
     const channels = out.channels || {};
     const unavailable = Object.entries(channels).filter(([, ready]) => !ready).map(([name]) => name);
@@ -3030,7 +3497,7 @@ function showTab(name) {
     $("nav-" + t).classList.toggle("active", t === name);
   }
   if (name === "devices") loadDevices(false);
-  if (name === "history") { loadHistory(); if (!lastReport) loadReport(); }
+  if (name === "history") { loadHistory(); loadReport(); }
   if (name === "settings") showSettingsSubtab(currentSettingsSubtab);
   closeNavMenu();
   // Reflect the tab in the URL fragment so PWA shortcuts (/#history) and
@@ -3081,7 +3548,11 @@ document.addEventListener("click", (ev) => {
   if (tip) tip.classList.toggle("open");
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") { document.querySelectorAll(".info-tip.open").forEach((t) => t.classList.remove("open")); return; }
+  if (ev.key === "Escape") {
+    document.querySelectorAll(".info-tip.open").forEach((t) => t.classList.remove("open"));
+    if (historyModal) closeHistoryModal();
+    return;
+  }
   if (ev.key === "Enter" || ev.key === " ") {
     const el = document.activeElement;
     if (el && el.classList && el.classList.contains("info-tip")) { ev.preventDefault(); el.classList.toggle("open"); }
@@ -3620,6 +4091,13 @@ $("hist-ref").addEventListener("keydown", (e) => {
   if (e.key === "Enter") openIncidentByRef($("hist-ref").value);
 });
 
+$("hist-expand-btn").addEventListener("click", () => openHistoryModal("network"));
+$("history-modal-close").addEventListener("click", closeHistoryModal);
+$("history-modal").addEventListener("click", (ev) => {
+  if (ev.target.id === "history-modal") closeHistoryModal();
+});
+$("history-modal-range").addEventListener("change", loadHistoryModalData);
+
 $("diagnose").addEventListener("click", async () => {
   verifyHighlight = null;
   $("verify-result").classList.add("hidden");
@@ -3827,26 +4305,30 @@ $("q-load-btn").addEventListener("click", async () => {
   const btn = $("q-load-btn");
   btn.disabled = true;
   btn.textContent = "Testing…";
+  loadTestRunning = true;
+  const stopRunning = () => {
+    loadTestRunning = false;
+    btn.disabled = false;
+    btn.textContent = "Test under load";
+  };
   try {
     const r = await fetch("/api/quality/load-test", {
       method: "POST", headers: authHeaders(),
     });
     const body = await r.json().catch(() => ({}));
-    if (r.status === 401) { await ensureAuth(); return; }
+    if (r.status === 401) { stopRunning(); await ensureAuth(); return; }
     if (!r.ok) {
+      stopRunning();
       $("q-load").textContent = body.error || "Load test could not start.";
       return;
     }
     $("q-load").textContent = "Testing under load — takes about 20 seconds…";
-    // The test runs server-side; refresh the quality card once it's done.
-    setTimeout(refresh, 22000);
+    // The test runs server-side; only now clear the flag and refresh, so
+    // auto-refresh ticks during the wait leave this status text alone.
+    setTimeout(() => { stopRunning(); refresh(); }, 22000);
   } catch (e) {
+    stopRunning();
     $("q-load").textContent = "Load test could not start.";
-  } finally {
-    setTimeout(() => {
-      btn.disabled = false;
-      btn.textContent = "Test under load";
-    }, 22000);
   }
 });
 

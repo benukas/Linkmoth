@@ -98,6 +98,61 @@ class DiscordEmbedTests(unittest.TestCase):
         ladder = next(f for f in embed["fields"] if f["name"] == "Fault ladder")
         self.assertIn("🟢 Raw internet (ping)", ladder["value"])
 
+    def test_recovery_embed_prefers_fault_checks_over_healthy_checks(self):
+        # This is the reported bug: a WAN-down recovery notification with
+        # only the just-confirmed *healthy* ladder tells the reader nothing
+        # about what was actually wrong. When fault_checks is available it
+        # must be what's shown, not the all-green closing run.
+        data = linkmoth_discord.incident_payload(
+            {"id": None, "ref": None, "started": time.time() - 2820,
+             "source": "linkmoth", "detail": "Global outage cleared"},
+            {"severity": "ok", "code": "all_clear", "title": "All network checks passed",
+             "explain": "Router, local DNS, upstream DNS, ping and HTTPS all respond normally.",
+             "hint": ""},
+            "recovery",
+            prior_fault={"code": "wan_down", "title": "Internet is dead beyond the router"},
+            checks=[
+                {"id": "raw_ping", "label": "Internet ping", "ok": True, "detail": "1.1.1.1: 11 ms"},
+                {"id": "gateway", "label": "Router", "ok": True, "detail": "1 ms"},
+            ],
+            fault_checks=[
+                {"id": "raw_ping", "label": "Internet ping", "ok": False, "detail": "1.1.1.1: no reply"},
+                {"id": "gateway", "label": "Router", "ok": True, "detail": "1 ms"},
+            ],
+        )
+        embed = linkmoth_discord.build_embed(data, "recovery")
+        ladder = next(f for f in embed["fields"] if f["name"].startswith("Fault ladder"))
+        self.assertEqual(ladder["name"], "Fault ladder (at time of fault)")
+        self.assertIn("🔴 Internet ping: 1.1.1.1: no reply", ladder["value"])
+        self.assertNotIn("🟢 Internet ping", ladder["value"])
+
+    def test_recovery_embed_without_fault_checks_falls_back_to_current(self):
+        data = linkmoth_discord.incident_payload(
+            {"id": 9, "ref": "INC-20260710-0009", "started": time.time() - 120,
+             "source": "incident-loop", "detail": "test"},
+            {"severity": "ok", "code": "all_clear", "title": "All clear", "explain": "", "hint": ""},
+            "recovery",
+            checks=[{"id": "raw_ping", "label": "Internet ping", "ok": True, "detail": "ok"}],
+        )
+        embed = linkmoth_discord.build_embed(data, "recovery")
+        ladder = next(f for f in embed["fields"] if f["name"].startswith("Fault ladder"))
+        self.assertEqual(ladder["name"], "Fault ladder")
+
+    def test_recovery_embed_omits_incident_field_for_global_outage(self):
+        # The outage tracker's recovery has no real incidents-table row —
+        # a bare "Incident: —" field is noise, not information.
+        data = linkmoth_discord.incident_payload(
+            {"id": None, "ref": None, "started": time.time() - 60,
+             "source": "linkmoth", "detail": "Global outage cleared"},
+            {"severity": "ok", "code": "all_clear", "title": "All clear", "explain": "", "hint": ""},
+            "recovery",
+            prior_fault={"code": "wan_down", "title": "WAN down"},
+        )
+        embed = linkmoth_discord.build_embed(data, "recovery")
+        self.assertFalse(any(f["name"] == "Incident" for f in embed["fields"]))
+        duration_field = next(f for f in embed["fields"] if f["name"] == "Duration")
+        self.assertNotEqual(duration_field["value"], "—")
+
     def test_recovery_embed_includes_suppressed_digest(self):
         data = linkmoth_discord.incident_payload(
             {"id": 5, "started": time.time() - 900, "source": "kuma-down", "detail": "wan"},
