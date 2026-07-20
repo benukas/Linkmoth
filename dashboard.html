@@ -11,8 +11,7 @@
 <!-- iOS "Add to Home Screen" ignores the Web App Manifest's icons array
      entirely — it only ever looks at apple-touch-icon link tags. Without
      this, Safari falls back to a screenshot of the page as the icon. -->
-<link rel="apple-touch-icon" href="/linkmoth-icon-192.png">
-<link rel="apple-touch-icon" sizes="512x512" href="/linkmoth-icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/linkmoth-icon-180.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
@@ -158,26 +157,80 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
 #history-modal.hidden { display: none; }
 .modal-box {
   background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-  padding: 20px 22px; max-width: 900px; width: 100%; height: fit-content;
+  padding: 22px 24px 24px; max-width: 980px; width: 100%; height: fit-content;
   box-shadow: 0 12px 40px color-mix(in srgb, var(--bg) 40%, black 20%);
 }
-.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 4px; }
+.modal-head-copy { min-width: 0; }
 .modal-head h3 { margin: 0; font-size: 19px; color: var(--text); }
-.modal-head-controls { display: flex; align-items: center; gap: 10px; }
+.modal-subtitle { margin: 4px 0 0; color: var(--muted); font-size: 14px; line-height: 1.4; text-wrap: pretty; }
+.modal-head-controls { display: flex; align-items: center; gap: 10px; margin-left: auto; flex: none; }
 .modal-close {
-  width: 40px; height: 40px; padding: 0; font-size: 22px; line-height: 1;
-  border-radius: 10px; flex: none;
+  display: grid; place-items: center; width: 40px; height: 40px; min-width: 40px;
+  min-height: 40px; padding: 0; line-height: 0; border-radius: 10px; flex: none;
 }
-.modal-range-select {
-  font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 8px;
-  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+.modal-close svg { display: block; width: 18px; height: 18px; }
+.modal-head-controls .custom-select { flex: none; width: 190px; min-width: 0; }
+.modal-head-controls .custom-select-trigger {
+  height: 40px; min-height: 40px; padding: 0 13px; border-radius: 10px;
+  background: var(--bg); font-size: 15px; font-weight: 600;
 }
-.spark-wrap-lg { margin-top: 14px; }
-svg.spark-lg { height: 260px; }
-.hist-modal-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 15px; }
+.modal-head-controls .custom-select-menu { left: auto; right: 0; min-width: 100%; width: max-content; max-width: 280px; }
+.modal-range-label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-head-controls .custom-select-menu li { font-size: 15px; white-space: nowrap; }
+.hist-modal-overview {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.hist-modal-overview > .empty { grid-column: 1 / -1; margin: 14px 0; }
+.hist-overview-item { min-width: 0; padding: 13px 16px; border-left: 1px solid var(--border); }
+.hist-overview-item:first-child { padding-left: 0; border-left: 0; }
+.hist-overview-item .k { display: block; color: var(--muted); font-size: 13px; }
+.hist-overview-item .v {
+  display: block; margin-top: 2px; color: var(--text); font-size: 20px;
+  font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums;
+}
+.hist-stats-wrap { margin-top: 18px; overflow-x: auto; }
+.hist-stats-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 7px; }
+.hist-stats-heading h4 { margin: 0; color: var(--text); font-size: 15px; }
+.hist-stats-heading span { color: var(--muted); font-size: 13px; }
+.hist-stats-table { width: 100%; min-width: 540px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.hist-stats-table th, .hist-stats-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: right; }
+.hist-stats-table thead th { color: var(--muted); font-size: 12px; font-weight: 500; }
+.hist-stats-table th:first-child { padding-left: 0; text-align: left; }
+.hist-stats-table td { color: var(--text); font-size: 15px; font-weight: 600; }
+.hist-series-name { display: inline-flex; align-items: center; gap: 7px; color: var(--text); font-size: 14px; font-weight: 600; }
+.hist-series-name i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.hist-swatch-line { background: var(--line); }
+.hist-swatch-line2 { background: var(--line2); }
+.hist-chart-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; }
+.hist-range-label { margin: 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+.spark-wrap-lg { margin-top: 6px; }
+svg.spark-lg { height: 300px; }
+.hist-inspector {
+  min-height: 42px; margin: 8px 0 0; padding: 10px 12px;
+  border-left: 3px solid var(--line); background: var(--bg); border-radius: 0 8px 8px 0;
+  color: var(--text); font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums;
+}
+.hist-modal-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0; font-size: 14px; }
 .hist-modal-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .hist-modal-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-.hist-modal-note { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+.hist-modal-note { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 10px 0 0; }
+@media (max-width: 700px) {
+  #history-modal { padding: 12px; }
+  .modal-box { padding: 18px 16px 20px; }
+  .modal-head { align-items: flex-start; }
+  .modal-subtitle { max-width: 34ch; }
+  .modal-head-controls { gap: 7px; }
+  .modal-head-controls .custom-select { width: 142px; }
+  .hist-modal-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hist-overview-item { padding: 11px 12px; }
+  .hist-overview-item:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .hist-overview-item:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  .hist-chart-head { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .hist-range-label { text-align: left; }
+  svg.spark-lg { height: 230px; }
+}
 .q-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .q-badge {
   font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em;
@@ -446,6 +499,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .subnav-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 .set-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
 .set-section h4 { margin: 0 0 10px; font-size: 18px; font-weight: 600; color: var(--text); }
+.drill-panel { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.drill-panel ol { margin: 12px 0; padding-left: 22px; }
+.drill-panel .action-bar { margin-bottom: 0; }
 #save-settings { margin-top: 14px; }
 #vacuum-db { margin-right: 12px; }
 #settings-msg, #db-msg { margin-left: 12px; font-size: 16px; }
@@ -651,24 +707,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <div class="action-bar">
       <button id="diagnose" type="button" class="action-btn action-btn-primary">Diagnose now</button>
       <button id="copy-diagnosis" type="button" class="action-btn hidden">Copy support summary</button>
-      <button id="drill-open" type="button" class="action-btn">Fire drill</button>
     </div>
-    <p id="drill-hint" class="hint hidden">New here? Run the one-minute <b>fire drill</b>: unplug your WAN cable and watch Linkmoth catch and diagnose the outage live.</p>
-
-    <section class="card hidden" id="drill-card">
-      <h3>Fire drill — watch Linkmoth catch a real outage</h3>
-      <p class="hint">Takes about a minute and briefly interrupts internet for everyone on this network. Best done when nobody is on a call.</p>
-      <ol>
-        <li><b>Unplug the router's WAN cable</b> — the one coming from the modem or wall socket (not a LAN cable). Then press the first button.</li>
-        <li>When Linkmoth has caught it, <b>plug the cable back in</b> and press the second button to verify recovery.</li>
-      </ol>
-      <p id="drill-status" class="hint"></p>
-      <div class="action-bar">
-        <button type="button" id="drill-go" class="action-btn action-btn-primary">I unplugged it — diagnose</button>
-        <button type="button" id="drill-verify" class="action-btn hidden">It's plugged back in — verify recovery</button>
-        <button type="button" id="drill-dismiss" class="action-btn">Close</button>
-      </div>
-    </section>
     <div id="incident-actions" class="action-bar hidden">
       <button type="button" id="incident-recheck" class="action-btn">Recheck open incident</button>
       <button type="button" id="incident-close" class="action-btn">Close incident</button>
@@ -888,6 +927,25 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <h4>Dashboard</h4>
           <div class="set-row"><label for="s-refresh">Auto-refresh (seconds)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">How often the dashboard re-fetches data. Does not run new network checks by itself.</span></span></label><input id="s-refresh" type="number" min="2" max="120" step="1"></div>
           <div class="set-row"><label for="s-kuma">Uptime Kuma link<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</span></span></label><input id="s-kuma" placeholder="auto"></div>
+        </div>
+        <div class="set-section" id="fire-drill-settings">
+          <h4>Fire drill</h4>
+          <p class="set-hint">Practice detecting and recovering from a real WAN outage. Run this when a brief internet interruption will not disrupt anyone.</p>
+          <button id="drill-open" type="button" class="action-btn" aria-expanded="false" aria-controls="drill-card">Start fire drill</button>
+          <p id="drill-hint" class="set-hint hidden">New here? Run the one-minute <b>fire drill</b> to watch Linkmoth catch and diagnose an outage live.</p>
+          <div class="drill-panel hidden" id="drill-card">
+            <p class="device-warning"><b>Plan for a short interruption.</b> This takes about a minute and briefly interrupts internet for everyone on this network.</p>
+            <ol>
+              <li><b>Unplug the router's WAN cable</b>, the one coming from the modem or wall socket (not a LAN cable). Then press the first button.</li>
+              <li>When Linkmoth has caught it, <b>plug the cable back in</b> and press the second button to verify recovery.</li>
+            </ol>
+            <p id="drill-status" class="hint" aria-live="polite"></p>
+            <div class="action-bar">
+              <button type="button" id="drill-go" class="action-btn action-btn-primary">I unplugged it - diagnose</button>
+              <button type="button" id="drill-verify" class="action-btn hidden">It's plugged back in - verify recovery</button>
+              <button type="button" id="drill-dismiss" class="action-btn">Close</button>
+            </div>
+          </div>
         </div>
         <div class="set-section" id="release-settings">
           <h4>Installation and updates<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">The update check only runs when you press the button. GitHub receives this host's public IP, request time, ordinary TLS/HTTP metadata, and Linkmoth's generic User-Agent. Linkmoth sends no identifier, configuration, incident data, diagnostics, credentials, or usage telemetry.</span></span></h4>
@@ -1132,20 +1190,38 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   </footer>
 </main>
 
-<div id="history-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+<div id="history-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="history-modal-title" aria-describedby="history-modal-subtitle">
   <div class="modal-box">
     <div class="modal-head">
-      <h3 id="history-modal-title">Latency history</h3>
+      <div class="modal-head-copy">
+        <h3 id="history-modal-title">Latency history</h3>
+        <p id="history-modal-subtitle" class="modal-subtitle">Typical latency, peaks, faults and gaps for the selected window.</p>
+      </div>
       <div class="modal-head-controls">
-        <select id="history-modal-range" class="modal-range-select" aria-label="History range"></select>
-        <button type="button" id="history-modal-close" class="action-btn modal-close" aria-label="Close">×</button>
+        <div class="custom-select" id="history-modal-range-wrap">
+          <button type="button" class="action-btn custom-select-trigger" id="history-modal-range-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="history-modal-range-menu">
+            <span id="history-modal-range-label-text" class="modal-range-label-text">Last 24 hours</span>
+            <span class="custom-select-chevron" aria-hidden="true">▾</span>
+          </button>
+          <ul class="custom-select-menu hidden" id="history-modal-range-menu" role="listbox" tabindex="-1"></ul>
+          <select id="history-modal-range" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+        </div>
+        <button type="button" id="history-modal-close" class="action-btn modal-close" aria-label="Close latency history">
+          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
       </div>
     </div>
-    <div class="spark-wrap spark-wrap-lg">
-      <svg class="spark spark-lg" id="history-modal-chart" viewBox="0 0 1000 260" preserveAspectRatio="none" tabindex="0"></svg>
-      <p class="spark-detail" id="history-modal-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
+    <div id="history-modal-overview" class="hist-modal-overview" aria-live="polite"></div>
+    <div id="history-modal-stats" class="hist-stats-wrap"></div>
+    <div class="hist-chart-head">
+      <div id="history-modal-legend" class="hist-modal-legend"></div>
+      <p id="history-modal-range-label" class="hist-range-label"></p>
     </div>
-    <div id="history-modal-legend" class="hist-modal-legend"></div>
+    <div class="spark-wrap spark-wrap-lg">
+      <svg class="spark spark-lg" id="history-modal-chart" viewBox="0 0 1000 300" preserveAspectRatio="none" tabindex="0"></svg>
+      <p class="hist-inspector" id="history-modal-detail" aria-live="polite">Loading the latest sample…</p>
+    </div>
     <p id="history-modal-note" class="hist-modal-note"></p>
   </div>
 </div>
@@ -1169,6 +1245,7 @@ let refreshSec = 5;
 let settingsLoaded = false;
 let lastStats = null;
 let csrfToken = null;
+let fireDrillSyncRank = 0;
 let authReady = false;
 let holdAuthForRecoveryCodes = false;
 let localDnsRuntime = null;
@@ -1524,77 +1601,132 @@ function spark(svgId, hist, key, color, label, detailId) {
   return valid[valid.length - 1];
 }
 
+function percentile(values, fraction) {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position), upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+function niceLatencyCeil(value) {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const scaled = value / magnitude;
+  const step = [1, 2, 5, 10].find((candidate) => scaled <= candidate) || 10;
+  return step * magnitude;
+}
+
+function fmtHistoryAxisTs(ts, spanSeconds) {
+  const date = new Date(Number(ts) * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  return spanSeconds >= 48 * 3600
+    ? date.toLocaleDateString([], { month: "short", day: "numeric" })
+    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function historyIntervals(hist) {
+  const intervals = [];
+  for (let i = 1; i < hist.length; i += 1) {
+    const interval = Number(hist[i].ts) - Number(hist[i - 1].ts);
+    if (Number.isFinite(interval) && interval > 0) intervals.push(interval);
+  }
+  return intervals;
+}
+
+function historyGapCount(hist) {
+  const intervals = historyIntervals(hist);
+  const typical = percentile(intervals, 0.5);
+  if (!typical) return 0;
+  return intervals.filter((interval) => interval > typical * 2.5).length;
+}
+
 function sparkMulti(svgId, hist, series, detailId) {
-  // Multi-series sibling of spark(): draws one line per entry in `series`
-  // (each { key, color, label }) sharing one x-axis and one hover cursor,
-  // for the expanded history modal. spark() itself stays single-series and
-  // untouched so the compact Today/device sparklines keep working exactly
-  // as before.
   const svg = $(svgId);
   const detail = $(detailId);
   const box = svg.viewBox.baseVal;
   const W = box && box.width ? box.width : 1000;
-  const H = box && box.height ? box.height : 260;
-  const PAD = 6;
+  const H = box && box.height ? box.height : 300;
+  const PAD = { top: 14, right: 12, bottom: 34, left: 52 };
+  const plotWidth = W - PAD.left - PAD.right;
+  const plotHeight = H - PAD.top - PAD.bottom;
   svg.setAttribute(
     "aria-label",
-    `${series.map((s) => s.label).join(" and ")} latency history. Hover or use the left and right arrow keys to inspect samples.`,
+    `${series.map((s) => s.label).join(" and ")} latency history with labeled axes. Hover or use the left and right arrow keys to inspect samples.`,
   );
   const allValid = series.some((s) => hist.some((h) => h.ms[s.key] != null));
   if (!hist.length || !allValid) {
     svg.innerHTML = "";
-    detail.textContent = "No latency samples available yet for this range.";
+    detail.textContent = "No latency samples are available for this range yet.";
     return;
   }
-  const max = Math.max(
+  const observedMax = Math.max(
     1,
-    ...series.flatMap((s) => hist.map((h) => h.ms[s.key]).filter((v) => v != null)),
-  ) * 1.15;
+    ...series.flatMap((s) => hist.map((h) => Number(h.ms[s.key])).filter((v) => Number.isFinite(v))),
+  );
+  const max = niceLatencyCeil(observedMax * 1.08);
   const timestamps = hist.map((h) => Number(h.ts));
   const hasTimestamps = timestamps.every((ts) => Number.isFinite(ts));
   const minTs = hasTimestamps ? Math.min(...timestamps) : 0;
   const maxTs = hasTimestamps ? Math.max(...timestamps) : 0;
   const hasTimeSpan = hasTimestamps && maxTs > minTs;
+  const timeSpan = hasTimeSpan ? maxTs - minTs : 0;
   const x = (i) => {
-    if (hist.length === 1) return W / 2;
+    if (hist.length === 1) return PAD.left + plotWidth / 2;
     const ratio = hasTimeSpan
       ? (timestamps[i] - minTs) / (maxTs - minTs)
       : i / (hist.length - 1);
-    return PAD + ratio * (W - 2 * PAD);
+    return PAD.left + ratio * plotWidth;
   };
+  const y = (v) => PAD.top + (1 - Number(v) / max) * plotHeight;
   const nearestIndexAtRatio = (ratio) => {
-    const targetX = PAD + ratio * (W - 2 * PAD);
-    let nearest = 0;
-    let distance = Infinity;
+    const targetX = PAD.left + ratio * plotWidth;
+    let nearest = 0, distance = Infinity;
     hist.forEach((_, i) => {
       const candidate = Math.abs(x(i) - targetX);
-      if (candidate < distance) {
-        nearest = i;
-        distance = candidate;
-      }
+      if (candidate < distance) { nearest = i; distance = candidate; }
     });
     return nearest;
   };
-  const y = (v) => H - PAD - (v / max) * (H - 2 * PAD);
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => max * ratio);
+  let grid = yTicks.map((value) => {
+    const py = y(value);
+    return `<line x1="${PAD.left}" y1="${py.toFixed(1)}" x2="${W - PAD.right}" y2="${py.toFixed(1)}" stroke="var(--border)" stroke-width="1" opacity="0.7"/>`
+      + `<text x="${PAD.left - 8}" y="${(py + 4).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="12">${Math.round(value)} ms</text>`;
+  }).join("");
+  [0, 0.5, 1].forEach((ratio) => {
+    const px = PAD.left + ratio * plotWidth;
+    const ts = hasTimeSpan ? minTs + ratio * timeSpan : timestamps[Math.round(ratio * (hist.length - 1))];
+    const anchor = ratio === 0 ? "start" : ratio === 1 ? "end" : "middle";
+    grid += `<text x="${px.toFixed(1)}" y="${H - 7}" text-anchor="${anchor}" fill="var(--muted)" font-size="12">${esc(fmtHistoryAxisTs(ts, timeSpan))}</text>`;
+  });
   let marks = "";
-  hist.forEach((h, i) => {
-    if (h.severity === "bad") {
-      marks += `<line x1="${x(i).toFixed(1)}" y1="${PAD}" x2="${x(i).toFixed(1)}" y2="${H - PAD}" stroke="var(--bad-text)" stroke-width="2" opacity="0.5"/>`;
+  hist.forEach((sample, i) => {
+    const color = sample.severity === "bad" ? "var(--bad-text)"
+      : ["warn", "degraded"].includes(sample.severity) ? "var(--warn-text)" : null;
+    if (color) {
+      marks += `<line x1="${x(i).toFixed(1)}" y1="${PAD.top}" x2="${x(i).toFixed(1)}" y2="${H - PAD.bottom}" stroke="${color}" stroke-width="2" opacity="0.48"/>`;
     }
   });
+  const intervals = historyIntervals(hist);
+  const typicalInterval = percentile(intervals, 0.5);
+  const gapThreshold = typicalInterval ? typicalInterval * 2.5 : Infinity;
   let paths = "";
   for (const s of series) {
     let d = "", pen = false;
-    hist.forEach((h, i) => {
-      const v = h.ms[s.key];
-      if (v == null) { pen = false; return; }
-      d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1);
+    hist.forEach((sample, i) => {
+      const value = sample.ms[s.key];
+      const gapBefore = i > 0 && timestamps[i] - timestamps[i - 1] > gapThreshold;
+      if (value == null || !Number.isFinite(Number(value))) { pen = false; return; }
+      if (gapBefore) pen = false;
+      d += (pen ? "L" : "M") + x(i).toFixed(1) + "," + y(value).toFixed(1);
       pen = true;
     });
     paths += `<path data-series="${esc(s.key)}" d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
   }
-  svg.innerHTML = marks + paths
-    + `<line class="spark-cursor" visibility="hidden" stroke="var(--muted)" stroke-width="1" opacity="0.75"/>`
+  svg.innerHTML = grid + marks + paths
+    + `<line class="spark-cursor" visibility="hidden" stroke="var(--text)" stroke-width="1" opacity="0.72"/>`
     + series.map((s) =>
       `<circle data-series="${esc(s.key)}" class="spark-point" visibility="hidden" r="4" fill="var(--card)" stroke="${s.color}" stroke-width="2" vector-effect="non-scaling-stroke"/>`
     ).join("");
@@ -1619,43 +1751,44 @@ function sparkMulti(svgId, hist, series, detailId) {
     const px = x(selected);
     cursor.setAttribute("x1", px.toFixed(1));
     cursor.setAttribute("x2", px.toFixed(1));
-    cursor.setAttribute("y1", String(PAD));
-    cursor.setAttribute("y2", String(H - PAD));
+    cursor.setAttribute("y1", String(PAD.top));
+    cursor.setAttribute("y2", String(H - PAD.bottom));
     cursor.setAttribute("visibility", "visible");
     const parts = [];
     for (const s of series) {
-      const v = sample.ms[s.key];
+      const value = sample.ms[s.key];
       const point = points[s.key];
-      if (v == null) { point.setAttribute("visibility", "hidden"); continue; }
+      if (value == null) { point.setAttribute("visibility", "hidden"); continue; }
       point.setAttribute("cx", px.toFixed(1));
-      point.setAttribute("cy", y(v).toFixed(1));
+      point.setAttribute("cy", y(value).toFixed(1));
       point.setAttribute("visibility", "visible");
-      parts.push(`${s.label} ${Math.round(v)} ms`);
+      parts.push(`${s.label} ${Math.round(value)} ms`);
     }
-    const countNote = sample.sample_count > 1 ? ` (avg of ${sample.sample_count})` : "";
-    detail.textContent = `${fmtTs(sample.ts)} · ${parts.join(" · ")}${countNote}`;
+    const state = sample.severity === "bad" ? "Fault recorded"
+      : ["warn", "degraded"].includes(sample.severity) ? "Warning recorded" : "Normal";
+    const count = Number(sample.sample_count) > 1
+      ? `${sample.sample_count} checks averaged`
+      : "1 recorded check";
+    const source = sample.kind && sample.kind !== "bucket" ? ` · ${sample.kind} source` : "";
+    detail.textContent = `${fmtFullTs(sample.ts)} · ${state} · ${parts.join(" · ")} · ${count}${source}`;
   }
-  function clear() {
-    selected = -1;
-    cursor.setAttribute("visibility", "hidden");
-    Object.values(points).forEach((p) => p.setAttribute("visibility", "hidden"));
-    detail.textContent = "Hover or focus the chart to inspect a sample.";
-  }
+  const showLatest = () => show(hist.length - 1);
   svg.onpointermove = (event) => {
     const rect = svg.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     show(nearestIndexAtRatio(ratio));
   };
-  svg.onpointerleave = () => { if (document.activeElement !== svg) clear(); };
-  svg.onfocus = () => show(hist.length - 1);
-  svg.onblur = clear;
+  svg.onpointerleave = () => { if (document.activeElement !== svg) showLatest(); };
+  svg.onfocus = showLatest;
+  svg.onblur = showLatest;
   svg.onkeydown = (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     if (event.key === "Home") show(0);
-    else if (event.key === "End") show(hist.length - 1);
+    else if (event.key === "End") showLatest();
     else show((selected < 0 ? hist.length - 1 : selected) + (event.key === "ArrowLeft" ? -1 : 1));
   };
+  showLatest();
 }
 
 const NETWORK_HISTORY_RANGES = [
@@ -1670,6 +1803,7 @@ const DEVICE_HISTORY_RANGES = [
 
 let historyModal = null; // { kind: "network" } or { kind: "device", id, name }
 let historyModalOpener = null; // element to restore focus to on close
+let historyModalRangeControl = null;
 
 function populateHistoryModalRangeOptions(kind) {
   const sel = $("history-modal-range");
@@ -1678,20 +1812,89 @@ function populateHistoryModalRangeOptions(kind) {
     `<option value="${esc(value)}">${esc(label)}</option>`
   ).join("");
   sel.value = kind === "network" ? "24" : "100";
+  if (historyModalRangeControl) historyModalRangeControl.refresh();
 }
 
 function historyModalLegendHtml(series) {
   return series.map((s) =>
-    `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`
+    `<span><i class="hist-swatch-${esc(s.swatch || "line")}"></i>${esc(s.label)}</span>`
   ).join("");
+}
+
+function fmtHistorySpan(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "One point";
+  if (seconds >= 86400) {
+    const days = seconds / 86400;
+    return `${days >= 10 ? Math.round(days) : days.toFixed(1)} d`;
+  }
+  return fmtDur(seconds);
+}
+
+function fmtLatencyMetric(value) {
+  return Number.isFinite(value) ? `${Math.round(value)} ms` : "–";
+}
+
+function renderHistoryModalSummary(hist, series, context) {
+  const overview = $("history-modal-overview");
+  const stats = $("history-modal-stats");
+  const rangeLabel = $("history-modal-range-label");
+  if (!hist.length) {
+    overview.innerHTML = `<p class="empty">No recorded samples in this range.</p>`;
+    stats.innerHTML = "";
+    rangeLabel.textContent = "";
+    return { recordedCount: 0, faultCount: 0, gapCount: 0 };
+  }
+  const timestamps = hist.map((sample) => Number(sample.ts)).filter((ts) => Number.isFinite(ts));
+  const firstTs = timestamps.length ? Math.min(...timestamps) : null;
+  const lastTs = timestamps.length ? Math.max(...timestamps) : null;
+  const observedSeconds = firstTs != null && lastTs != null ? lastTs - firstTs : 0;
+  const recordedCount = hist.reduce(
+    (total, sample) => total + Math.max(1, Number(sample.sample_count) || 1),
+    0,
+  );
+  const faultCount = hist.filter((sample) => sample.severity === "bad").length;
+  const gapCount = historyGapCount(hist);
+  const faultLabel = context.faultLabel || (context.bucketed ? "Fault buckets" : "Fault samples");
+  const items = [
+    ["Observed span", fmtHistorySpan(observedSeconds)],
+    ["Recorded checks", String(recordedCount)],
+    [faultLabel, String(faultCount)],
+    ["Data gaps", String(gapCount)],
+  ];
+  overview.innerHTML = items.map(([label, value]) =>
+    `<div class="hist-overview-item"><span class="k">${esc(label)}</span><span class="v">${esc(value)}</span></div>`
+  ).join("");
+  rangeLabel.textContent = firstTs != null && lastTs != null
+    ? `${fmtFullTs(firstTs)} – ${fmtFullTs(lastTs)}`
+    : "";
+  const basis = context.bucketed ? "Displayed bucket averages" : "Individual recorded checks";
+  const rows = series.map((s) => {
+    const values = hist.map((sample) => Number(sample.ms[s.key])).filter((value) => Number.isFinite(value));
+    const latest = [...hist].reverse().map((sample) => Number(sample.ms[s.key]))
+      .find((value) => Number.isFinite(value));
+    return `<tr><th scope="row"><span class="hist-series-name"><i class="hist-swatch-${esc(s.swatch || "line")}"></i>${esc(s.label)}</span></th>`
+      + `<td>${fmtLatencyMetric(latest)}</td>`
+      + `<td>${fmtLatencyMetric(percentile(values, 0.5))}</td>`
+      + `<td>${fmtLatencyMetric(percentile(values, 0.95))}</td>`
+      + `<td>${fmtLatencyMetric(values.length ? Math.max(...values) : null)}</td></tr>`;
+  }).join("");
+  stats.innerHTML = `<div class="hist-stats-heading"><h4>Latency at a glance</h4><span>${esc(basis)}</span></div>`
+    + `<table class="hist-stats-table"><caption class="sr-only">Latency summary statistics</caption>`
+    + `<thead><tr><th scope="col">Series</th><th scope="col">Latest</th><th scope="col">Median</th><th scope="col">95th pct</th><th scope="col">Peak</th></tr></thead>`
+    + `<tbody>${rows}</tbody></table>`;
+  return { recordedCount, faultCount, gapCount };
 }
 
 async function loadHistoryModalData() {
   if (!historyModal) return;
   const detail = $("history-modal-detail");
   const note = $("history-modal-note");
-  detail.textContent = "Loading…";
+  detail.textContent = "Loading the latest sample…";
   note.textContent = "";
+  $("history-modal-overview").innerHTML = `<p class="empty">Loading history…</p>`;
+  $("history-modal-stats").innerHTML = "";
+  $("history-modal-legend").innerHTML = "";
+  $("history-modal-range-label").textContent = "";
   const range = $("history-modal-range").value;
   try {
     if (historyModal.kind === "network") {
@@ -1701,14 +1904,18 @@ async function loadHistoryModalData() {
       const out = await r.json();
       const hist = out.samples || [];
       const series = [
-        { key: "raw_ping", color: "var(--line)", label: "Internet ping" },
-        { key: "gateway", color: "var(--line2)", label: "Router ping" },
+        { key: "raw_ping", color: "var(--line)", swatch: "line", label: "Internet ping" },
+        { key: "gateway", color: "var(--line2)", swatch: "line2", label: "Router ping" },
       ];
+      const summary = renderHistoryModalSummary(hist, series, {
+        bucketed: out.bucketed,
+        faultLabel: out.bucketed ? "Fault buckets" : "Fault samples",
+      });
       sparkMulti("history-modal-chart", hist, series, "history-modal-detail");
       $("history-modal-legend").innerHTML = historyModalLegendHtml(series);
       note.textContent = out.bucketed
-        ? `${hist.length} time buckets, averaged over ~${fmtDur(out.bucket_seconds)} each, to keep a long range readable.`
-        : `${hist.length} individual samples.`;
+        ? `${hist.length} displayed time buckets represent ${summary.recordedCount} recorded checks. Each point averages about ${fmtDur(out.bucket_seconds)}; gaps are left unconnected, and the table describes the displayed bucket averages.`
+        : `${summary.recordedCount} individual network checks are shown. Lines break where the recorded timeline has a substantial gap.`;
     } else {
       const r = await fetch(`/api/devices/${encodeURIComponent(historyModal.id)}/history?limit=${encodeURIComponent(range)}`);
       if (r.status === 401) { closeHistoryModal(); await ensureAuth(); return; }
@@ -1719,14 +1926,20 @@ async function loadHistoryModalData() {
         ts: run.ts, severity: run.state === "down" ? "bad" : "ok",
         ms: { latency: run.duration_ms },
       }));
-      const series = [{ key: "latency", color: "var(--line)", label: "Check latency" }];
+      const series = [{ key: "latency", color: "var(--line)", swatch: "line", label: "Check latency" }];
+      const summary = renderHistoryModalSummary(hist, series, {
+        bucketed: false,
+        faultLabel: "Down checks",
+      });
       sparkMulti("history-modal-chart", hist, series, "history-modal-detail");
-      $("history-modal-legend").innerHTML = "";
-      note.textContent = `${hist.length} recent check(s). Devices keep up to ${DEVICE_SPARK_HISTORY_MAX} — this isn't a fixed calendar window.`;
+      $("history-modal-legend").innerHTML = historyModalLegendHtml(series);
+      note.textContent = `${summary.recordedCount} recent checks are shown. Devices keep up to ${DEVICE_SPARK_HISTORY_MAX}; this is a fixed-size history rather than a calendar window.`;
     }
   } catch (e) {
     detail.textContent = "Could not load history.";
     $("history-modal-chart").innerHTML = "";
+    renderHistoryModalSummary([], [], {});
+    note.textContent = "The existing dashboard remains available; close this view and try again.";
   }
 }
 
@@ -1735,6 +1948,9 @@ function openHistoryModal(kind, opts) {
   historyModalOpener = document.activeElement;
   $("history-modal-title").textContent =
     kind === "network" ? "Latency history" : `${(opts && opts.name) || "Device"} — check latency`;
+  $("history-modal-subtitle").textContent = kind === "network"
+    ? "Compare typical latency, slow periods, fault markers and data gaps."
+    : "Review typical check time, slow checks, failures and gaps.";
   populateHistoryModalRangeOptions(kind);
   $("history-modal").classList.remove("hidden");
   loadHistoryModalData();
@@ -2364,12 +2580,18 @@ async function refresh() {
   if (s.local_dns) localDnsRuntime = s.local_dns;
   renderQuality(s.quality);
   $("q-wifi").textContent = s.wifi_note || "";
-  try {
-    if (!localStorage.getItem("linkmothDrillSeen")
-        && !localStorage.getItem("linkmothDrillDone")) {
-      $("drill-hint").classList.remove("hidden");
-    }
-  } catch (e) { /* private browsing */ }
+  const localDrillState = localFireDrillState();
+  const serverDrill = s.fire_drill || {};
+  const drillSeen = Boolean(serverDrill.seen || localDrillState);
+  $("drill-hint").classList.toggle("hidden", drillSeen);
+  if (localDrillState && !serverDrill.seen) {
+    rememberFireDrill(localDrillState);
+  } else if (serverDrill.seen) {
+    try {
+      localStorage.setItem("linkmothDrillSeen", "1");
+      if (serverDrill.completed) localStorage.setItem("linkmothDrillDone", "1");
+    } catch (e) { /* private browsing */ }
+  }
   if (s.settings) {
     refreshSec = s.settings.ui_refresh_seconds || 5;
     if (!settingsLoaded) {
@@ -3997,10 +4219,6 @@ function initCustomSelect({ selectId, triggerId, labelId, menuId, wrapId, fallba
   const menu = $(menuId);
   const wrap = $(wrapId);
 
-  menu.innerHTML = Array.from(select.options).map((opt) =>
-    `<li role="option" data-value="${esc(opt.value)}" tabindex="0">${esc(opt.textContent)}</li>`
-  ).join("");
-
   function closeMenu() {
     menu.classList.add("hidden");
     trigger.setAttribute("aria-expanded", "false");
@@ -4021,6 +4239,14 @@ function initCustomSelect({ selectId, triggerId, labelId, menuId, wrapId, fallba
     onChange();
   }
 
+  function refresh() {
+    menu.innerHTML = Array.from(select.options).map((opt) =>
+      `<li role="option" data-value="${esc(opt.value)}" tabindex="0">${esc(opt.textContent)}</li>`
+    ).join("");
+    closeMenu();
+    syncLabel();
+  }
+
   trigger.addEventListener("click", () => {
     if (menu.classList.contains("hidden")) {
       menu.classList.remove("hidden");
@@ -4030,14 +4256,16 @@ function initCustomSelect({ selectId, triggerId, labelId, menuId, wrapId, fallba
     }
   });
 
-  menu.querySelectorAll("[role=option]").forEach((li) => {
-    li.addEventListener("click", () => choose(li.dataset.value));
-    li.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        choose(li.dataset.value);
-      }
-    });
+  menu.addEventListener("click", (e) => {
+    const option = e.target.closest("[role=option]");
+    if (option && menu.contains(option)) choose(option.dataset.value);
+  });
+  menu.addEventListener("keydown", (e) => {
+    const option = e.target.closest("[role=option]");
+    if (option && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      choose(option.dataset.value);
+    }
   });
 
   document.addEventListener("click", (e) => {
@@ -4048,7 +4276,8 @@ function initCustomSelect({ selectId, triggerId, labelId, menuId, wrapId, fallba
     if (e.key === "Escape") closeMenu();
   });
 
-  syncLabel();
+  refresh();
+  return { refresh, syncLabel, closeMenu };
 }
 initCustomSelect({
   selectId: "hist-filter", triggerId: "hist-filter-trigger",
@@ -4061,6 +4290,12 @@ initCustomSelect({
   labelId: "report-days-label", menuId: "report-days-menu",
   wrapId: "report-days-wrap", fallbackLabel: "Last 30 days",
   onChange: loadReport,
+});
+historyModalRangeControl = initCustomSelect({
+  selectId: "history-modal-range", triggerId: "history-modal-range-trigger",
+  labelId: "history-modal-range-label-text", menuId: "history-modal-range-menu",
+  wrapId: "history-modal-range-wrap", fallbackLabel: "Last 24 hours",
+  onChange: loadHistoryModalData,
 });
 
 async function openIncidentByRef(ref) {
@@ -4096,7 +4331,6 @@ $("history-modal-close").addEventListener("click", closeHistoryModal);
 $("history-modal").addEventListener("click", (ev) => {
   if (ev.target.id === "history-modal") closeHistoryModal();
 });
-$("history-modal-range").addEventListener("change", loadHistoryModalData);
 
 $("diagnose").addEventListener("click", async () => {
   verifyHighlight = null;
@@ -4218,6 +4452,30 @@ function drillStatus(text, ok) {
   el.className = "hint" + (ok === true ? " ok" : ok === false ? " bad" : "");
 }
 
+function localFireDrillState() {
+  try {
+    if (localStorage.getItem("linkmothDrillDone")) return "completed";
+    if (localStorage.getItem("linkmothDrillSeen")) return "seen";
+  } catch (e) { /* private browsing */ }
+  return "";
+}
+
+async function rememberFireDrill(state) {
+  const rank = state === "completed" ? 2 : 1;
+  if (rank <= fireDrillSyncRank) return;
+  fireDrillSyncRank = rank;
+  try {
+    const response = await fetch("/api/fire-drill", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ state }),
+    });
+    if (!response.ok) fireDrillSyncRank = 0;
+  } catch (e) {
+    fireDrillSyncRank = 0;
+  }
+}
+
 async function drillPollStatus(predicate, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -4235,14 +4493,18 @@ async function drillPollStatus(predicate, timeoutMs) {
 
 $("drill-open").addEventListener("click", () => {
   $("drill-card").classList.remove("hidden");
+  $("drill-open").setAttribute("aria-expanded", "true");
   $("drill-hint").classList.add("hidden");
   try { localStorage.setItem("linkmothDrillSeen", "1"); } catch (e) { /* private mode */ }
+  rememberFireDrill("seen");
   drillStatus("");
   $("drill-card").scrollIntoView({ behavior: "smooth", block: "center" });
 });
 
 $("drill-dismiss").addEventListener("click", () => {
   $("drill-card").classList.add("hidden");
+  $("drill-open").setAttribute("aria-expanded", "false");
+  $("drill-open").focus();
 });
 
 $("drill-go").addEventListener("click", async () => {
@@ -4288,6 +4550,7 @@ $("drill-verify").addEventListener("click", async () => {
       );
       $("drill-verify").classList.add("hidden");
       try { localStorage.setItem("linkmothDrillDone", "1"); } catch (e) { /* private mode */ }
+      rememberFireDrill("completed");
     } else {
       drillStatus(
         "Still seeing a fault. Check the cable is fully seated and the router's WAN light is on, then verify again.",

@@ -330,6 +330,7 @@ fi
 [ -f "$SRC/linkmoth-white.svg" ] || die "linkmoth-white.svg not found next to install.sh"
 [ -f "$SRC/linkmoth-mark-white.svg" ] || die "linkmoth-mark-white.svg not found next to install.sh"
 [ -f "$SRC/linkmoth-maskable.svg" ] || die "linkmoth-maskable.svg not found next to install.sh"
+[ -f "$SRC/linkmoth-icon-180.png" ] || die "linkmoth-icon-180.png not found next to install.sh"
 [ -f "$SRC/linkmoth-icon-192.png" ] || die "linkmoth-icon-192.png not found next to install.sh"
 [ -f "$SRC/linkmoth-icon-512.png" ] || die "linkmoth-icon-512.png not found next to install.sh"
 [ -f "$SRC/linkmoth-white.ico" ] || die "linkmoth-white.ico not found next to install.sh"
@@ -559,7 +560,7 @@ APP_FILES="linkmoth.py linkmoth_auth.py linkmoth_discord.py linkmoth_kuma_proxy.
 linkmoth_outage.py linkmoth_push.py linkmoth_notify.py linkmoth_devices.py
 linkmoth_webhooks.py dashboard.html linkmoth.svg linkmoth-white.svg
 linkmoth-mark-white.svg linkmoth-maskable.svg
-linkmoth-icon-192.png linkmoth-icon-512.png linkmoth-white.ico sw.js
+linkmoth-icon-180.png linkmoth-icon-192.png linkmoth-icon-512.png linkmoth-white.ico sw.js
 manifest.webmanifest"
 [ -f "$SRC/linkmoth-build.json" ] && APP_FILES="$APP_FILES linkmoth-build.json"
 step "staging application files..."

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Fixed
+
+- Bufferbloat tests now retain a download-speed estimate when a fast connection
+  reaches the bounded transfer limit in under half a second, and recover the
+  estimate for affected results already stored.
+- Expanded Today and device history now use the same Linkmoth-styled range
+  selector as the History accountability report instead of a native dropdown.
+- Expanded-history color keys now use CSP-safe classes instead of blocked
+  inline style attributes, preventing repeated browser-console warnings.
+- Fire Drill prompt state is now stored by the Linkmoth installation and
+  shared across browsers and installed PWAs, with existing browser markers
+  and retained manual runs migrated automatically instead of each device
+  forgetting independently.
+- iOS Home Screen installs now use a dedicated opaque 180×180 Apple touch icon
+  at a fresh URL, instead of relying on larger manifest/Android icon sizes.
+- Expanded latency history now provides actual diagnostic context: observed
+  span, recorded-check and fault counts, detected data gaps, per-series latest,
+  median, 95th-percentile and peak latency, labeled axes, and a persistent
+  latest/hovered sample readout. Its close icon is also optically centered.
+
 ## 0.4.2
 
 ### Added

@@ -22,6 +22,7 @@ FILES=(
   linkmoth-white.svg
   linkmoth-mark-white.svg
   linkmoth-maskable.svg
+  linkmoth-icon-180.png
   linkmoth-icon-192.png
   linkmoth-icon-512.png
   linkmoth-white.ico

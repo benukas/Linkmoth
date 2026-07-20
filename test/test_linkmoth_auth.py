@@ -429,6 +429,61 @@ class AuthenticatedTests(LinkmothTestBase):
         self.assertEqual(code, 200)
         self.assertTrue(status["auth"]["authenticated"])
 
+    def test_fire_drill_state_persists_across_browser_sessions(self):
+        _, _, cookie, csrf = self._login()
+        code, status, _, _ = http(
+            "GET", f"{self.base}/api/status",
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(status["fire_drill"], {"seen": False, "completed": False})
+
+        code, _, _, _ = http(
+            "POST", f"{self.base}/api/fire-drill", {"state": "seen"},
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 403)
+        code, state, _, _ = http(
+            "POST", f"{self.base}/api/fire-drill", {"state": "seen"},
+            headers={"X-CSRF-Token": csrf},
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(state, {"seen": True, "completed": False})
+
+        _, _, second_cookie, second_csrf = self._login()
+        code, status, _, _ = http(
+            "GET", f"{self.base}/api/status",
+            cookies={"__Host-linkmoth_session": second_cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(status["fire_drill"]["seen"])
+        code, state, _, _ = http(
+            "POST", f"{self.base}/api/fire-drill", {"state": "completed"},
+            headers={"X-CSRF-Token": second_csrf},
+            cookies={"__Host-linkmoth_session": second_cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(state, {"seen": True, "completed": True})
+
+    def test_fire_drill_state_migrates_from_prior_manual_run(self):
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title,"
+                " explain, hint, checks, duration_ms, kind)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (None, time.time(), "ok", "all_clear", "All clear", "", "",
+                 "[]", 1, "manual"),
+            )
+        _, _, cookie, _ = self._login()
+        code, status, _, _ = http(
+            "GET", f"{self.base}/api/status",
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(status["fire_drill"], {"seen": True, "completed": False})
+        self.assertEqual(self.linkmoth._get_meta("fire_drill_seen"), "1")
+
     def test_bad_password_rate_limit(self):
         for _ in range(3):
             code, _, _, _ = http("POST", f"{self.base}/api/auth/login", {"password": "wrong"})

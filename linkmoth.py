@@ -37,6 +37,7 @@ WHITE_LOGO_PATH = BASE / "linkmoth-white.svg"
 WHITE_MARK_PATH = BASE / "linkmoth-mark-white.svg"
 MASKABLE_ICON_PATH = BASE / "linkmoth-maskable.svg"
 PNG_ICON_PATHS = {
+    "/linkmoth-icon-180.png": BASE / "linkmoth-icon-180.png",
     "/linkmoth-icon-192.png": BASE / "linkmoth-icon-192.png",
     "/linkmoth-icon-512.png": BASE / "linkmoth-icon-512.png",
 }
@@ -2714,6 +2715,10 @@ REPORT_WINDOWS = (7, 30, 90)
 
 # GET endpoints a scoped read-only API token may access (widgets, Home
 # Assistant REST sensors). Everything else still requires a full session.
+# /metrics also accepts a read-only token, but is handled earlier in do_GET
+# (unauthenticated-by-default text/plain content, plus webhook-bearer
+# backward compatibility) so it isn't part of this generic session-fallback
+# set.
 READONLY_TOKEN_GET_PATHS = frozenset({
     "/api/status", "/api/quality", "/api/report", "/api/history",
 })
@@ -3781,6 +3786,7 @@ class Engine:
             "stats": self.stats(),
             "history": self.history(),
             "history_meta": self.history_meta(),
+            "fire_drill": fire_drill_status(),
             "kuma_url": kuma_url,
             "settings": public_settings(),
             "local_dns": local_dns_runtime_info(),
@@ -5022,11 +5028,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"triggered": True})
             return
         if url.path == "/metrics":
-            # Prometheus can't hold a browser session; the webhook bearer
-            # (already LAN-scoped by the public-exposure guard) gates the
-            # read-only exposition instead.
-            if not self._require_webhook():
-                self._send(401, {"error": "webhook authorization required"})
+            # Prometheus can't hold a browser session. Accept a read-only
+            # token first — it's strictly less powerful than the webhook
+            # bearer (it can never reach /trigger or the inbound webhook
+            # routes to create diagnostic activity), so a scraper only
+            # needs least privilege here. The webhook bearer is still
+            # accepted for configs set up before the read-only token type
+            # existed.
+            if not (
+                auth.verify_readonly_token(self.headers.get("Authorization"))
+                or self._require_webhook()
+            ):
+                self._send(401, {"error": "read-only token or webhook authorization required"})
                 return
             self._send(
                 200, prometheus_metrics().encode("utf-8"),
@@ -5276,6 +5289,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(201, {"webhook": created})
             except Exception as exc:
                 self._send_webhook_exception(exc)
+        elif path == "/api/fire-drill":
+            state = str(self._json_object_safe(body).get("state") or "")
+            if state not in ("seen", "completed"):
+                self._send(400, {"error": "state must be seen or completed"})
+                return
+            _set_meta("fire_drill_seen", "1")
+            if state == "completed":
+                _set_meta("fire_drill_completed", "1")
+            auth.audit_event("fire_drill_" + state, self._hdrs(), "")
+            self._send(200, fire_drill_status())
         elif re.fullmatch(
             r"/api/webhooks/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
             r"[0-9a-f]{4}-[0-9a-f]{12}/test",
@@ -5789,7 +5812,7 @@ def _validate_load_url(url):
 
 def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
     start = time.monotonic()
-    deadline = start + seconds
+    deadline = float(stats.get("deadline") or (start + seconds))
     parsed = urlparse(url)
     path = parsed.path or "/"
     if parsed.params:
@@ -5809,37 +5832,84 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
         "Connection": "close",
     }
     context = ssl.create_default_context()
+
+    def still_going():
+        return (
+            time.monotonic() < deadline
+            and stats["bytes"] < max_bytes
+            and not stop.is_set()
+        )
+
     try:
-        for address in addresses:
-            conn = _PinnedHTTPSConnection(
-                parsed.hostname, address, port=parsed.port or 443,
-                timeout=10, context=context,
-            )
-            try:
-                conn.request("GET", path, headers=headers)
-                resp = conn.getresponse()
-                # http.client never follows redirects. Treat every non-2xx
-                # response as a failed target instead of downloading an error
-                # page or trusting a Location that was never validated.
-                if not 200 <= resp.status < 300:
-                    stats["error"] = f"HTTP {resp.status}"
-                    return
-                while time.monotonic() < deadline and not stop.is_set():
-                    remaining = max_bytes - stats["bytes"]
-                    if remaining <= 0:
-                        break
-                    chunk = resp.read(min(65536, remaining))
-                    if not chunk:
-                        break
-                    stats["bytes"] += len(chunk)
-                stats["error"] = None
+        # A fast line can finish one bounded response before loaded latency is
+        # sampled. Keep requesting separately bounded responses for the test
+        # duration so the measurement cannot quietly become an idle ping test.
+        # max_bytes bounds the WHOLE test's transfer, not each response —
+        # stats["bytes"] (shared across every request) is what still_going()
+        # checks, so repeating requests can never inflate total data used
+        # beyond the configured, documented cap.
+        while still_going():
+            completed_request = False
+            for address in addresses:
+                conn = _PinnedHTTPSConnection(
+                    parsed.hostname, address, port=parsed.port or 443,
+                    timeout=10, context=context,
+                )
+                try:
+                    conn.request("GET", path, headers=headers)
+                    resp = conn.getresponse()
+                    # http.client never follows redirects. Treat every non-2xx
+                    # response as a failed target instead of downloading an
+                    # error page or trusting an unvalidated Location.
+                    if not 200 <= resp.status < 300:
+                        stats["error"] = f"HTTP {resp.status}"
+                        return
+                    while still_going():
+                        chunk = resp.read(min(65536, max_bytes - stats["bytes"]))
+                        if not chunk:
+                            break
+                        stats["bytes"] += len(chunk)
+                    stats["error"] = None
+                    completed_request = True
+                    break
+                except Exception as exc:
+                    stats["error"] = exc.__class__.__name__
+                finally:
+                    conn.close()
+            if not completed_request:
                 return
-            except Exception as exc:
-                stats["error"] = exc.__class__.__name__
-            finally:
-                conn.close()
     finally:
         stats["elapsed"] = max(0.0, time.monotonic() - start)
+
+
+def _measure_loaded_quality(target, stats, deadline):
+    """Measure only pings that overlap active download byte progress."""
+    active = []
+    while time.monotonic() < deadline:
+        before = int(stats.get("bytes") or 0)
+        sample = measure_quality([target], count=1)
+        after = int(stats.get("bytes") or 0)
+        if sample and sample.get("latency_ms") is not None and after > before:
+            active.append(sample)
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(0.3, remaining))
+    # One coincidental overlap is not enough evidence for a confident grade.
+    if len(active) < 2:
+        return None
+    latencies = [float(sample["latency_ms"]) for sample in active]
+    average = sum(latencies) / len(latencies)
+    jitter = (
+        (sum((value - average) ** 2 for value in latencies) / len(latencies)) ** 0.5
+        if len(latencies) > 1 else 0.0
+    )
+    return {
+        "latency_ms": average,
+        "jitter_ms": jitter,
+        "loss_pct": 0.0,
+        "target": str(target),
+        "active_samples": len(active),
+    }
 
 
 def run_load_test(store=True):
@@ -5848,7 +5918,11 @@ def run_load_test(store=True):
     Ping the quality target at idle, then again while a bounded download
     saturates the link, and grade the latency inflation the way the
     dslreports scale does (A under +30 ms … F above +400 ms). The transfer
-    stops at load_test_seconds or load_test_max_mb, whichever comes first.
+    stops at load_test_seconds or load_test_max_mb — whichever comes first —
+    and keeps requesting fresh responses in between so a fast connection that
+    finishes one response early doesn't go idle for the rest of the window.
+    Only pings that overlap increasing downloaded bytes contribute to the
+    loaded result.
     Returns the result dict, or None when nothing could be measured.
     """
     qcfg = quality_config()
@@ -5870,7 +5944,8 @@ def run_load_test(store=True):
     except (TypeError, ValueError):
         max_mb = 25
     max_bytes = max(1, min(100, max_mb)) * 1024 * 1024
-    stats = {"bytes": 0, "elapsed": 0.0, "error": None}
+    deadline = time.monotonic() + seconds
+    stats = {"bytes": 0, "elapsed": 0.0, "error": None, "deadline": deadline}
     stop = threading.Event()
     worker = threading.Thread(
         target=_load_downloader,
@@ -5878,8 +5953,7 @@ def run_load_test(store=True):
         daemon=True,
     )
     worker.start()
-    time.sleep(0.5)  # let the transfer ramp before sampling under load
-    loaded = measure_quality([idle["target"]], count=max(4, seconds - 2))
+    loaded = _measure_loaded_quality(idle["target"], stats, deadline)
     stop.set()
     worker.join(timeout=seconds + 10)
     if not loaded or loaded.get("latency_ms") is None:
@@ -5890,7 +5964,9 @@ def run_load_test(store=True):
         else "C" if bloat < 200 else "D" if bloat < 400 else "F"
     )
     throughput = None
-    if stats["bytes"] and stats["elapsed"] > 0.5:
+    # monotonic() has sub-second precision, so a fast connection that reaches
+    # the byte cap in under half a second still provides a valid estimate.
+    if stats["bytes"] and stats["elapsed"] > 0:
         throughput = round(stats["bytes"] * 8 / stats["elapsed"] / 1e6, 1)
     result = {
         "ts": time.time(),
@@ -5902,6 +5978,7 @@ def run_load_test(store=True):
         "bytes": int(stats["bytes"]),
         "seconds": round(stats["elapsed"], 1),
         "error": stats["error"],
+        "active_samples": int((loaded or {}).get("active_samples") or 0),
     }
     if store:
         try:
@@ -5928,7 +6005,20 @@ def latest_load_test():
             ).fetchone()
     except sqlite3.Error:
         return None
-    return dict(row) if row else None
+    result = dict(row) if row else None
+    if (
+        result
+        and result.get("throughput_mbps") is None
+        and result.get("bytes")
+        and result.get("seconds")
+        and result["seconds"] > 0
+    ):
+        # Recover estimates discarded by versions that treated sub-0.5 s
+        # transfers as too short, using the retained transfer measurements.
+        result["throughput_mbps"] = round(
+            result["bytes"] * 8 / result["seconds"] / 1e6, 1
+        )
+    return result
 
 
 def _median(values):
@@ -6123,6 +6213,24 @@ def _set_meta(key, value):
         )
 
 
+def fire_drill_status():
+    completed = _get_meta("fire_drill_completed") == "1"
+    seen = completed or _get_meta("fire_drill_seen") == "1"
+    if not seen and _get_meta("fire_drill_migration_checked") != "1":
+        with db() as conn:
+            prior_manual_run = conn.execute(
+                "SELECT 1 FROM runs WHERE kind IN ('manual', 'verify') LIMIT 1"
+            ).fetchone()
+        _set_meta("fire_drill_migration_checked", "1")
+        if prior_manual_run:
+            _set_meta("fire_drill_seen", "1")
+            seen = True
+    return {
+        "seen": seen,
+        "completed": completed,
+    }
+
+
 def _month_bounds(year, month):
     start = time.mktime((year, month, 1, 0, 0, 0, 0, 0, -1))
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
@@ -6130,24 +6238,39 @@ def _month_bounds(year, month):
     return start, end
 
 
+def _monitoring_started():
+    """Timestamp of the first-ever diagnosis run, or None if there isn't
+    one yet. Same signal Engine.stats()/isp_report() use to avoid crediting
+    uptime for time before Linkmoth was even installed."""
+    with db() as conn:
+        first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
+    return float(first_run) if first_run else None
+
+
 def monthly_digest_lines(year, month):
     """Plain-language summary lines for one calendar month (local time)."""
     start, end = _month_bounds(year, month)
     end = min(end, time.time())
+    monitoring_started = _monitoring_started()
+    # If Linkmoth was installed partway through this month, the days before
+    # that are not "uptime" — they were never observed — so the window used
+    # for every downtime/uptime calculation below starts no earlier than
+    # monitoring actually began.
+    effective_start = max(start, monitoring_started) if monitoring_started else start
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     prev_start, prev_end = _month_bounds(prev_year, prev_month)
     with db() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT * FROM incidents WHERE started < ?"
             " AND (resolved IS NULL OR resolved > ?)",
-            (end, start))]
+            (end, effective_start))]
         segments_by_incident = {
             row["id"]: _incident_outage_segments(conn, row)
             for row in rows
         }
         latencies = [r["latency_ms"] for r in conn.execute(
             "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
-            (start, end))]
+            (effective_start, end))]
         prev_latencies = [r["latency_ms"] for r in conn.execute(
             "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
             (prev_start, prev_end))]
@@ -6167,14 +6290,14 @@ def monthly_digest_lines(year, month):
         resolved = float(inc["resolved"]) if inc.get("resolved") else None
         clamped = _outage_seconds(
             segments_by_incident[inc["id"]],
-            window_start=start, window_end=end, now=end,
+            window_start=effective_start, window_end=end, now=end,
         )
         downtime += clamped
         if code:
             blame[code] = blame.get(code, 0) + 1
         if longest is None or clamped > longest[0]:
             longest = (clamped, inc.get("ref"))
-    span = max(1.0, end - start)
+    span = max(1.0, end - effective_start)
     uptime_pct = round(max(0.0, 100.0 * (1 - downtime / span)), 2)
     lines = [
         f"{_count_phrase(faults, 'incident')},"
@@ -6229,6 +6352,18 @@ def maybe_send_monthly_digest(now=None):
     prev_year, prev_month = (
         (lt.tm_year - 1, 12) if lt.tm_mon == 1 else (lt.tm_year, lt.tm_mon - 1)
     )
+    prev_start, _ = _month_bounds(prev_year, prev_month)
+    monitoring_started = _monitoring_started()
+    if monitoring_started and monitoring_started > prev_start:
+        # Monitoring began partway through the month that would be reported
+        # (e.g. installed on the 20th) — the "first ever run" branch above
+        # only catches the install month itself, not this one, since a full
+        # calendar month has now rolled over. A report where most of the
+        # month predates Linkmoth even running would undermine the whole
+        # point of this being credible evidence; skip it and wait for the
+        # first fully-observed month instead.
+        _set_meta("monthly_digest_sent", current_month)
+        return False
     lines = monthly_digest_lines(prev_year, prev_month)
     month_label = time.strftime(
         "%B %Y", time.localtime(_month_bounds(prev_year, prev_month)[0])
