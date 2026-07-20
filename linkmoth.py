@@ -134,7 +134,8 @@ def auth_set_password():
     secret = auth.ensure_webhook_secret()
     # Intentional one-time CLI reveal to the operator running this flag by
     # hand -- not a persisted log.
-    print(f"admin password set; webhook secret: {secret}")  # lgtm[py/clear-text-logging-sensitive-data]
+    # codeql[py/clear-text-logging-sensitive-data]
+    print(f"admin password set; webhook secret: {secret}")
     return 0
 
 
@@ -148,8 +149,10 @@ def auth_setup_totp():
     uri = auth.totp_provisioning_uri()
     # Intentional one-time CLI reveal to the operator running this flag by
     # hand -- not a persisted log.
-    print("TOTP secret (base32):", secret)  # lgtm[py/clear-text-logging-sensitive-data]
-    print("Provisioning URI:", uri)  # lgtm[py/clear-text-logging-sensitive-data]
+    # codeql[py/clear-text-logging-sensitive-data]
+    print("TOTP secret (base32):", secret)
+    # codeql[py/clear-text-logging-sensitive-data]
+    print("Provisioning URI:", uri)
     print("Recovery codes (store safely, shown once):")
     for c in codes:
         print(" ", c)
@@ -161,7 +164,8 @@ def auth_show_webhook():
     auth = get_auth()
     # Intentional one-time CLI reveal to the operator running this flag by
     # hand -- not a persisted log; this flag's entire purpose is to print it.
-    print(auth.ensure_webhook_secret())  # lgtm[py/clear-text-logging-sensitive-data]
+    # codeql[py/clear-text-logging-sensitive-data]
+    print(auth.ensure_webhook_secret())
     return 0
 
 
@@ -178,7 +182,8 @@ def auth_rotate_webhook():
     auth = get_auth()
     # Intentional one-time CLI reveal to the operator running this flag by
     # hand -- not a persisted log; this flag's entire purpose is to print it.
-    print(auth.rotate_webhook_secret())  # lgtm[py/clear-text-logging-sensitive-data]
+    # codeql[py/clear-text-logging-sensitive-data]
+    print(auth.rotate_webhook_secret())
     print("webhook secret rotated; update every /trigger client now", file=sys.stderr)
     return 0
 
