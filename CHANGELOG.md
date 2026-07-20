@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1
+
 ### Fixed
 
 - Dashboard and copied support-summary timestamps now use readable local date
