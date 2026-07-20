@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Dashboard and copied support-summary timestamps now use readable local date
+  and time formatting instead of exposing raw ISO strings with a trailing
+  `Z` UTC marker.
+- The accountability report window picker now uses Linkmoth's custom
+  button-style selector rather than the browser's unstyled native dropdown.
 - Bufferbloat results now show the measured download estimate as a dedicated
   metric alongside the grade and added latency, rather than burying it in the
   result sentence.

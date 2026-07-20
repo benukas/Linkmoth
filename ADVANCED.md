@@ -143,7 +143,9 @@ status), **Settings** (including Discord webhooks, Wi-Fi client IPs, and
 SQLite maintenance), and **Security** (password, 2FA, read-only API tokens,
 audit log). Today and incident packets can copy a credential-free plain-text
 support summary with the verdict, confidence, per-target evidence, and
-timeline.
+timeline. Dashboard timestamps and copied support summaries are formatted in
+the browser's local time rather than exposing raw machine-oriented UTC
+strings.
 
 ## LAN devices
 

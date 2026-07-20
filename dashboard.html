@@ -335,6 +335,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .inc-ref { font-family: ui-monospace, monospace; font-size: 15px; color: var(--muted); margin-right: 8px; }
 #hist-stats { font-size: 16px; color: var(--muted); margin: 0; line-height: 1.45; }
 .report-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.report-controls .custom-select { flex: 0 1 210px; }
+.report-controls .custom-select-trigger { min-height: 48px; }
 #report-summary p { margin: 6px 0; }
 .set-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; flex-wrap: wrap; }
 .set-row label { min-width: 220px; font-size: 17px; font-weight: 600; }
@@ -789,11 +791,19 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <h3>Accountability report</h3>
       <p class="hint">Downtime, blame, and provider-path evidence built from the stored incident history — generated locally, credentials excluded.</p>
       <div class="report-controls">
-        <select id="report-days" aria-label="Report window">
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="7">Last 7 days</option>
-        </select>
+        <div class="custom-select" id="report-days-wrap">
+          <button type="button" class="action-btn custom-select-trigger" id="report-days-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="report-days-menu">
+            <span id="report-days-label">Last 30 days</span>
+            <span class="custom-select-chevron" aria-hidden="true">▾</span>
+          </button>
+          <ul class="custom-select-menu hidden" id="report-days-menu" role="listbox" tabindex="-1"></ul>
+          <select id="report-days" class="sr-only" tabindex="-1" aria-hidden="true">
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="7">Last 7 days</option>
+          </select>
+        </div>
         <button type="button" id="report-copy" class="action-btn hidden">Copy evidence for ISP</button>
         <button type="button" id="report-csv" class="action-btn hidden">Download CSV</button>
       </div>
@@ -1328,6 +1338,23 @@ function fmtTs(ts) {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
   });
 }
+function fmtFullTs(ts) {
+  const date = new Date(Number(ts) * 1000);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  return date.toLocaleString([], {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
+function fmtDateValue(value) {
+  if (value === null || value === undefined || value === "") return "Unknown time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  return date.toLocaleString([], {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  });
+}
 function fmtTime(ts) {
   return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
@@ -1524,7 +1551,7 @@ function supportSummary(status) {
   const inc = status.open_incident;
   const lines = [
     "Linkmoth support summary",
-    `Initial diagnosis: ${new Date(run.ts * 1000).toISOString()}`,
+    `Initial diagnosis (local time): ${fmtFullTs(run.ts)}`,
     `Incident: ${inc && inc.ref ? inc.ref : "none open"}`,
   ];
   if (inc && inc.started) {
@@ -1561,10 +1588,10 @@ function incidentSupportSummary(packet) {
   if (!run) return `Linkmoth incident ${inc.ref || inc.id}: no diagnosis runs stored.`;
   const base = supportSummary({ last_run: run, open_incident: inc });
   const timeline = (packet.runs || []).map((item) =>
-    `- ${new Date(item.ts * 1000).toISOString()} – ${item.title}`
+    `- ${fmtFullTs(item.ts)} – ${item.title}`
   );
-  return base + `\n\nIncident started: ${new Date(inc.started * 1000).toISOString()}`
-    + (inc.resolved ? `\nIncident resolved: ${new Date(inc.resolved * 1000).toISOString()}` : "\nIncident status: open")
+  return base + `\n\nIncident started (local time): ${fmtFullTs(inc.started)}`
+    + (inc.resolved ? `\nIncident resolved (local time): ${fmtFullTs(inc.resolved)}` : "\nIncident status: open")
     + (packet.confidence_reason ? `\nConfidence basis: ${packet.confidence_reason}` : "")
     + (formatIncidentPattern(packet.pattern) ? `\n${formatIncidentPattern(packet.pattern)}` : "")
     + `\n\nDiagnosis timeline:\n${timeline.join("\n")}`;
@@ -2262,8 +2289,6 @@ async function loadReport() {
   $("report-copy").classList.remove("hidden");
   $("report-csv").classList.remove("hidden");
 }
-
-$("report-days").addEventListener("change", loadReport);
 
 $("report-copy").addEventListener("click", async () => {
   const btn = $("report-copy");
@@ -3494,11 +3519,12 @@ $("sec-totp-regen").addEventListener("click", async () => {
   }
 });
 
-function initHistFilter() {
-  const select = $("hist-filter");
-  const trigger = $("hist-filter-trigger");
-  const label = $("hist-filter-label");
-  const menu = $("hist-filter-menu");
+function initCustomSelect({ selectId, triggerId, labelId, menuId, wrapId, fallbackLabel, onChange }) {
+  const select = $(selectId);
+  const trigger = $(triggerId);
+  const label = $(labelId);
+  const menu = $(menuId);
+  const wrap = $(wrapId);
 
   menu.innerHTML = Array.from(select.options).map((opt) =>
     `<li role="option" data-value="${esc(opt.value)}" tabindex="0">${esc(opt.textContent)}</li>`
@@ -3511,7 +3537,7 @@ function initHistFilter() {
 
   function syncLabel() {
     const opt = select.options[select.selectedIndex];
-    label.textContent = opt ? opt.textContent : "All incidents";
+    label.textContent = opt ? opt.textContent : fallbackLabel;
     menu.querySelectorAll("[role=option]").forEach((li) => {
       li.setAttribute("aria-selected", li.dataset.value === select.value ? "true" : "false");
     });
@@ -3521,7 +3547,7 @@ function initHistFilter() {
     select.value = value;
     syncLabel();
     closeMenu();
-    loadHistory();
+    onChange();
   }
 
   trigger.addEventListener("click", () => {
@@ -3544,7 +3570,7 @@ function initHistFilter() {
   });
 
   document.addEventListener("click", (e) => {
-    if (!$("hist-filter-wrap").contains(e.target)) closeMenu();
+    if (!wrap.contains(e.target)) closeMenu();
   });
 
   document.addEventListener("keydown", (e) => {
@@ -3553,7 +3579,18 @@ function initHistFilter() {
 
   syncLabel();
 }
-initHistFilter();
+initCustomSelect({
+  selectId: "hist-filter", triggerId: "hist-filter-trigger",
+  labelId: "hist-filter-label", menuId: "hist-filter-menu",
+  wrapId: "hist-filter-wrap", fallbackLabel: "All incidents",
+  onChange: loadHistory,
+});
+initCustomSelect({
+  selectId: "report-days", triggerId: "report-days-trigger",
+  labelId: "report-days-label", menuId: "report-days-menu",
+  wrapId: "report-days-wrap", fallbackLabel: "Last 30 days",
+  onChange: loadReport,
+});
 
 async function openIncidentByRef(ref) {
   const trimmed = (ref || "").trim();
@@ -3621,7 +3658,7 @@ $("update-check").addEventListener("click", async () => {
       result.textContent = `Version ${data.installed_version} is current (latest: ${data.latest_version}).`;
       return;
     }
-    result.textContent = `Version ${data.latest_version} is available (published ${data.published_at}). Copy the versioned update command below; it checks the archive checksum and does not run automatically. Sigstore verification remains optional.`;
+    result.textContent = `Version ${data.latest_version} is available (published ${fmtDateValue(data.published_at)}). Copy the versioned update command below; it checks the archive checksum and does not run automatically. Sigstore verification remains optional.`;
     const command = document.createElement("textarea");
     command.readOnly = true;
     command.rows = 3;
