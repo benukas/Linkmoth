@@ -1,4 +1,5 @@
 """Public-release metadata and distributable integrity tests."""
+import struct
 import unittest
 from pathlib import Path
 
@@ -25,6 +26,7 @@ DIST_FILES = {
     "linkmoth-white.svg",
     "linkmoth-mark-white.svg",
     "linkmoth-maskable.svg",
+    "linkmoth-icon-180.png",
     "linkmoth-icon-192.png",
     "linkmoth-icon-512.png",
     "linkmoth-white.ico",
@@ -49,6 +51,24 @@ DIST_FILES = {
 
 
 class PublicReleaseTests(unittest.TestCase):
+    def test_pwa_has_standard_opaque_apple_touch_icon(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        source = (ROOT / "linkmoth_core.py").read_text(encoding="utf-8")
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        service_worker = (ROOT / "sw.js").read_text(encoding="utf-8")
+        icon = (ROOT / "linkmoth-icon-180.png").read_bytes()
+        self.assertIn(
+            '<link rel="apple-touch-icon" sizes="180x180" '
+            'href="/linkmoth-icon-180.png">',
+            dashboard,
+        )
+        self.assertIn('"/linkmoth-icon-180.png"', source)
+        self.assertIn("linkmoth-icon-180.png", installer)
+        self.assertIn('"/linkmoth-icon-180.png"', service_worker)
+        self.assertEqual(icon[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", icon[16:24]), (180, 180))
+        self.assertEqual(icon[25], 2)  # PNG truecolour, no alpha channel
+
     def test_public_project_metadata_exists(self):
         for name in (
             "LICENSE",
@@ -134,6 +154,65 @@ class PublicReleaseTests(unittest.TestCase):
             "A token can only GET /api/status, /api/quality, /api/report, and /api/history",
             dashboard,
         )
+
+    def test_expanded_history_adds_context_and_centers_close_icon(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn(
+            ".modal-close {\n"
+            "  display: grid; place-items: center; width: 40px; height: 40px;",
+            dashboard,
+        )
+        self.assertIn('<svg viewBox="0 0 20 20" aria-hidden="true"', dashboard)
+        for control in (
+            'id="history-modal-overview"',
+            'id="history-modal-stats"',
+            'id="history-modal-range-label"',
+        ):
+            self.assertIn(control, dashboard)
+        for metric in ("Recorded checks", "Data gaps", "Median", "95th pct", "Peak"):
+            self.assertIn(metric, dashboard)
+        self.assertIn("function niceLatencyCeil(value)", dashboard)
+        self.assertIn("function historyGapCount(hist)", dashboard)
+        self.assertIn("if (gapBefore) pen = false;", dashboard)
+        self.assertIn("showLatest();", dashboard)
+
+    def test_expanded_history_ranges_use_custom_selector_for_network_and_devices(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn(
+            'class="action-btn custom-select-trigger" id="history-modal-range-trigger"',
+            dashboard,
+        )
+        self.assertIn('id="history-modal-range-menu" role="listbox"', dashboard)
+        self.assertIn('id="history-modal-range" class="sr-only"', dashboard)
+        self.assertIn('historyModalRangeControl = initCustomSelect({', dashboard)
+        self.assertIn(
+            "if (historyModalRangeControl) historyModalRangeControl.refresh();",
+            dashboard,
+        )
+        self.assertIn('kind === "network" ? NETWORK_HISTORY_RANGES : DEVICE_HISTORY_RANGES', dashboard)
+        self.assertNotIn('class="modal-range-select"', dashboard)
+
+    def test_expanded_history_color_swatches_respect_style_csp(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertNotIn('<i style="background:${s.color}">', dashboard)
+        self.assertIn('.hist-swatch-line { background: var(--line); }', dashboard)
+        self.assertIn('.hist-swatch-line2 { background: var(--line2); }', dashboard)
+        self.assertIn(
+            'class="hist-swatch-${esc(s.swatch || "line")}"',
+            dashboard,
+        )
+
+    def test_fire_drill_prompt_state_is_shared_by_the_installation(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        engine_source = (ROOT / "linkmoth_engine.py").read_text(encoding="utf-8")
+        handler_source = (ROOT / "linkmoth_handler.py").read_text(encoding="utf-8")
+        self.assertIn('"fire_drill": fire_drill_status()', engine_source)
+        self.assertIn('elif path == "/api/fire-drill":', handler_source)
+        self.assertIn("WHERE kind IN ('manual', 'verify')", engine_source)
+        self.assertIn('const serverDrill = s.fire_drill || {};', dashboard)
+        self.assertIn('rememberFireDrill(localDrillState);', dashboard)
+        self.assertIn('rememberFireDrill("seen");', dashboard)
+        self.assertIn('rememberFireDrill("completed");', dashboard)
 
     def test_settings_subtabs_match_the_main_navigation_treatment(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
@@ -282,6 +361,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertNotIn("--insecure-skip-verify", readme)
         self.assertIn("# Changelog\n\n## Unreleased\n\n### Added\n", changelog)
         self.assertIn("Backup and restore", changelog)
+        self.assertIn("\n## 0.4.2\n", changelog)
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.2"))
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")

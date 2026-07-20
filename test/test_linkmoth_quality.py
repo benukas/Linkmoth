@@ -194,14 +194,16 @@ class LoadTestTests(unittest.TestCase):
         idle = {"latency_ms": 20.0, "jitter_ms": 2.0, "loss_pct": 0.0,
                 "target": "1.1.1.1"}
         loaded = {"latency_ms": 70.0, "jitter_ms": 9.0, "loss_pct": 0.0,
-                  "target": "1.1.1.1"}
+                  "target": "1.1.1.1", "active_samples": 3}
 
         def fake_downloader(url, addresses, seconds, max_bytes, stats, stop):
             stats["bytes"] = 10 * 1024 * 1024
             stats["elapsed"] = 2.0
 
         with mock.patch.object(
-            linkmoth_probes, "measure_quality", side_effect=[idle, loaded],
+            linkmoth_probes, "measure_quality", return_value=idle,
+        ), mock.patch.object(
+            linkmoth_probes, "_measure_loaded_quality", return_value=loaded,
         ), mock.patch.object(
             linkmoth_probes, "_load_downloader", side_effect=fake_downloader,
         ), mock.patch.object(
@@ -216,10 +218,67 @@ class LoadTestTests(unittest.TestCase):
         self.assertEqual(result["bloat_ms"], 50.0)
         self.assertEqual(result["idle_ms"], 20.0)
         self.assertEqual(result["loaded_ms"], 70.0)
+        self.assertEqual(result["active_samples"], 3)
         self.assertAlmostEqual(result["throughput_mbps"], 41.9, places=1)
         stored = self.lm.latest_load_test()
         self.assertIsNotNone(stored)
         self.assertEqual(stored["grade"], "B")
+
+    def test_run_load_test_reports_fast_transfer_throughput(self):
+        idle = {"latency_ms": 7.0, "jitter_ms": 0.0, "loss_pct": 0.0,
+                "target": "1.1.1.1"}
+        loaded = {"latency_ms": 6.0, "jitter_ms": 0.0, "loss_pct": 0.0,
+                  "target": "1.1.1.1", "active_samples": 2}
+
+        def fake_downloader(url, addresses, seconds, max_bytes, stats, stop):
+            stats["bytes"] = 24 * 1024 * 1024
+            stats["elapsed"] = 0.4
+
+        with mock.patch.object(
+            linkmoth_probes, "measure_quality", return_value=idle,
+        ), mock.patch.object(
+            linkmoth_probes, "_measure_loaded_quality", return_value=loaded,
+        ), mock.patch.object(
+            linkmoth_probes, "_load_downloader", side_effect=fake_downloader,
+        ), mock.patch.object(
+            linkmoth_probes, "_resolve_load_target",
+            return_value=(
+                self.lm.urlparse("https://speed.example.com/file"),
+                ["104.16.0.1"],
+            ),
+        ), mock.patch.object(self.lm.time, "sleep"):
+            result = self.lm.run_load_test(store=False)
+
+        self.assertEqual(result["seconds"], 0.4)
+        self.assertAlmostEqual(result["throughput_mbps"], 503.3, places=1)
+
+    def test_run_load_test_none_when_too_few_active_samples(self):
+        # The whole point of the fix: an extremely fast connection that
+        # exhausts its byte budget before enough pings can overlap active
+        # download progress must report NO result rather than a falsely
+        # confident grade built from idle-network pings.
+        idle = {"latency_ms": 8.0, "jitter_ms": 1.0, "loss_pct": 0.0,
+                "target": "1.1.1.1"}
+
+        def fake_downloader(url, addresses, seconds, max_bytes, stats, stop):
+            stats["bytes"] = max_bytes
+            stats["elapsed"] = 0.05
+
+        with mock.patch.object(
+            linkmoth_probes, "measure_quality", return_value=idle,
+        ), mock.patch.object(
+            linkmoth_probes, "_measure_loaded_quality", return_value=None,
+        ), mock.patch.object(
+            linkmoth_probes, "_load_downloader", side_effect=fake_downloader,
+        ), mock.patch.object(
+            linkmoth_probes, "_resolve_load_target",
+            return_value=(
+                self.lm.urlparse("https://speed.example.com/file"),
+                ["104.16.0.1"],
+            ),
+        ), mock.patch.object(self.lm.time, "sleep"):
+            self.assertIsNone(self.lm.run_load_test())
+        self.assertIsNone(self.lm.latest_load_test())
 
     def test_run_load_test_none_when_idle_unmeasurable(self):
         with mock.patch.object(
@@ -255,6 +314,34 @@ class LoadTestTests(unittest.TestCase):
         self.assertIsNone(stats["error"])
         self.assertEqual(response.read.call_count, 1)
 
+    def test_downloader_repeats_requests_within_a_shared_total_cap(self):
+        # Regression test for the bug this session found while completing
+        # the fix: max_bytes must bound the WHOLE test's transfer, not reset
+        # for each repeated request. Two responses of 6 and 4+ bytes with
+        # max_bytes=10 must stop exactly at 10 total, not 6+6=12 or more —
+        # and must still open a second connection to keep the line busy.
+        response1 = mock.MagicMock()
+        response1.status = 200
+        response1.read.side_effect = [b"x" * 6, b""]
+        response2 = mock.MagicMock()
+        response2.status = 200
+        response2.read.side_effect = [b"y" * 4, b"ignored"]
+        conn1 = mock.MagicMock()
+        conn1.getresponse.return_value = response1
+        conn2 = mock.MagicMock()
+        conn2.getresponse.return_value = response2
+        stats = {"bytes": 0, "elapsed": 0.0, "error": None}
+        with mock.patch.object(
+            linkmoth_probes, "_PinnedHTTPSConnection", side_effect=[conn1, conn2],
+        ) as pinned:
+            self.lm._load_downloader(
+                "https://speed.example.com/file",
+                ["104.16.0.1"], 10, 10, stats, self.lm.threading.Event(),
+            )
+        self.assertEqual(pinned.call_count, 2)
+        self.assertEqual(stats["bytes"], 10)
+        self.assertEqual(response2.read.call_count, 1)
+
     def test_downloader_rejects_redirects(self):
         response = mock.MagicMock()
         response.status = 302
@@ -271,6 +358,44 @@ class LoadTestTests(unittest.TestCase):
         self.assertEqual(stats["bytes"], 0)
         response.read.assert_not_called()
 
+    def test_measure_loaded_quality_counts_only_overlapping_samples(self):
+        stats = {"bytes": 0}
+        calls = []
+
+        def fake_measure(targets, count=1):
+            calls.append(1)
+            # Odd-numbered pings land while the (mocked) downloader is
+            # actively adding bytes; even-numbered ones land during a gap
+            # (e.g. between requests) and must not count as "under load".
+            if len(calls) % 2 == 1:
+                stats["bytes"] += 1000
+            return {"latency_ms": 50.0, "jitter_ms": 1.0, "loss_pct": 0.0,
+                    "target": "1.1.1.1"}
+
+        with mock.patch.object(
+            linkmoth_probes, "measure_quality", side_effect=fake_measure,
+        ), mock.patch.object(self.lm.time, "sleep"):
+            deadline = self.lm.time.monotonic() + 0.05
+            result = self.lm._measure_loaded_quality("1.1.1.1", stats, deadline)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["active_samples"], (len(calls) + 1) // 2)
+
+    def test_measure_loaded_quality_none_when_bytes_never_progress(self):
+        # If the downloader made no progress during any sampled window (e.g.
+        # it already finished, or never started), nothing is "under load" —
+        # returning a grade built from these would be exactly the falsely
+        # confident result this fix exists to prevent.
+        stats = {"bytes": 0}
+        with mock.patch.object(
+            linkmoth_probes, "measure_quality",
+            return_value={"latency_ms": 50.0, "jitter_ms": 1.0,
+                          "loss_pct": 0.0, "target": "1.1.1.1"},
+        ), mock.patch.object(self.lm.time, "sleep"):
+            deadline = self.lm.time.monotonic() + 0.05
+            result = self.lm._measure_loaded_quality("1.1.1.1", stats, deadline)
+        self.assertIsNone(result)
+
     def test_summary_carries_load_test(self):
         with self.lm.db() as conn:
             conn.execute(
@@ -281,6 +406,19 @@ class LoadTestTests(unittest.TestCase):
             )
         summary = self.lm.quality_summary(limit=5)
         self.assertEqual(summary["load_test"]["grade"], "A")
+
+    def test_latest_load_test_recovers_discarded_fast_transfer_speed(self):
+        with self.lm.db() as conn:
+            conn.execute(
+                "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms,"
+                " grade, throughput_mbps, bytes, seconds)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (1000.0, 7.0, 6.0, 0.0, "A", None,
+                 24 * 1024 * 1024, 0.4),
+            )
+
+        result = self.lm.latest_load_test()
+        self.assertAlmostEqual(result["throughput_mbps"], 503.3, places=1)
 
     def test_summary_load_test_present_without_a_current_sample(self):
         # A fresh install (or baseline_minutes=0 "explainer" role) may have

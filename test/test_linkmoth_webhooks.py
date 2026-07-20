@@ -449,6 +449,45 @@ class QueueTests(WebhookDbCase):
             remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
         self.assertEqual(remaining, 0)
 
+    def test_max_escalation_delivery_not_expired_the_moment_it_becomes_due(self):
+        # A 1440-minute (24h) escalation holds the row undelivered for
+        # exactly MAX_AGE_SECONDS before it's ever due. The expiry check
+        # must not count that hold time against the row's retry budget, or a
+        # maximally-escalated fault would expire before its first attempt.
+        wh_data = self.make_webhook()
+        wh.update_webhook(self.db, wh_data["id"], {"escalation_minutes": 1440})
+        ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        wh.emit_event(self.db, "fault_opened", ctx)
+        with self.db() as conn:
+            row = conn.execute("SELECT * FROM webhook_queue").fetchone()
+        self.assertAlmostEqual(row["escalation_seconds"], wh.MAX_AGE_SECONDS, delta=2)
+        due_at = row["next_attempt"]
+        # The drain loop only wakes periodically, so "now" at drain time is
+        # always a little past the exact due instant -- simulate that.
+        with mock.patch.object(wh, "_post", return_value=200) as post:
+            wh.drain_queue_once(self.db, now=due_at + 15)
+        self.assertEqual(post.call_count, 1)
+        with self.db() as conn:
+            remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(remaining, 0)  # delivered and removed, not expired
+
+    def test_max_escalation_delivery_still_expires_after_full_retry_budget(self):
+        # Escalation-held rows must still expire eventually -- the fix only
+        # adds back the hold time, it doesn't grant unlimited retries.
+        wh_data = self.make_webhook()
+        wh.update_webhook(self.db, wh_data["id"], {"escalation_minutes": 1440})
+        ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})
+        wh.emit_event(self.db, "fault_opened", ctx)
+        with self.db() as conn:
+            row = conn.execute("SELECT * FROM webhook_queue").fetchone()
+        far_future = row["created"] + wh.MAX_AGE_SECONDS + row["escalation_seconds"] + 60
+        with mock.patch.object(wh, "_post", return_value=200) as post:
+            wh.drain_queue_once(self.db, now=far_future)
+        self.assertEqual(post.call_count, 0)
+        with self.db() as conn:
+            remaining = conn.execute("SELECT COUNT(*) FROM webhook_queue").fetchone()[0]
+        self.assertEqual(remaining, 0)  # dropped as expired
+
     def test_queue_cap_drops_oldest(self):
         self.make_webhook()
         ctx = wh.build_event_context("fault_opened", verdict={"title": "x"})

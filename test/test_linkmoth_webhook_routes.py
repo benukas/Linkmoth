@@ -378,6 +378,21 @@ class MetricsRouteTests(LinkmothTestBase):
         )
         self.assertEqual(code, 401)
 
+    def test_metrics_accepts_readonly_token_without_webhook_secret(self):
+        # A metrics scraper should never need the write-capable webhook
+        # bearer (which can also hit /trigger and the inbound webhook
+        # routes) — the purpose-built read-only token must be enough on
+        # its own.
+        value, _ = self.auth.create_readonly_token("prometheus")
+        code, body, _, headers = http(
+            "GET", f"{self.base}/metrics",
+            headers={"Authorization": f"Bearer {value}"},
+        )
+        self.assertEqual(code, 200)
+        text = body.decode("utf-8") if isinstance(body, bytes) else str(body)
+        self.assertIn("linkmoth_info{version=", text)
+        self.assertNotIn(value, text)
+
     def test_metrics_exposes_read_only_gauges(self):
         code, body, _, headers = http(
             "GET", f"{self.base}/metrics",

@@ -78,7 +78,8 @@ from linkmoth_probes import (
     _LOCAL_DNS_DETECT_LOCK, _STORY_SOURCES, _TUNNEL_IFACE_PREFIXES,
     _active_local_dns_adapters, _classify_iface, _count_phrase, _dns_query_a,
     _ethtool_link, _https_probe_label, _human_duration, _load_downloader,
-    _local_dns_failure_hint, _local_ipv4_addresses, _median, _micro_step,
+    _local_dns_failure_hint, _local_ipv4_addresses,
+    _measure_loaded_quality, _median, _micro_step,
     _ms_text, _read_link_speed_duplex, _read_power_supplies,
     _read_power_supply_file, _resolve_load_target, _validate_load_url, any_ok,
     bind_exposure_risk, check_disk_pressure, check_link, check_power,
@@ -93,9 +94,10 @@ from linkmoth_probes import (
     verdict, wifi_wired_differential,
 )
 from linkmoth_engine import (
-    AUTH, DEVICES, ENGINE, Engine, _get_meta, _month_bounds, _set_meta,
-    get_auth, janitor_loop, janitor_sweep, maybe_send_monthly_digest,
-    monthly_digest_lines, prometheus_metrics,
+    AUTH, DEVICES, ENGINE, Engine, _get_meta, _month_bounds,
+    _monitoring_started, _set_meta, fire_drill_status, get_auth, janitor_loop,
+    janitor_sweep, maybe_send_monthly_digest, monthly_digest_lines,
+    prometheus_metrics,
 )
 from linkmoth_handler import (
     AUTH_VERIFY_SLOTS, HEADER_POLL_SECONDS, Handler, MAX_HTTP_HEADER_BYTES,

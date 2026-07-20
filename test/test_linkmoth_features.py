@@ -1051,6 +1051,71 @@ class MonthlyDigestTests(unittest.TestCase):
         lines = self.linkmoth.monthly_digest_lines(prev_year, prev_month)
         self.assertTrue(any("clean month" in line for line in lines))
 
+    def test_partial_first_month_is_skipped_not_reported_as_full_uptime(self):
+        # Reproduces the reported bug: Linkmoth installed on day 20 of the
+        # previous month. Even though the marker was armed that month and a
+        # full calendar month has now rolled over, reporting on it would
+        # credit ~19 days of pre-install time as uptime. It must be skipped.
+        prev_year, prev_month = self._prev_month()
+        start, end = self.linkmoth._month_bounds(prev_year, prev_month)
+        mid_month = start + 19 * 86400
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?)",
+                (mid_month, "ok", "all_clear", "t", "[]"),
+            )
+        prev_key = f"{prev_year:04d}-{prev_month:02d}"
+        self.linkmoth._set_meta("monthly_digest_sent", prev_key)
+        with mock.patch(
+            "linkmoth_discord.send_monthly_digest_alert",
+        ) as discord:
+            result = self.linkmoth.maybe_send_monthly_digest()
+        self.assertFalse(result)
+        discord.assert_not_called()
+        lt = time.localtime()
+        self.assertEqual(
+            self.linkmoth._get_meta("monthly_digest_sent"),
+            f"{lt.tm_year:04d}-{lt.tm_mon:02d}",
+        )
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM runs")
+
+    def test_uptime_denominator_clamped_to_monitoring_started(self):
+        # Direct check of the math fix, independent of the send/skip
+        # decision: monitoring started 19 days into the month, with a
+        # 1-hour fault on day 20. Uptime must be computed against the
+        # ~11-12 observed days, not the full ~31-day calendar month.
+        prev_year, prev_month = self._prev_month()
+        start, end = self.linkmoth._month_bounds(prev_year, prev_month)
+        monitoring_started = start + 19 * 86400
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?)",
+                (monitoring_started, "ok", "all_clear", "t", "[]"),
+            )
+            conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved,"
+                " verdict_code, verdict_title, ref) VALUES(?,?,?,?,?,?,?)",
+                (monitoring_started + 3600, "baseline", "",
+                 monitoring_started + 7200, "wan_down", "WAN down", "INC-M2"),
+            )
+        lines = self.linkmoth.monthly_digest_lines(prev_year, prev_month)
+        observed_span_days = (end - monitoring_started) / 86400
+        # 1 hour of downtime over the observed span, not the full month.
+        expected_uptime = round(
+            max(0.0, 100.0 * (1 - 3600 / (observed_span_days * 86400))), 2
+        )
+        uptime_line = next(line for line in lines if "uptime" in line)
+        self.assertIn(f"{expected_uptime}%", uptime_line)
+        # The bug's signature: computed over the full calendar month, uptime
+        # would round to 99.87% or higher; over ~11-12 observed days it's
+        # meaningfully lower.
+        self.assertLess(expected_uptime, 99.7)
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM runs")
+
 
 class HistoryRangeTests(unittest.TestCase):
     @classmethod
