@@ -46,6 +46,7 @@ class VerifyTests(unittest.TestCase):
         OUTAGE_TRACKER._consecutive_clear = 0
         with self.linkmoth.db() as conn:
             conn.execute("DELETE FROM runs")
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
 
     def tearDown(self):
@@ -130,6 +131,7 @@ class PatternTests(unittest.TestCase):
 
     def setUp(self):
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
 
     def _add(self, started, resolved, code="wan_down"):
@@ -193,6 +195,7 @@ class LifecycleAndExportTests(unittest.TestCase):
     def setUp(self):
         with self.linkmoth.db() as conn:
             conn.execute("DELETE FROM runs")
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
 
     def test_lifecycle_keeps_diagnosis_when_closed(self):
@@ -210,6 +213,8 @@ class LifecycleAndExportTests(unittest.TestCase):
         detail = self.linkmoth.Engine().incident_detail(inc_id=inc_id)
         self.assertEqual(detail["incident"]["lifecycle"], "closed")
         self.assertEqual(detail["incident"]["diagnosis_code"], "wan_down")
+        self.assertIsNone(detail["incident"]["recovered_at"])
+        self.assertIn("a healthy recovery was not recorded", detail["story"])
 
     def test_support_safe_export_excludes_secrets_and_stabilizes_private_networks(self):
         now = time.time()
@@ -392,17 +397,19 @@ class IncidentStoryTests(unittest.TestCase):
 
     def setUp(self):
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM runs")
 
     def _make_incident(self, resolved=None, false_alarm=0, source="baseline"):
         started = time.time() - 600
+        recovered_at = started + 240 if resolved is not None else None
         with self.linkmoth.db() as conn:
             cur = conn.execute(
-                "INSERT INTO incidents(started, source, detail, resolved,"
+                "INSERT INTO incidents(started, source, detail, resolved, recovered_at,"
                 " verdict_code, verdict_title, ref, false_alarm)"
-                " VALUES(?,?,?,?,?,?,?,?)",
-                (started, source, "self-detected: wan_down", resolved,
+                " VALUES(?,?,?,?,?,?,?,?,?)",
+                (started, source, "self-detected: wan_down", resolved, recovered_at,
                  "wan_down", "Internet is dead beyond the router",
                  "INC-20260717-0001", false_alarm),
             )
@@ -419,6 +426,13 @@ class IncidentStoryTests(unittest.TestCase):
                 (inc_id, started, "bad", "wan_down",
                  "Internet is dead beyond the router", checks),
             )
+            if recovered_at is not None:
+                conn.execute(
+                    "INSERT INTO runs(incident_id, ts, severity, code, title, checks)"
+                    " VALUES(?,?,?,?,?,?)",
+                    (inc_id, recovered_at, "ok", "all_clear",
+                     "Nothing wrong seen from the network side", "[]"),
+                )
         return inc_id
 
     def test_closed_incident_story_reads_naturally(self):
@@ -428,7 +442,12 @@ class IncidentStoryTests(unittest.TestCase):
         self.assertIn("Linkmoth's own background check noticed a problem", story)
         self.assertIn("The first rung to fail was Internet ping", story)
         self.assertIn("Verdict: Internet is dead beyond the router", story)
-        self.assertIn("The network recovered at", story)
+        self.assertIn("Network connectivity returned at", story)
+        self.assertIn("approximately 4 min of observed downtime", story)
+        self.assertIn("closed it at", story)
+        self.assertIn("after the recovery remained stable", story)
+        self.assertIn("rechecked 1 more time", story)
+        self.assertNotIn("time(s)", story)
         self.assertIn("INC-20260717-0001", story)
 
     def test_open_incident_story_says_still_open(self):
@@ -450,6 +469,115 @@ class IncidentStoryTests(unittest.TestCase):
         self.assertEqual(hd(90000), "1 d 1 h")
 
 
+class OutageSegmentAccountingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_segments_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
+            conn.execute("DELETE FROM runs")
+            conn.execute("DELETE FROM incidents")
+
+    def _new_incident(self, started):
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail, verdict_code,"
+                " verdict_title, diagnosis_code, diagnosis_title, ref)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (started, "baseline", "self-detected: wan_down", "wan_down",
+                 "Internet is dead beyond the router", "wan_down",
+                 "Internet is dead beyond the router", "INC-SEGMENTS-1"),
+            )
+            return cur.lastrowid
+
+    def _observe(self, inc_id, observed_at, severity):
+        code = "all_clear" if severity == "ok" else "wan_down"
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?,?)",
+                (inc_id, observed_at, severity, code, code, "[]"),
+            )
+            self.linkmoth._record_incident_observation(
+                conn, inc_id, observed_at, severity
+            )
+
+    def test_returning_fault_adds_segment_without_extending_downtime(self):
+        started = time.time() - 1800
+        inc_id = self._new_incident(started)
+        self._observe(inc_id, started, "bad")
+        self._observe(inc_id, started + 180, "bad")
+        self._observe(inc_id, started + 240, "ok")
+        self._observe(inc_id, started + 600, "bad")
+        self._observe(inc_id, started + 630, "ok")
+        self._observe(inc_id, started + 900, "ok")
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "UPDATE incidents SET resolved=? WHERE id=?",
+                (started + 900, inc_id),
+            )
+
+        engine = self.linkmoth.Engine()
+        detail = engine.incident_detail(inc_id=inc_id)
+        self.assertEqual(len(detail["outage_segments"]), 2)
+        self.assertEqual(detail["downtime_s"], 270)
+        self.assertEqual(detail["incident_duration_s"], 900)
+        self.assertEqual(detail["incident"]["recovered_at"], started + 630)
+        self.assertEqual(detail["incident"]["resolved"], started + 900)
+        self.assertIn("approximately 4 min of observed downtime", detail["story"])
+        self.assertIn("across 2 outage segments", detail["story"])
+
+        report = engine.isp_report(30)
+        item = report["incidents"][0]
+        self.assertEqual(report["downtime_s"], 270)
+        self.assertEqual(report["longest"]["downtime_s"], 270)
+        self.assertEqual(item["duration_s"], 270)
+        self.assertEqual(item["incident_duration_s"], 900)
+        self.assertEqual(len(item["outage_segments"]), 2)
+        self.assertIn("network recovered", report["letter"])
+        self.assertIn("incident closed", report["letter"])
+
+    def test_backfill_repairs_close_time_masquerading_as_recovery(self):
+        started = time.time() - 1800
+        resolved = started + 900
+        inc_id = self._new_incident(started)
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "UPDATE incidents SET resolved=?, recovered_at=? WHERE id=?",
+                (resolved, resolved, inc_id),
+            )
+            for observed_at, severity in (
+                (started, "bad"),
+                (started + 240, "ok"),
+                (resolved, "ok"),
+            ):
+                conn.execute(
+                    "INSERT INTO runs(incident_id, ts, severity, code, title, checks)"
+                    " VALUES(?,?,?,?,?,?)",
+                    (inc_id, observed_at, severity,
+                     "all_clear" if severity == "ok" else "wan_down",
+                     severity, "[]"),
+                )
+            self.linkmoth.backfill_incident_outage_segments(conn)
+            incident = conn.execute(
+                "SELECT recovered_at FROM incidents WHERE id=?", (inc_id,)
+            ).fetchone()
+            segments = conn.execute(
+                "SELECT started, ended FROM incident_outage_segments"
+                " WHERE incident_id=? ORDER BY started", (inc_id,)
+            ).fetchall()
+        self.assertEqual(incident["recovered_at"], started + 240)
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0]["started"], started)
+        self.assertEqual(segments[0]["ended"], started + 240)
+
+
 class StatsWindowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -461,6 +589,7 @@ class StatsWindowTests(unittest.TestCase):
 
     def setUp(self):
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM runs")
 
@@ -513,6 +642,7 @@ class IspReportTests(unittest.TestCase):
 
     def setUp(self):
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM runs")
 
@@ -588,6 +718,7 @@ class FalseAlarmAccountingTests(unittest.TestCase):
 
     def setUp(self):
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM runs")
 
@@ -669,6 +800,7 @@ class JanitorTests(unittest.TestCase):
     def test_sweep_keeps_runs_of_open_incident(self):
         old = time.time() - (self.linkmoth.CFG["retention_days"] + 5) * 86400
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM runs")
             cur = conn.execute(
@@ -709,6 +841,7 @@ class MonthlyDigestTests(unittest.TestCase):
 
     def setUp(self):
         with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incident_outage_segments")
             conn.execute("DELETE FROM incidents")
             conn.execute("DELETE FROM quality_samples")
             conn.execute("DELETE FROM app_meta")
@@ -745,7 +878,8 @@ class MonthlyDigestTests(unittest.TestCase):
             self.assertFalse(self.linkmoth.maybe_send_monthly_digest())
         discord.assert_called_once()
         lines = discord.call_args.args[0]
-        self.assertTrue(any("1 incident(s)" in line for line in lines))
+        self.assertTrue(any("1 incident, 0 false alarms." in line for line in lines))
+        self.assertFalse(any("(s)" in line for line in lines))
         self.assertTrue(any("Downtime" in line for line in lines))
         lt = time.localtime()
         self.assertEqual(

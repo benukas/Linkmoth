@@ -1203,6 +1203,17 @@ def init_db():
                 seconds REAL,
                 error TEXT
             );
+            CREATE TABLE IF NOT EXISTS incident_outage_segments(
+                id INTEGER PRIMARY KEY,
+                incident_id INTEGER NOT NULL,
+                started REAL NOT NULL,
+                ended REAL,
+                CHECK(ended IS NULL OR ended >= started)
+            );
+            CREATE INDEX IF NOT EXISTS incident_outage_segments_incident
+                ON incident_outage_segments(incident_id, started);
+            CREATE UNIQUE INDEX IF NOT EXISTS incident_outage_segments_one_open
+                ON incident_outage_segments(incident_id) WHERE ended IS NULL;
             """
         )
         try:
@@ -1235,6 +1246,7 @@ def init_db():
             "WHERE diagnosis_code IS NULL AND verdict_code IS NOT NULL"
         )
         backfill_incident_refs(conn)
+        backfill_incident_outage_segments(conn)
         from linkmoth_outage import init_outage_db
         from linkmoth_push import init_push_db
         from linkmoth_devices import init_device_db
@@ -1267,6 +1279,171 @@ def backfill_incident_refs(conn):
             "UPDATE incidents SET ref=? WHERE id=?",
             (make_incident_ref(row["id"], row["started"]), row["id"]),
         )
+
+
+def _derive_outage_segments(incident, runs):
+    """Reconstruct observed fault intervals from an incident's ordered runs.
+
+    The first failing observation inherits the incident start because the
+    trigger itself is the earliest evidence. A fault that returns after a
+    healthy observation starts a new segment at that failing run.
+    """
+    incident_started = float(incident["started"])
+    segments = []
+    open_started = None
+    for index, run in enumerate(runs):
+        observed_at = max(incident_started, float(run["ts"]))
+        if run.get("severity") != "ok":
+            if open_started is None:
+                open_started = incident_started if index == 0 else observed_at
+        elif open_started is not None:
+            segments.append({
+                "started": open_started,
+                "ended": max(open_started, observed_at),
+            })
+            open_started = None
+    if open_started is not None:
+        ended = incident.get("recovered_at") or incident.get("resolved")
+        segments.append({
+            "started": open_started,
+            "ended": max(open_started, float(ended)) if ended is not None else None,
+        })
+    if not segments and not runs:
+        code = incident.get("diagnosis_code") or incident.get("verdict_code")
+        if not incident.get("false_alarm") and code and code != "all_clear":
+            ended = incident.get("recovered_at") or incident.get("resolved")
+            segments.append({
+                "started": incident_started,
+                "ended": max(incident_started, float(ended)) if ended is not None else None,
+            })
+    return segments
+
+
+def backfill_incident_outage_segments(conn):
+    """Build segments once for pre-segment databases from retained run history."""
+    incidents = conn.execute(
+        "SELECT * FROM incidents WHERE NOT EXISTS"
+        " (SELECT 1 FROM incident_outage_segments s WHERE s.incident_id=incidents.id)"
+    ).fetchall()
+    for row in incidents:
+        incident = dict(row)
+        runs = [dict(run) for run in conn.execute(
+            "SELECT ts, severity FROM runs WHERE incident_id=? ORDER BY id",
+            (incident["id"],),
+        )]
+        segments = _derive_outage_segments(incident, runs)
+        for segment in segments:
+            conn.execute(
+                "INSERT INTO incident_outage_segments(incident_id, started, ended)"
+                " VALUES(?,?,?)",
+                (incident["id"], segment["started"], segment["ended"]),
+            )
+        # Older Linkmoth versions wrote the incident-close time into
+        # recovered_at. When retained runs prove an earlier final recovery,
+        # repair that timestamp as part of the one-time segment migration.
+        if (
+            segments
+            and segments[-1]["ended"] is not None
+            and runs
+            and runs[-1]["severity"] == "ok"
+        ):
+            recovered_at = float(segments[-1]["ended"])
+            conn.execute(
+                "UPDATE incidents SET recovered_at=? WHERE id=?"
+                " AND (recovered_at IS NULL OR"
+                " (resolved IS NOT NULL AND ABS(recovered_at - resolved) < 0.001))",
+                (recovered_at, incident["id"]),
+            )
+
+
+def _incident_outage_segments(conn, incident):
+    """Return stored segments, with a read-only fallback for legacy fixtures."""
+    rows = [dict(row) for row in conn.execute(
+        "SELECT started, ended FROM incident_outage_segments"
+        " WHERE incident_id=? ORDER BY started, id",
+        (incident["id"],),
+    )]
+    if rows:
+        return rows
+    runs = [dict(run) for run in conn.execute(
+        "SELECT ts, severity FROM runs WHERE incident_id=? ORDER BY id",
+        (incident["id"],),
+    )]
+    return _derive_outage_segments(incident, runs)
+
+
+def _outage_seconds(segments, window_start=None, window_end=None, now=None):
+    """Sum non-overlapping observed outage segments inside an optional window."""
+    now = time.time() if now is None else float(now)
+    start_limit = float(window_start) if window_start is not None else None
+    end_limit = float(window_end) if window_end is not None else now
+    total = 0.0
+    for segment in segments:
+        started = float(segment["started"])
+        ended = float(segment["ended"]) if segment.get("ended") is not None else now
+        if start_limit is not None:
+            started = max(started, start_limit)
+        ended = min(ended, end_limit)
+        total += max(0.0, ended - started)
+    return total
+
+
+def _record_incident_observation(conn, incident_id, observed_at, severity):
+    """Advance outage segments for one newly stored incident diagnosis run."""
+    if incident_id is None:
+        return
+    incident = conn.execute(
+        "SELECT id, started, resolved FROM incidents WHERE id=?", (incident_id,)
+    ).fetchone()
+    if not incident or incident["resolved"] is not None:
+        return
+    observed_at = float(observed_at)
+    if severity == "ok":
+        conn.execute(
+            "UPDATE incident_outage_segments SET ended=?"
+            " WHERE incident_id=? AND ended IS NULL",
+            (observed_at, incident_id),
+        )
+        conn.execute(
+            "UPDATE incidents SET recovered_at=COALESCE(recovered_at, ?)"
+            " WHERE id=? AND resolved IS NULL",
+            (observed_at, incident_id),
+        )
+        return
+    open_segment = conn.execute(
+        "SELECT id FROM incident_outage_segments"
+        " WHERE incident_id=? AND ended IS NULL",
+        (incident_id,),
+    ).fetchone()
+    if open_segment is None:
+        segment_count = conn.execute(
+            "SELECT COUNT(*) FROM incident_outage_segments WHERE incident_id=?",
+            (incident_id,),
+        ).fetchone()[0]
+        run_count = conn.execute(
+            "SELECT COUNT(*) FROM runs WHERE incident_id=?", (incident_id,)
+        ).fetchone()[0]
+        segment_started = (
+            float(incident["started"])
+            if segment_count == 0 and run_count == 1
+            else observed_at
+        )
+        conn.execute(
+            "INSERT INTO incident_outage_segments(incident_id, started) VALUES(?,?)",
+            (incident_id, segment_started),
+        )
+    conn.execute(
+        "UPDATE incidents SET recovered_at=NULL WHERE id=? AND resolved IS NULL",
+        (incident_id,),
+    )
+
+
+def _close_open_outage_segment(conn, incident_id, ended_at):
+    conn.execute(
+        "UPDATE incident_outage_segments SET ended=?"
+        " WHERE incident_id=? AND ended IS NULL",
+        (float(ended_at), incident_id),
+    )
 
 
 def ensure_auto_vacuum():
@@ -2556,6 +2733,11 @@ def _human_duration(seconds):
     return f"{days} d {hours} h" if hours else f"{days} d"
 
 
+def _count_phrase(count, singular, plural=None):
+    count = int(count)
+    return f"{count} {singular if count == 1 else (plural or singular + 's')}"
+
+
 _STORY_SOURCES = {
     "baseline": "Linkmoth's own background check noticed a problem",
     "dashboard": "a manual diagnosis from the dashboard found a problem",
@@ -2606,8 +2788,10 @@ def incident_story(detail):
         sentences.append(line + ".")
     runs = detail.get("runs") or []
     if len(runs) > 1:
+        rechecks = len(runs) - 1
         sentences.append(
-            f"Linkmoth rechecked {len(runs) - 1} more time(s) and kept every result."
+            f"Linkmoth rechecked {rechecks} more"
+            f" {'time' if rechecks == 1 else 'times'} and retained every result."
         )
     lifecycle = inc.get("lifecycle")
     if lifecycle == "false-alarm":
@@ -2615,15 +2799,38 @@ def incident_story(detail):
             "It was marked a false alarm: nothing wrong was seen from the network side."
         )
     elif lifecycle == "closed" and inc.get("resolved"):
-        ended = time.strftime("%H:%M", time.localtime(float(inc["resolved"])))
-        duration = _human_duration(float(inc["resolved"]) - started)
-        sentences.append(
-            f"The network recovered at {ended}, after {duration} of downtime."
-        )
+        closed = time.strftime("%H:%M", time.localtime(float(inc["resolved"])))
+        downtime = _human_duration(detail.get("downtime_s") or 0)
+        recovered_at = inc.get("recovered_at")
+        if recovered_at:
+            recovered = time.strftime("%H:%M", time.localtime(float(recovered_at)))
+            segment_count = len(detail.get("outage_segments") or [])
+            segment_note = (
+                f" across {_count_phrase(segment_count, 'outage segment')}"
+                if segment_count > 1 else ""
+            )
+            sentences.append(
+                f"Network connectivity returned at {recovered} after approximately"
+                f" {downtime} of observed downtime{segment_note}."
+            )
+            sentences.append(
+                f"Linkmoth continued monitoring the incident and closed it at"
+                f" {closed} after the recovery remained stable."
+            )
+        else:
+            sentences.append(
+                f"Linkmoth closed the incident at {closed} after {downtime} of"
+                " observed downtime; a healthy recovery was not recorded."
+            )
     elif lifecycle == "recovered-awaiting-confirmation":
+        recovered = time.strftime(
+            "%H:%M", time.localtime(float(inc["recovered_at"]))
+        )
+        downtime = _human_duration(detail.get("downtime_s") or 0)
         sentences.append(
-            "The network looks recovered; Linkmoth is confirming before closing"
-            " the incident."
+            f"Network connectivity returned at {recovered} after approximately"
+            f" {downtime} of observed downtime. Linkmoth is continuing the"
+            " recovery monitoring window before closing the incident."
         )
     else:
         sentences.append(
@@ -2662,7 +2869,10 @@ def isp_report_letter(report):
             f" {days} days."
         )
     else:
-        lines.append(f"Provider-path outages: {isp['count']}")
+        lines.append(
+            f"Provider-path {'outage' if isp['count'] == 1 else 'outages'}:"
+            f" {isp['count']}"
+        )
         lines.append(
             "Downtime on the provider path: "
             + _human_duration(isp["downtime_s"])
@@ -2672,11 +2882,23 @@ def isp_report_letter(report):
             when = time.strftime(
                 "%Y-%m-%d %H:%M", time.localtime(longest["started"])
             )
-            dur = (
-                "still ongoing" if longest["open"]
-                else _human_duration(longest["duration_s"])
+            downtime = _human_duration(longest["window_downtime_s"])
+            incident_duration = _human_duration(longest["incident_duration_s"])
+            recovered = (
+                time.strftime(
+                    "%Y-%m-%d %H:%M", time.localtime(longest["recovered_at"])
+                ) if longest.get("recovered_at") else "not yet observed"
             )
-            lines.append(f"Longest single outage: {when} local time, {dur}.")
+            closed = (
+                time.strftime(
+                    "%Y-%m-%d %H:%M", time.localtime(longest["resolved"])
+                ) if longest.get("resolved") else "still open"
+            )
+            lines.append(
+                f"Longest single outage: {when} local time, {downtime} observed"
+                f" downtime; incident duration {incident_duration}; network"
+                f" recovered {recovered}; incident closed {closed}."
+            )
         peak = isp.get("peak_hours")
         if peak:
             lines.append(
@@ -2691,9 +2913,25 @@ def isp_report_letter(report):
             when = time.strftime(
                 "%Y-%m-%d %H:%M", time.localtime(item["started"])
             )
-            dur = "ongoing" if item["open"] else _human_duration(item["duration_s"])
+            downtime = _human_duration(item["window_downtime_s"])
+            incident_duration = _human_duration(item["incident_duration_s"])
+            recovered = (
+                time.strftime(
+                    "%Y-%m-%d %H:%M", time.localtime(item["recovered_at"])
+                ) if item.get("recovered_at") else "not yet observed"
+            )
+            closed = (
+                time.strftime(
+                    "%Y-%m-%d %H:%M", time.localtime(item["resolved"])
+                ) if item.get("resolved") else "still open"
+            )
+            timing = (
+                f"{downtime} observed downtime; incident duration"
+                f" {incident_duration}; network recovered {recovered};"
+                f" incident closed {closed}"
+            )
             lines.append(
-                f"- {item['ref'] or '(no ref)'} — {when}, {dur} — "
+                f"- {item['ref'] or '(no ref)'} — {when}, {timing} — "
                 + (item["title"] or item["code"] or "outage")
             )
     lines.extend([
@@ -2716,17 +2954,25 @@ def isp_report_csv(report):
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
     writer.writerow([
-        "ref", "started_local", "resolved_local", "duration_seconds",
-        "ongoing", "verdict_code", "verdict_title", "layer",
-        "isp_attributable",
+        "ref", "started_local", "network_recovered_local",
+        "incident_closed_local", "duration_seconds",
+        "observed_downtime_seconds", "incident_duration_seconds",
+        "outage_segments", "ongoing", "verdict_code", "verdict_title",
+        "layer", "isp_attributable",
     ])
     for item in report["incidents"]:
         writer.writerow([
             item["ref"] or "",
             time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item["started"])),
+            (time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(item["recovered_at"])
+            ) if item["recovered_at"] else ""),
             (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item["resolved"]))
              if item["resolved"] else ""),
             item["duration_s"],
+            item["downtime_s"],
+            item["incident_duration_s"],
+            len(item["outage_segments"]),
             "yes" if item["open"] else "no",
             item["code"] or "",
             item["title"] or "",
@@ -3142,11 +3388,12 @@ class Engine:
             "explain": "Closed from the dashboard.",
             "hint": "",
         }
+        closed_at = time.time()
         with db() as conn:
+            _close_open_outage_segment(conn, inc_id, closed_at)
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, recovered_at=?"
-                " WHERE id=? AND resolved IS NULL",
-                (time.time(), time.time(), inc_id),
+                "UPDATE incidents SET resolved=? WHERE id=? AND resolved IS NULL",
+                (closed_at, inc_id),
             )
         if cur.rowcount:
             self._emit_webhook(inc_id, "fault_closed", recovery_verdict)
@@ -3174,6 +3421,7 @@ class Engine:
             if not inc:
                 return False, "no open incident"
         inc_id = inc["id"]
+        closed_at = time.time()
         with db() as conn:
             # Rewrite the verdict unconditionally — an already-closed incident
             # marked as a false alarm must stop counting as a blamed fault in
@@ -3185,10 +3433,10 @@ class Engine:
                 (false_alarm_verdict["code"], false_alarm_verdict["title"],
                  inc_id),
             )
+            _close_open_outage_segment(conn, inc_id, closed_at)
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, recovered_at=?"
-                " WHERE id=? AND resolved IS NULL",
-                (time.time(), time.time(), inc_id),
+                "UPDATE incidents SET resolved=? WHERE id=? AND resolved IS NULL",
+                (closed_at, inc_id),
             )
         self._emit_webhook(inc_id, "false_alarm_marked", false_alarm_verdict)
         if cur.rowcount:
@@ -3210,12 +3458,16 @@ class Engine:
         if out is None:
             return None
         checks, duration_ms, v, _cached = out
+        observed_at = time.time()
         with db() as conn:
             conn.execute(
                 "INSERT INTO runs(incident_id, ts, severity, code, title, explain, hint, checks, duration_ms, kind)"
                 " VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (incident_id, time.time(), v["severity"], v["code"], v["title"],
+                (incident_id, observed_at, v["severity"], v["code"], v["title"],
                  v["explain"], v["hint"], json.dumps(checks), duration_ms, kind),
+            )
+            _record_incident_observation(
+                conn, incident_id, observed_at, v["severity"]
             )
         self._observe_network(v, checks, kind)
         if kind in ("manual", "verify"):
@@ -3253,9 +3505,10 @@ class Engine:
             if duration_s is None and inc and event in (
                 "fault_recovered", "fault_closed", "false_alarm_marked",
             ):
-                duration_s = max(
-                    0.0, time.time() - float(inc.get("started") or time.time())
-                )
+                with db() as conn:
+                    duration_s = _outage_seconds(
+                        _incident_outage_segments(conn, inc), now=time.time()
+                    )
             ctx = build_event_context(
                 event, verdict=verdict, incident=inc, checks=checks,
                 duration_s=duration_s,
@@ -3282,13 +3535,17 @@ class Engine:
                 if is_global_fault_code((prior_fault or {}).get("code")):
                     return
                 digest = flush_suppression_digest(db, recovery_ts=time.time())
+                with db() as conn:
+                    downtime_s = _outage_seconds(
+                        _incident_outage_segments(conn, inc), now=time.time()
+                    )
                 notify_recovery(
                     CFG, STATE_DIR, db,
                     prior_fault=prior_fault or {},
                     recovery_verdict=verdict,
                     checks=checks,
                     digest=digest,
-                    duration_s=max(0.0, time.time() - float(inc.get("started") or time.time())),
+                    duration_s=downtime_s,
                     incident=inc,
                     source="incident-loop",
                 )
@@ -3354,7 +3611,8 @@ class Engine:
         return inc_id
 
     def _loop(self, inc_id):
-        consecutive_ok = 0
+        initial = self._incident_by_id(inc_id)
+        consecutive_ok = 1 if initial and initial.get("recovered_at") else 0
         worst = None
         fault_notified = False
         last_emitted = None
@@ -3377,12 +3635,6 @@ class Engine:
                 continue
             if v["severity"] == "ok":
                 consecutive_ok += 1
-                if consecutive_ok == 1:
-                    with db() as conn:
-                        conn.execute(
-                            "UPDATE incidents SET recovered_at=? WHERE id=? AND resolved IS NULL",
-                            (time.time(), inc_id),
-                        )
                 if consecutive_ok >= 2:
                     recovery_verdict = {
                         "severity": "ok",
@@ -3399,11 +3651,6 @@ class Engine:
                     break
             else:
                 consecutive_ok = 0
-                with db() as conn:
-                    conn.execute(
-                        "UPDATE incidents SET recovered_at=NULL WHERE id=? AND resolved IS NULL",
-                        (inc_id,),
-                    )
                 # Preserve the incident's strongest confirmed attribution.
                 # A later warning often means partial recovery; it must not
                 # overwrite an earlier bad WAN/router fault in the final
@@ -3433,13 +3680,20 @@ class Engine:
                 elif (v["code"], v["severity"]) != last_emitted:
                     self._emit_webhook(inc_id, "fault_updated", v)
                     last_emitted = (v["code"], v["severity"])
+        recovery_confirmed = consecutive_ok >= 2
         final = worst or {"severity": "ok", "code": "all_clear",
                           "title": "Nothing wrong seen from the network side"}
+        closed_at = time.time()
         with db() as conn:
+            _close_open_outage_segment(conn, inc_id, closed_at)
             cur = conn.execute(
-                "UPDATE incidents SET resolved=?, recovered_at=?, verdict_code=?, verdict_title=?, diagnosis_code=?, diagnosis_title=?"
+                "UPDATE incidents SET resolved=?,"
+                " recovered_at=CASE WHEN ? THEN COALESCE(recovered_at, ?)"
+                " ELSE recovered_at END, verdict_code=?, verdict_title=?,"
+                " diagnosis_code=?, diagnosis_title=?"
                 " WHERE id=? AND resolved IS NULL",
-                (time.time(), time.time(), final["code"], final["title"],
+                (closed_at, recovery_confirmed, closed_at,
+                 final["code"], final["title"],
                  final["code"], final["title"], inc_id),
             )
         if cur.rowcount:
@@ -3531,6 +3785,10 @@ class Engine:
                 "SELECT * FROM incidents WHERE started > ?"
                 " OR resolved IS NULL OR resolved > ?",
                 (cutoff, cutoff))]
+            segments_by_incident = {
+                item["id"]: _incident_outage_segments(conn, item)
+                for item in inc
+            }
         monitoring_started = max(float(first_run), cutoff) if first_run else None
         period = max(0.0, now - monitoring_started) if monitoring_started else 0.0
         downtime = 0.0
@@ -3547,11 +3805,11 @@ class Engine:
             # Clamp each incident's contribution to the 30-day window so an
             # incident spanning the cutoff neither vanishes nor contributes
             # more downtime than the window holds.
-            begin = max(float(i["started"]), cutoff)
-            if i["resolved"] is None:
-                downtime += max(0.0, now - begin)
-            elif code:
-                downtime += max(0.0, float(i["resolved"]) - begin)
+            downtime += _outage_seconds(
+                segments_by_incident[i["id"]],
+                window_start=cutoff, window_end=now, now=now,
+            )
+            if i["resolved"] is not None and code:
                 blame[code] = blame.get(code, 0) + 1
         return {
             "incidents_30d": len(inc) - false_alarms,
@@ -3579,6 +3837,10 @@ class Engine:
                 "SELECT * FROM incidents WHERE started > ? OR resolved IS NULL"
                 " OR resolved > ? ORDER BY started ASC",
                 (cutoff, cutoff))]
+            segments_by_incident = {
+                row["id"]: _incident_outage_segments(conn, row)
+                for row in rows
+            }
         monitoring_started = max(float(first_run), cutoff) if first_run else None
         observed_s = max(0.0, now - monitoring_started) if monitoring_started else 0.0
         incidents = []
@@ -3594,14 +3856,30 @@ class Engine:
                 continue
             started = float(inc["started"])
             resolved = float(inc["resolved"]) if inc.get("resolved") else None
-            window_downtime = max(0.0, (resolved or now) - max(started, cutoff))
-            duration = max(0.0, (resolved or now) - started)
+            segments = segments_by_incident[inc["id"]]
+            downtime = _outage_seconds(segments, now=now)
+            window_downtime = _outage_seconds(
+                segments, window_start=cutoff, window_end=now, now=now,
+            )
+            incident_duration = max(0.0, (resolved or now) - started)
             entry = {
                 "ref": inc.get("ref"),
                 "started": started,
+                "recovered_at": inc.get("recovered_at"),
                 "resolved": resolved,
-                "duration_s": round(duration),
+                # duration_s historically meant incident span. Keep the field
+                # for clients, but correct its semantics to observed downtime.
+                "duration_s": round(downtime),
+                "downtime_s": round(downtime),
+                "incident_duration_s": round(incident_duration),
                 "window_downtime_s": round(window_downtime),
+                "outage_segments": [
+                    {
+                        "started": segment["started"],
+                        "ended": segment.get("ended"),
+                    }
+                    for segment in segments
+                ],
                 "open": resolved is None,
                 "code": code or None,
                 "title": inc.get("diagnosis_title") or inc.get("verdict_title"),
@@ -3614,7 +3892,10 @@ class Engine:
                 bucket["count"] += 1
                 bucket["downtime_s"] += round(window_downtime)
             total_downtime += window_downtime
-            if longest is None or duration > longest["duration_s"]:
+            if (
+                longest is None
+                or entry["window_downtime_s"] > longest["window_downtime_s"]
+            ):
                 longest = entry
         wan = [item for item in incidents if item["isp_attributable"]]
         peak = None
@@ -3668,8 +3949,8 @@ class Engine:
         minimum-sample rule so 1–2 incidents never read as a 'pattern'."""
         count = len(incs)
         durations = sorted(
-            i["resolved"] - i["started"] for i in incs
-            if i["resolved"] is not None and i["resolved"] >= i["started"]
+            i["outage_duration_s"] for i in incs
+            if i.get("outage_duration_s") is not None
         )
         median = None
         if durations:
@@ -3719,10 +4000,15 @@ class Engine:
         cutoff = now - days * 86400
         with db() as conn:
             rows = [dict(r) for r in conn.execute(
-                "SELECT verdict_code, started, resolved, ref FROM incidents"
+                "SELECT * FROM incidents"
                 " WHERE started > ? AND verdict_code IS NOT NULL"
                 " AND COALESCE(false_alarm, 0) = 0",
                 (cutoff,))]
+            for row in rows:
+                row["outage_duration_s"] = (
+                    _outage_seconds(_incident_outage_segments(conn, row), now=now)
+                    if row.get("resolved") is not None else None
+                )
         by_code = {}
         for r in rows:
             c = normalize_stored_verdict(r).get("verdict_code")
@@ -3758,10 +4044,22 @@ class Engine:
         q += " ORDER BY i.id DESC LIMIT ?"
         args.append(max(1, min(200, limit)))
         with db() as conn:
-            return [
-                normalize_stored_verdict(dict(r))
-                for r in conn.execute(q, args)
-            ]
+            incidents = []
+            timing_now = time.time()
+            for row in conn.execute(q, args):
+                incident = normalize_stored_verdict(dict(row))
+                segments = _incident_outage_segments(conn, incident)
+                incident["observed_downtime_s"] = round(
+                    _outage_seconds(segments, now=timing_now)
+                )
+                incident["incident_duration_s"] = round(max(
+                    0.0,
+                    float(incident.get("resolved") or timing_now)
+                    - float(incident["started"]),
+                ))
+                incident["outage_segment_count"] = len(segments)
+                incidents.append(incident)
+            return incidents
 
     def incident_detail(self, inc_id=None, ref=None):
         with db() as conn:
@@ -3777,6 +4075,15 @@ class Engine:
                 return None
             inc = normalize_stored_verdict(dict(row))
             inc_id = inc["id"]
+            segments = _incident_outage_segments(conn, inc)
+            timing_now = time.time()
+            inc["observed_downtime_s"] = round(
+                _outage_seconds(segments, now=timing_now)
+            )
+            inc["incident_duration_s"] = round(max(
+                0.0,
+                float(inc.get("resolved") or timing_now) - float(inc["started"]),
+            ))
             runs = list(reversed([dict(r) for r in conn.execute(
                 "SELECT * FROM runs WHERE incident_id=? ORDER BY id DESC LIMIT 100", (inc_id,))]))
             base = conn.execute(
@@ -3809,16 +4116,18 @@ class Engine:
                 )
                 placeholders = ",".join("?" for _ in similar_codes)
                 for r in conn.execute(
-                    "SELECT ref, started, resolved FROM incidents"
+                    "SELECT * FROM incidents"
                     f" WHERE verdict_code IN ({placeholders}) AND id != ?"
                     " AND COALESCE(false_alarm, 0) = 0"
                     " ORDER BY id DESC LIMIT 3",
                     (*similar_codes, inc_id)):
                     d = dict(r)
-                    dur = (d["resolved"] - d["started"]) if d["resolved"] else None
+                    dur = _outage_seconds(
+                        _incident_outage_segments(conn, d), now=timing_now,
+                    )
                     similar.append({
                         "ref": d["ref"], "started": d["started"],
-                        "duration_s": round(dur) if dur is not None else None,
+                        "duration_s": round(dur),
                     })
         first_failure = None
         diff = []
@@ -3857,6 +4166,9 @@ class Engine:
                 comparison_summary = "The path still worked, but its evidence changed (timing or target agreement)."
         result = {
             "incident": inc,
+            "outage_segments": segments,
+            "downtime_s": inc["observed_downtime_s"],
+            "incident_duration_s": inc["incident_duration_s"],
             "runs": runs,
             "baseline_before": (
                 {"ts": baseline["ts"], "checks": baseline["checks"]} if baseline else None
@@ -5311,7 +5623,7 @@ def doctor(json_output=False):
             "checks": checks,
         }, indent=2))
     else:
-        print("all good" if problems == 0 else f"{problems} problem(s) found")
+        print("all good" if problems == 0 else f"{_count_phrase(problems, 'problem')} found")
     return 0 if problems == 0 else 1
 
 
@@ -5726,6 +6038,10 @@ def monthly_digest_lines(year, month):
             "SELECT * FROM incidents WHERE started < ?"
             " AND (resolved IS NULL OR resolved > ?)",
             (end, start))]
+        segments_by_incident = {
+            row["id"]: _incident_outage_segments(conn, row)
+            for row in rows
+        }
         latencies = [r["latency_ms"] for r in conn.execute(
             "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
             (start, end))]
@@ -5746,16 +6062,21 @@ def monthly_digest_lines(year, month):
         faults += 1
         started = float(inc["started"])
         resolved = float(inc["resolved"]) if inc.get("resolved") else None
-        clamped = max(0.0, min(resolved or end, end) - max(started, start))
+        clamped = _outage_seconds(
+            segments_by_incident[inc["id"]],
+            window_start=start, window_end=end, now=end,
+        )
         downtime += clamped
         if code:
             blame[code] = blame.get(code, 0) + 1
-        duration = (resolved or end) - started
-        if longest is None or duration > longest[0]:
-            longest = (duration, inc.get("ref"))
+        if longest is None or clamped > longest[0]:
+            longest = (clamped, inc.get("ref"))
     span = max(1.0, end - start)
     uptime_pct = round(max(0.0, 100.0 * (1 - downtime / span)), 2)
-    lines = [f"{faults} incident(s), {false_alarms} false alarm(s)."]
+    lines = [
+        f"{_count_phrase(faults, 'incident')},"
+        f" {_count_phrase(false_alarms, 'false alarm')}."
+    ]
     if faults:
         lines.append(
             f"Downtime {_human_duration(downtime)} — {uptime_pct}% uptime."
@@ -5936,6 +6257,12 @@ def janitor_sweep():
                 (cutoff,),
             )
             conn.execute("DELETE FROM quality_samples WHERE ts < ?", (cutoff,))
+            conn.execute(
+                "DELETE FROM incident_outage_segments WHERE incident_id IN"
+                " (SELECT id FROM incidents"
+                " WHERE resolved IS NOT NULL AND resolved < ?)",
+                (cutoff,),
+            )
             conn.execute(
                 "DELETE FROM incidents WHERE resolved IS NOT NULL AND resolved < ?",
                 (cutoff,),
