@@ -123,6 +123,47 @@ class OutageTrackerTests(unittest.TestCase):
         self.assertFalse(self.tracker.is_active(self.linkmoth.db))
         self.assertEqual(len(self.recoveries), 1)
         self.assertEqual(self.recoveries[0]["prior_fault"]["code"], "wan_down")
+        # The recovery notification carries the *broken* ladder from onset,
+        # not the healthy checks that just confirmed recovery — otherwise a
+        # Discord/push recipient is told nothing about what was actually down.
+        fault_checks = self.recoveries[0]["fault_checks"]
+        self.assertTrue(any(c["id"] == "raw_ping" and c["ok"] is False for c in fault_checks))
+
+    def test_touch_updates_fault_checks_to_latest_bad_state(self):
+        wan = {"severity": "bad", "code": "wan_down", "title": "WAN down",
+               "explain": "outside dead", "hint": "check cable"}
+        checks_onset = [{"id": "raw_ping", "ok": False, "label": "Internet ping", "detail": "dead"}]
+        checks_later = [
+            {"id": "raw_ping", "ok": False, "label": "Internet ping", "detail": "still dead"},
+            {"id": "gateway", "ok": False, "label": "Router", "detail": "now also down"},
+        ]
+        ok = {"severity": "ok", "code": "all_clear", "title": "All clear",
+              "explain": "fine", "hint": ""}
+        self.tracker.observe(wan, checks_onset, self.linkmoth.CFG, self.linkmoth.db, self._notify)
+        self.tracker.observe(wan, checks_later, self.linkmoth.CFG, self.linkmoth.db, self._notify)
+        self.tracker.observe(ok, checks_later, self.linkmoth.CFG, self.linkmoth.db, self._notify)
+        self.tracker.observe(ok, checks_later, self.linkmoth.CFG, self.linkmoth.db, self._notify)
+        fault_checks = self.recoveries[0]["fault_checks"]
+        self.assertTrue(any(c["id"] == "gateway" for c in fault_checks))
+
+    def test_network_outage_table_migrates_missing_checks_column(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DROP TABLE IF EXISTS network_outage")
+            conn.execute(
+                "CREATE TABLE network_outage(id INTEGER PRIMARY KEY CHECK (id=1),"
+                " active INTEGER NOT NULL DEFAULT 0, code TEXT, title TEXT,"
+                " explain TEXT, started REAL, updated REAL)"
+            )
+        with self.linkmoth.db() as conn:
+            linkmoth_outage.init_outage_db(conn)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(network_outage)")}
+        self.assertIn("checks", columns)
+        # And the tracker actually works against the migrated table.
+        wan = {"severity": "bad", "code": "wan_down", "title": "WAN down",
+               "explain": "", "hint": ""}
+        checks = [{"id": "raw_ping", "ok": False, "label": "Internet ping", "detail": "dead"}]
+        self.tracker.observe(wan, checks, self.linkmoth.CFG, self.linkmoth.db, self._notify)
+        self.assertTrue(self.tracker.is_active(self.linkmoth.db))
 
 
 class VerdictOrderTests(unittest.TestCase):

@@ -2715,8 +2715,15 @@ REPORT_WINDOWS = (7, 30, 90)
 # GET endpoints a scoped read-only API token may access (widgets, Home
 # Assistant REST sensors). Everything else still requires a full session.
 READONLY_TOKEN_GET_PATHS = frozenset({
-    "/api/status", "/api/quality", "/api/report",
+    "/api/status", "/api/quality", "/api/report", "/api/history",
 })
+
+# Selectable windows for the expanded latency-history view (hours).
+HISTORY_RANGE_HOURS = (6, 24, 24 * 7, 24 * 30)
+# However long the requested window, never hand the frontend more raw points
+# than this — beyond it, samples are averaged into fixed-width time buckets
+# so a 30-day chart stays as cheap to render as a 6-hour one.
+MAX_HISTORY_POINTS = 300
 
 
 def _human_duration(seconds):
@@ -3290,6 +3297,7 @@ class Engine:
         digest,
         cfg,
         duration_s,
+        fault_checks=None,
     ):
         from linkmoth_notify import notify_recovery
         notify_recovery(
@@ -3301,6 +3309,7 @@ class Engine:
             duration_s=duration_s,
             incident=None,
             source="outage-tracker",
+            fault_checks=fault_checks,
         )
         # WAN is back — deliver webhook events that queued during the outage.
         from linkmoth_webhooks import wake_drain
@@ -3494,6 +3503,23 @@ class Engine:
         except (json.JSONDecodeError, TypeError):
             return []
 
+    def _first_bad_run_checks(self, inc_id):
+        """The fault ladder from this incident's first non-ok run — what was
+        actually broken, as opposed to _latest_run_checks() which by the time
+        of a recovery notification is always the healthy closing run."""
+        with db() as conn:
+            row = conn.execute(
+                "SELECT checks FROM runs WHERE incident_id=? AND severity != 'ok'"
+                " ORDER BY id ASC LIMIT 1",
+                (inc_id,),
+            ).fetchone()
+        if not row:
+            return []
+        try:
+            return normalize_stored_checks(json.loads(row["checks"]))
+        except (json.JSONDecodeError, TypeError):
+            return []
+
     def _emit_webhook(self, inc_id, event, verdict, checks=None, duration_s=None):
         """Queue an outbound webhook event; never raises, never suppressed
         during outages (deliveries wait in the queue for WAN recovery)."""
@@ -3548,6 +3574,7 @@ class Engine:
                     duration_s=downtime_s,
                     incident=inc,
                     source="incident-loop",
+                    fault_checks=self._first_bad_run_checks(inc_id),
                 )
         except Exception as e:
             print(f"notify error: {e}", file=sys.stderr, flush=True)
@@ -3647,7 +3674,12 @@ class Engine:
                         inc_id, "recovery", recovery_verdict,
                         prior_fault=worst if fault_notified else None,
                     )
-                    self._emit_webhook(inc_id, "fault_recovered", recovery_verdict)
+                    self._emit_webhook(
+                        inc_id,
+                        "fault_recovered",
+                        recovery_verdict,
+                        checks=self._first_bad_run_checks(inc_id),
+                    )
                     break
             else:
                 consecutive_ok = 0
@@ -4252,6 +4284,62 @@ class Engine:
             out.append({"ts": r["ts"], "severity": r["severity"],
                         "kind": r["kind"], "ms": ms})
         return out
+
+    def history_range(self, hours=24):
+        """Latency history for the expanded modal view, over a caller-chosen
+        window instead of the fixed-count sparkline. Raw per-rung timings are
+        returned when the window is small; a long window (weeks/months) is
+        averaged into MAX_HISTORY_POINTS fixed-width time buckets first, so
+        the response and the chart stay cheap regardless of range.
+        """
+        hours = hours if hours in HISTORY_RANGE_HOURS else 24
+        now = time.time()
+        cutoff = now - hours * 3600
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT ts, severity, kind, checks FROM runs WHERE ts > ?"
+                " ORDER BY id ASC",
+                (cutoff,),
+            ).fetchall()
+        samples = []
+        for r in rows:
+            ms = {}
+            for ch in normalize_stored_checks(json.loads(r["checks"])):
+                if ch.get("ms") is not None:
+                    ms[ch["id"]] = ch["ms"]
+            samples.append({"ts": r["ts"], "severity": r["severity"],
+                            "kind": r["kind"], "ms": ms})
+        if len(samples) <= MAX_HISTORY_POINTS:
+            return {"hours": hours, "bucketed": False, "bucket_seconds": None,
+                    "samples": samples}
+        severity_rank = {"ok": 0, "warn": 1, "degraded": 1, "bad": 2}
+        span = max(1.0, (now - cutoff) / MAX_HISTORY_POINTS)
+        buckets = [[] for _ in range(MAX_HISTORY_POINTS)]
+        for s in samples:
+            idx = min(MAX_HISTORY_POINTS - 1, int((s["ts"] - cutoff) / span))
+            buckets[idx].append(s)
+        bucketed = []
+        for i, bucket in enumerate(buckets):
+            if not bucket:
+                continue
+            keys = set()
+            for s in bucket:
+                keys.update(s["ms"].keys())
+            ms = {}
+            for key in keys:
+                values = [s["ms"][key] for s in bucket if key in s["ms"]]
+                if values:
+                    ms[key] = sum(values) / len(values)
+            worst = max(bucket, key=lambda s: severity_rank.get(s["severity"], 0))
+            bucketed.append({
+                "ts": cutoff + (i + 0.5) * span,
+                "severity": worst["severity"],
+                "kind": "bucket",
+                "ms": ms,
+                "sample_count": len(bucket),
+            })
+        return {"hours": hours, "bucketed": True, "bucket_seconds": round(span),
+                "samples": bucketed}
 
     def history_meta(self):
         history = self.history(limit=1)
@@ -5069,6 +5157,12 @@ class Handler(BaseHTTPRequestHandler):
                 limit = 288
             limit = max(1, min(2000, limit))
             self._send(200, quality_summary(limit))
+        elif url.path == "/api/history":
+            try:
+                hours = int(qs.get("hours", ["24"])[0])
+            except ValueError:
+                hours = 24
+            self._send(200, ENGINE.history_range(hours))
         elif url.path == "/api/report":
             try:
                 days = int(qs.get("days", ["30"])[0])
@@ -5986,12 +6080,21 @@ def quality_summary(limit=288):
         verdict = classify_quality(
             last["latency_ms"], last["jitter_ms"], last["loss_pct"], qcfg)
         current = {**last, **verdict}
+    try:
+        load_test_host = urlparse(str(qcfg.get("load_test_url") or "")).hostname
+    except ValueError:
+        load_test_host = None
     return {
         "enabled": bool(qcfg.get("enabled", True)),
         "current": current,
         "samples": samples,
         "findings": quality_findings(),
         "load_test": latest_load_test(),
+        "load_test_config": {
+            "host": load_test_host,
+            "max_mb": qcfg.get("load_test_max_mb"),
+            "seconds": qcfg.get("load_test_seconds"),
+        },
         "thresholds": {
             "latency_warn_ms": qcfg["latency_warn_ms"],
             "latency_bad_ms": qcfg["latency_bad_ms"],

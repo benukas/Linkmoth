@@ -386,6 +386,98 @@ class ManualUpdateCheckTests(unittest.TestCase):
         raw_socket.connect.assert_not_called()
 
 
+class FirstBadRunChecksTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_fbr_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM incidents")
+            conn.execute("DELETE FROM runs")
+
+    def _add_run(self, inc_id, ts, severity, checks):
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(incident_id, ts, severity, code, title, checks)"
+                " VALUES(?,?,?,?,?,?)",
+                (inc_id, ts, severity, "wan_down" if severity != "ok" else "all_clear",
+                 "t", json.dumps(checks)),
+            )
+
+    def test_returns_the_broken_ladder_not_the_healthy_closing_run(self):
+        now = time.time()
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
+                (now - 600, "baseline", ""),
+            )
+            inc_id = cur.lastrowid
+        broken = [{"id": "raw_ping", "label": "Internet ping", "ok": False, "detail": "dead"}]
+        recheck_broken = [{"id": "raw_ping", "label": "Internet ping", "ok": False, "detail": "still dead"}]
+        healthy = [{"id": "raw_ping", "label": "Internet ping", "ok": True, "detail": "ok"}]
+        self._add_run(inc_id, now - 600, "bad", broken)
+        self._add_run(inc_id, now - 300, "bad", recheck_broken)
+        self._add_run(inc_id, now - 60, "ok", healthy)
+        result = self.linkmoth.ENGINE._first_bad_run_checks(inc_id)
+        self.assertEqual(result[0]["detail"], "dead")  # the *first* bad run, not the latest
+        self.assertFalse(result[0]["ok"])
+
+    def test_empty_when_incident_has_no_bad_runs(self):
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
+                (time.time(), "baseline", ""),
+            )
+            inc_id = cur.lastrowid
+        self._add_run(inc_id, time.time(), "ok", [{"id": "raw_ping", "ok": True, "detail": "ok"}])
+        self.assertEqual(self.linkmoth.ENGINE._first_bad_run_checks(inc_id), [])
+
+    def test_recovery_webhook_receives_fault_ladder(self):
+        now = time.time()
+        with self.linkmoth.db() as conn:
+            cur = conn.execute(
+                "INSERT INTO incidents(started, source, detail) VALUES(?,?,?)",
+                (now - 120, "baseline", ""),
+            )
+            inc_id = cur.lastrowid
+        broken = [
+            {"id": "raw_ping", "label": "Internet ping", "ok": False,
+             "detail": "dead"},
+        ]
+        self._add_run(inc_id, now - 120, "bad", broken)
+        healthy = {
+            "severity": "ok", "code": "all_clear", "title": "All clear",
+            "explain": "fine", "hint": "",
+        }
+        engine = self.linkmoth.Engine()
+        with mock.patch.dict(
+            self.linkmoth.CFG,
+            {"recheck_seconds": [0, 0], "recheck_repeat": 0},
+        ), mock.patch.object(
+            self.linkmoth.time, "sleep",
+        ), mock.patch.object(
+            engine, "diagnose_once", side_effect=[healthy, healthy],
+        ), mock.patch.object(
+            engine, "_discord_notify",
+        ), mock.patch.object(
+            engine, "_emit_webhook",
+        ) as emit:
+            engine._loop(inc_id)
+
+        recovery_calls = [
+            call for call in emit.call_args_list
+            if len(call.args) > 1 and call.args[1] == "fault_recovered"
+        ]
+        self.assertEqual(len(recovery_calls), 1)
+        self.assertEqual(recovery_calls[0].kwargs["checks"][0]["detail"], "dead")
+        self.assertFalse(recovery_calls[0].kwargs["checks"][0]["ok"])
+
+
 class IncidentStoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -891,6 +983,84 @@ class MonthlyDigestTests(unittest.TestCase):
         prev_year, prev_month = self._prev_month()
         lines = self.linkmoth.monthly_digest_lines(prev_year, prev_month)
         self.assertTrue(any("clean month" in line for line in lines))
+
+
+class HistoryRangeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_hr_")
+        if "linkmoth" in sys.modules:
+            del sys.modules["linkmoth"]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.linkmoth.init_db()
+
+    def setUp(self):
+        with self.linkmoth.db() as conn:
+            conn.execute("DELETE FROM runs")
+
+    def _seed(self, count, spacing_s, start_offset_s):
+        now = time.time()
+        with self.linkmoth.db() as conn:
+            for i in range(count):
+                checks = json.dumps([
+                    {"id": "raw_ping", "label": "Internet ping", "ok": True,
+                     "detail": "d", "ms": 10.0 + (i % 5), "micro": []},
+                ])
+                conn.execute(
+                    "INSERT INTO runs(ts, severity, code, title, checks, kind)"
+                    " VALUES(?,?,?,?,?,?)",
+                    (now - start_offset_s + i * spacing_s, "ok", "all_clear",
+                     "t", checks, "baseline"),
+                )
+
+    def test_small_window_returns_raw_samples(self):
+        self._seed(20, spacing_s=60, start_offset_s=20 * 60)
+        result = self.linkmoth.ENGINE.history_range(6)
+        self.assertFalse(result["bucketed"])
+        self.assertIsNone(result["bucket_seconds"])
+        self.assertEqual(len(result["samples"]), 20)
+        self.assertAlmostEqual(
+            result["samples"][0]["ms"]["raw_ping"], 10.0, delta=5
+        )
+
+    def test_large_window_is_bucketed_and_bounded(self):
+        # 3000 one-minute samples spanning 50 hours, well past the
+        # 300-point cap for a 30-day window.
+        self._seed(3000, spacing_s=60, start_offset_s=3000 * 60)
+        result = self.linkmoth.ENGINE.history_range(24 * 30)
+        self.assertTrue(result["bucketed"])
+        self.assertIsNotNone(result["bucket_seconds"])
+        self.assertLessEqual(len(result["samples"]), self.linkmoth.MAX_HISTORY_POINTS)
+        self.assertGreater(len(result["samples"]), 0)
+        for sample in result["samples"]:
+            self.assertIn("sample_count", sample)
+            self.assertGreaterEqual(sample["sample_count"], 1)
+            self.assertIn("raw_ping", sample["ms"])
+
+    def test_invalid_hours_falls_back_to_default(self):
+        result = self.linkmoth.ENGINE.history_range(12345)
+        self.assertEqual(result["hours"], 24)
+
+    def test_bucket_severity_takes_the_worst_in_the_bucket(self):
+        now = time.time()
+        with self.linkmoth.db() as conn:
+            for i in range(400):
+                severity = "bad" if i == 200 else "ok"
+                checks = json.dumps([
+                    {"id": "raw_ping", "label": "Internet ping",
+                     "ok": severity != "bad", "detail": "d", "ms": 10.0,
+                     "micro": []},
+                ])
+                conn.execute(
+                    "INSERT INTO runs(ts, severity, code, title, checks, kind)"
+                    " VALUES(?,?,?,?,?,?)",
+                    (now - (400 - i) * 5, severity,
+                     "wan_down" if severity == "bad" else "all_clear",
+                     "t", checks, "baseline"),
+                )
+        result = self.linkmoth.ENGINE.history_range(6)
+        self.assertTrue(result["bucketed"])
+        self.assertTrue(any(s["severity"] == "bad" for s in result["samples"]))
 
 
 class DoctorJsonTests(unittest.TestCase):

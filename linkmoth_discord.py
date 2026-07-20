@@ -88,8 +88,15 @@ def incident_payload(
     prior_fault: Optional[dict] = None,
     checks: Optional[List[dict]] = None,
     suppressed_digest: Optional[List[str]] = None,
+    fault_checks: Optional[List[dict]] = None,
 ) -> dict:
-    """Build a plain dict passed to send_discord_alert."""
+    """Build a plain dict passed to send_discord_alert.
+
+    `fault_checks`, when given, is the fault ladder from when the problem was
+    actually confirmed — used in place of `checks` for a recovery message's
+    ladder display, since `checks` there is the healthy run that just closed
+    the incident and can't show what was down.
+    """
     return {
         "incident_id": incident.get("id"),
         "incident_ref": incident.get("ref"),
@@ -100,6 +107,7 @@ def incident_payload(
         "verdict": dict(verdict),
         "prior_fault": dict(prior_fault) if prior_fault else None,
         "checks": list(checks or []),
+        "fault_checks": list(fault_checks) if fault_checks else None,
         "suppressed_digest": list(suppressed_digest or []),
     }
 
@@ -195,10 +203,19 @@ def build_embed(incident_data: dict, status_type: str) -> dict:
     description = _embed_description(verdict, status_type, prior)
 
     fields = []
-    ladder_text = format_ladder_lines(checks)
+    # On recovery, `checks` is the just-confirmed *healthy* ladder — showing
+    # it would mean every rung reads green right under "network recovered",
+    # telling the reader nothing about what was actually wrong. Prefer the
+    # ladder captured when the fault was last confirmed, if one was recorded.
+    ladder_source = checks
+    showing_fault_ladder = False
+    if status_type == "recovery" and incident_data.get("fault_checks"):
+        ladder_source = incident_data["fault_checks"]
+        showing_fault_ladder = True
+    ladder_text = format_ladder_lines(ladder_source)
     if ladder_text:
         fields.append({
-            "name": "Fault ladder",
+            "name": "Fault ladder (at time of fault)" if showing_fault_ladder else "Fault ladder",
             "value": _truncate(ladder_text, 1024),
             "inline": False,
         })
@@ -230,11 +247,16 @@ def build_embed(incident_data: dict, status_type: str) -> dict:
                 duration = f"{secs // 60} min"
             else:
                 duration = f"{secs / 3600:.1f} h"
-        fields.append({
-            "name": "Incident",
-            "value": inc_label or "—",
-            "inline": True,
-        })
+        # A network-wide outage recovery has no incidents-table row behind it
+        # (it's tracked separately by OutageTracker), so there is nothing
+        # meaningful to put in an "Incident" field — showing a bare "—" is
+        # noise, not information. Only include it when there's a real one.
+        if inc_label:
+            fields.append({
+                "name": "Incident",
+                "value": inc_label,
+                "inline": True,
+            })
         fields.append({
             "name": "Duration",
             "value": duration,
@@ -569,6 +591,7 @@ def send_outage_recovery_alert(
     digest: List[str],
     cfg: Optional[dict],
     duration_s: float,
+    fault_checks: Optional[List[dict]] = None,
 ) -> bool:
     """Recovery alert after a global outage — first message that can reach Discord."""
     if not discord_alerts_active(cfg):
@@ -591,6 +614,7 @@ def send_outage_recovery_alert(
         prior_fault=prior,
         checks=checks,
         suppressed_digest=digest,
+        fault_checks=fault_checks,
     )
     return send_discord_alert(payload, "recovery", cfg)
 

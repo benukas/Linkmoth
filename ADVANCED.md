@@ -141,11 +141,16 @@ per-rung timings — plus the **accountability report** with its "evidence for
 ISP support" letter and CSV export), **Devices** (independent LAN device
 status), **Settings** (including Discord webhooks, Wi-Fi client IPs, and
 SQLite maintenance), and **Security** (password, 2FA, read-only API tokens,
-audit log). Today and incident packets can copy a credential-free plain-text
-support summary with the verdict, confidence, per-target evidence, and
-timeline. Dashboard timestamps and copied support summaries are formatted in
-the browser's local time rather than exposing raw machine-oriented UTC
-strings.
+audit log). The compact Internet/router latency sparklines on Today, and each
+device's latency sparkline on Devices, have an **Expand** button that opens a
+larger chart in a modal with a range picker — 6 hours to 30 days for the
+network history (auto-averaged into time buckets for longer ranges so it
+stays fast), or the last 50–200 checks for a device (device history is a
+fixed-size ring buffer, not a calendar window). Today and incident packets
+can copy a credential-free plain-text support summary with the verdict,
+confidence, per-target evidence, and timeline. Dashboard timestamps and copied
+support summaries are formatted in the browser's local time rather than
+exposing raw machine-oriented UTC strings.
 
 ## LAN devices
 
@@ -515,12 +520,15 @@ python3 linkmoth.py --auth-audit 50       # show recent login/security events
 - HTTPS `:8686` — dashboard (`/`), `GET /api/status`, `GET /api/incidents`,
   `GET /api/incident?id=N` or `?ref=INC-YYYYMMDD-NNNN` (full evidence packet,
   including the plain-language story paragraph), `GET /api/quality`,
-  `GET /api/report?days=7|30|90` and `GET /api/report.csv` (accountability
-  report + CSV), `POST /api/diagnose`, `POST /api/quality/load-test`
-  (bufferbloat test), `POST /api/settings` (including `{ "action": "vacuum" }`
-  for SQLite maintenance), `POST /trigger` (inbound diagnose webhook for any
-  monitor), `POST /api/webhooks/kuma` (Uptime Kuma smart proxy),
-  `POST /api/webhooks/inbound` (generic inbound trigger), `GET /metrics`
+  `GET /api/history?hours=6|24|168|720` (latency history for the expanded
+  chart view; long windows are returned as averaged time buckets, capped at
+  300 points, instead of raw per-run rows), `GET /api/report?days=7|30|90`
+  and `GET /api/report.csv` (accountability report + CSV), `POST
+  /api/diagnose`, `POST /api/quality/load-test` (bufferbloat test), `POST
+  /api/settings` (including `{ "action": "vacuum" }` for SQLite
+  maintenance), `POST /trigger` (inbound diagnose webhook for any monitor),
+  `POST /api/webhooks/kuma` (Uptime Kuma smart proxy), `POST
+  /api/webhooks/inbound` (generic inbound trigger), `GET /metrics`
   (Prometheus text exposition; requires the webhook bearer), `GET /health`
   (for any LAN watchdog to poll).
 - Devices: `GET/POST /api/devices`, `PUT/DELETE /api/devices/{id}`,
@@ -532,9 +540,10 @@ python3 linkmoth.py --auth-audit 50       # show recent login/security events
   `POST /api/auth/login`, `POST /api/auth/totp`, `POST /api/auth/logout`.
 - Read-only API tokens (Security tab): `GET/POST /api/auth/tokens`,
   `DELETE /api/auth/tokens/{id}`. A token (`Authorization: Bearer lmro_…`)
-  is accepted **only** on `GET /api/status`, `GET /api/quality`, and
-  `GET /api/report` — for Homepage/Glance widgets and Home Assistant REST
-  sensors. Stored hashed, shown once at creation, revocable, limit 10.
+  is accepted **only** on `GET /api/status`, `GET /api/quality`,
+  `GET /api/report`, and `GET /api/history` — for Homepage/Glance widgets
+  and Home Assistant REST sensors. Stored hashed, shown once at creation,
+  revocable, limit 10.
 - Security management (session + CSRF): `POST /api/auth/change-password`,
   `POST /api/auth/totp/{setup,activate,disable,recovery-codes}`;
   read-only `GET /api/auth/audit` and `GET /api/auth/security`.

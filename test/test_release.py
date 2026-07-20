@@ -103,6 +103,33 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_live_history_refresh_preserves_expanded_content(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("let historyLoading = false;", dashboard)
+        self.assertIn("let reportLoading = false;", dashboard)
+        self.assertIn("const openPackets = new Map();", dashboard)
+        self.assertIn("renderPacketSlot(slot, packetCache[id]);", dashboard)
+        self.assertIn("const openDeviceIds = new Set(", dashboard)
+        self.assertIn("historyRefreshes.push(loadDeviceHistory(details, true));", dashboard)
+        history_refresh = dashboard.split(
+            'if (!$("tab-history").classList.contains("hidden")) {', 1,
+        )[1].split("}", 1)[0]
+        self.assertIn("loadHistory(true);", history_refresh)
+        self.assertIn("loadReport();", history_refresh)
+        self.assertNotIn(
+            'if (silent && $("device-list").querySelector("details[open]"))',
+            dashboard,
+        )
+
+    def test_expanded_history_uses_elapsed_time_and_token_help_matches_api(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn("(timestamps[i] - minTs) / (maxTs - minTs)", dashboard)
+        self.assertIn("show(nearestIndexAtRatio(ratio));", dashboard)
+        self.assertIn(
+            "A token can only GET /api/status, /api/quality, /api/report, and /api/history",
+            dashboard,
+        )
+
     def test_settings_subtabs_match_the_main_navigation_treatment(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(
