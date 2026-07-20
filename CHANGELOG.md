@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.2
+
 ### Added
 
 - **Expanded latency history**: the Internet/router sparklines on Today and
