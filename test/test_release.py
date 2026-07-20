@@ -118,6 +118,22 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn('if (!everythingAnswers && openInc && openInc.ref)', dashboard)
         self.assertIn('.action-bar.hidden { display: none; }', dashboard)
 
+    def test_incident_reports_separate_recovery_close_and_downtime(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        source = (ROOT / "linkmoth.py").read_text(encoding="utf-8")
+        for label in (
+            "Network recovered:",
+            "Incident closed:",
+            "Observed downtime:",
+            "Incident duration:",
+        ):
+            self.assertIn(label, dashboard)
+        for stale_plural in (
+            "incident(s)", "false alarm(s)", "recorded run(s)", "time(s)",
+        ):
+            self.assertNotIn(stale_plural, dashboard)
+            self.assertNotIn(stale_plural, source)
+
     def test_push_buttons_follow_this_device_subscription(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('enableBtn.disabled = Notification.permission === "denied";', dashboard)

@@ -104,6 +104,14 @@ outage. During an incident it re-checks at +30 s, +1 m,
 +2 m, +5 m, then every 10 min until two consecutive all-clears, and stores
 every run.
 
+An incident's lifetime and its observed downtime are deliberately separate.
+The first healthy recheck records when network connectivity returned; the
+incident remains open through the recovery-confirmation window and records a
+later close time. If the fault returns during that window, Linkmoth keeps the
+same incident reference and starts another outage segment. Reports add the
+failed segments together for downtime, uptime, and longest-outage figures;
+they do not count healthy confirmation time as downtime.
+
 Each incident gets a human-readable reference such as `INC-20260705-0042`
 (shown in the dashboard, Discord alerts, and searchable from the History tab).
 When a ladder step fails, Linkmoth can drill down with **micro-steps**. The
