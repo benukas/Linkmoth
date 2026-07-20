@@ -1445,7 +1445,7 @@ def _validate_load_url(url):
 
 def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
     start = time.monotonic()
-    deadline = start + seconds
+    deadline = float(stats.get("deadline") or (start + seconds))
     parsed = urlparse(url)
     path = parsed.path or "/"
     if parsed.params:
@@ -1465,37 +1465,84 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
         "Connection": "close",
     }
     context = ssl.create_default_context()
+
+    def still_going():
+        return (
+            time.monotonic() < deadline
+            and stats["bytes"] < max_bytes
+            and not stop.is_set()
+        )
+
     try:
-        for address in addresses:
-            conn = _PinnedHTTPSConnection(
-                parsed.hostname, address, port=parsed.port or 443,
-                timeout=10, context=context,
-            )
-            try:
-                conn.request("GET", path, headers=headers)
-                resp = conn.getresponse()
-                # http.client never follows redirects. Treat every non-2xx
-                # response as a failed target instead of downloading an error
-                # page or trusting a Location that was never validated.
-                if not 200 <= resp.status < 300:
-                    stats["error"] = f"HTTP {resp.status}"
-                    return
-                while time.monotonic() < deadline and not stop.is_set():
-                    remaining = max_bytes - stats["bytes"]
-                    if remaining <= 0:
-                        break
-                    chunk = resp.read(min(65536, remaining))
-                    if not chunk:
-                        break
-                    stats["bytes"] += len(chunk)
-                stats["error"] = None
+        # A fast line can finish one bounded response before loaded latency is
+        # sampled. Keep requesting separately bounded responses for the test
+        # duration so the measurement cannot quietly become an idle ping test.
+        # max_bytes bounds the WHOLE test's transfer, not each response —
+        # stats["bytes"] (shared across every request) is what still_going()
+        # checks, so repeating requests can never inflate total data used
+        # beyond the configured, documented cap.
+        while still_going():
+            completed_request = False
+            for address in addresses:
+                conn = _PinnedHTTPSConnection(
+                    parsed.hostname, address, port=parsed.port or 443,
+                    timeout=10, context=context,
+                )
+                try:
+                    conn.request("GET", path, headers=headers)
+                    resp = conn.getresponse()
+                    # http.client never follows redirects. Treat every non-2xx
+                    # response as a failed target instead of downloading an
+                    # error page or trusting an unvalidated Location.
+                    if not 200 <= resp.status < 300:
+                        stats["error"] = f"HTTP {resp.status}"
+                        return
+                    while still_going():
+                        chunk = resp.read(min(65536, max_bytes - stats["bytes"]))
+                        if not chunk:
+                            break
+                        stats["bytes"] += len(chunk)
+                    stats["error"] = None
+                    completed_request = True
+                    break
+                except Exception as exc:
+                    stats["error"] = exc.__class__.__name__
+                finally:
+                    conn.close()
+            if not completed_request:
                 return
-            except Exception as exc:
-                stats["error"] = exc.__class__.__name__
-            finally:
-                conn.close()
     finally:
         stats["elapsed"] = max(0.0, time.monotonic() - start)
+
+
+def _measure_loaded_quality(target, stats, deadline):
+    """Measure only pings that overlap active download byte progress."""
+    active = []
+    while time.monotonic() < deadline:
+        before = int(stats.get("bytes") or 0)
+        sample = measure_quality([target], count=1)
+        after = int(stats.get("bytes") or 0)
+        if sample and sample.get("latency_ms") is not None and after > before:
+            active.append(sample)
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(0.3, remaining))
+    # One coincidental overlap is not enough evidence for a confident grade.
+    if len(active) < 2:
+        return None
+    latencies = [float(sample["latency_ms"]) for sample in active]
+    average = sum(latencies) / len(latencies)
+    jitter = (
+        (sum((value - average) ** 2 for value in latencies) / len(latencies)) ** 0.5
+        if len(latencies) > 1 else 0.0
+    )
+    return {
+        "latency_ms": average,
+        "jitter_ms": jitter,
+        "loss_pct": 0.0,
+        "target": str(target),
+        "active_samples": len(active),
+    }
 
 
 def run_load_test(store=True):
@@ -1504,7 +1551,11 @@ def run_load_test(store=True):
     Ping the quality target at idle, then again while a bounded download
     saturates the link, and grade the latency inflation the way the
     dslreports scale does (A under +30 ms … F above +400 ms). The transfer
-    stops at load_test_seconds or load_test_max_mb, whichever comes first.
+    stops at load_test_seconds or load_test_max_mb — whichever comes first —
+    and keeps requesting fresh responses in between so a fast connection that
+    finishes one response early doesn't go idle for the rest of the window.
+    Only pings that overlap increasing downloaded bytes contribute to the
+    loaded result.
     Returns the result dict, or None when nothing could be measured.
     """
     qcfg = quality_config()
@@ -1526,7 +1577,8 @@ def run_load_test(store=True):
     except (TypeError, ValueError):
         max_mb = 25
     max_bytes = max(1, min(100, max_mb)) * 1024 * 1024
-    stats = {"bytes": 0, "elapsed": 0.0, "error": None}
+    deadline = time.monotonic() + seconds
+    stats = {"bytes": 0, "elapsed": 0.0, "error": None, "deadline": deadline}
     stop = threading.Event()
     worker = threading.Thread(
         target=_load_downloader,
@@ -1534,8 +1586,7 @@ def run_load_test(store=True):
         daemon=True,
     )
     worker.start()
-    time.sleep(0.5)  # let the transfer ramp before sampling under load
-    loaded = measure_quality([idle["target"]], count=max(4, seconds - 2))
+    loaded = _measure_loaded_quality(idle["target"], stats, deadline)
     stop.set()
     worker.join(timeout=seconds + 10)
     if not loaded or loaded.get("latency_ms") is None:
@@ -1546,7 +1597,9 @@ def run_load_test(store=True):
         else "C" if bloat < 200 else "D" if bloat < 400 else "F"
     )
     throughput = None
-    if stats["bytes"] and stats["elapsed"] > 0.5:
+    # monotonic() has sub-second precision, so a fast connection that reaches
+    # the byte cap in under half a second still provides a valid estimate.
+    if stats["bytes"] and stats["elapsed"] > 0:
         throughput = round(stats["bytes"] * 8 / stats["elapsed"] / 1e6, 1)
     result = {
         "ts": time.time(),
@@ -1558,6 +1611,7 @@ def run_load_test(store=True):
         "bytes": int(stats["bytes"]),
         "seconds": round(stats["elapsed"], 1),
         "error": stats["error"],
+        "active_samples": int((loaded or {}).get("active_samples") or 0),
     }
     if store:
         try:
@@ -1584,7 +1638,20 @@ def latest_load_test():
             ).fetchone()
     except sqlite3.Error:
         return None
-    return dict(row) if row else None
+    result = dict(row) if row else None
+    if (
+        result
+        and result.get("throughput_mbps") is None
+        and result.get("bytes")
+        and result.get("seconds")
+        and result["seconds"] > 0
+    ):
+        # Recover estimates discarded by versions that treated sub-0.5 s
+        # transfers as too short, using the retained transfer measurements.
+        result["throughput_mbps"] = round(
+            result["bytes"] * 8 / result["seconds"] / 1e6, 1
+        )
+    return result
 
 
 def _median(values):

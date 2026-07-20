@@ -684,6 +684,7 @@ class Engine:
             "stats": self.stats(),
             "history": self.history(),
             "history_meta": self.history_meta(),
+            "fire_drill": fire_drill_status(),
             "kuma_url": kuma_url,
             "settings": public_settings(),
             "local_dns": local_dns_runtime_info(),
@@ -1295,6 +1296,24 @@ def _set_meta(key, value):
         )
 
 
+def fire_drill_status():
+    completed = _get_meta("fire_drill_completed") == "1"
+    seen = completed or _get_meta("fire_drill_seen") == "1"
+    if not seen and _get_meta("fire_drill_migration_checked") != "1":
+        with db() as conn:
+            prior_manual_run = conn.execute(
+                "SELECT 1 FROM runs WHERE kind IN ('manual', 'verify') LIMIT 1"
+            ).fetchone()
+        _set_meta("fire_drill_migration_checked", "1")
+        if prior_manual_run:
+            _set_meta("fire_drill_seen", "1")
+            seen = True
+    return {
+        "seen": seen,
+        "completed": completed,
+    }
+
+
 def _month_bounds(year, month):
     start = time.mktime((year, month, 1, 0, 0, 0, 0, 0, -1))
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
@@ -1302,24 +1321,39 @@ def _month_bounds(year, month):
     return start, end
 
 
+def _monitoring_started():
+    """Timestamp of the first-ever diagnosis run, or None if there isn't
+    one yet. Same signal Engine.stats()/isp_report() use to avoid crediting
+    uptime for time before Linkmoth was even installed."""
+    with db() as conn:
+        first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
+    return float(first_run) if first_run else None
+
+
 def monthly_digest_lines(year, month):
     """Plain-language summary lines for one calendar month (local time)."""
     start, end = _month_bounds(year, month)
     end = min(end, time.time())
+    monitoring_started = _monitoring_started()
+    # If Linkmoth was installed partway through this month, the days before
+    # that are not "uptime" — they were never observed — so the window used
+    # for every downtime/uptime calculation below starts no earlier than
+    # monitoring actually began.
+    effective_start = max(start, monitoring_started) if monitoring_started else start
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     prev_start, prev_end = _month_bounds(prev_year, prev_month)
     with db() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT * FROM incidents WHERE started < ?"
             " AND (resolved IS NULL OR resolved > ?)",
-            (end, start))]
+            (end, effective_start))]
         segments_by_incident = {
             row["id"]: _incident_outage_segments(conn, row)
             for row in rows
         }
         latencies = [r["latency_ms"] for r in conn.execute(
             "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
-            (start, end))]
+            (effective_start, end))]
         prev_latencies = [r["latency_ms"] for r in conn.execute(
             "SELECT latency_ms FROM quality_samples WHERE ts >= ? AND ts < ?",
             (prev_start, prev_end))]
@@ -1339,14 +1373,14 @@ def monthly_digest_lines(year, month):
         resolved = float(inc["resolved"]) if inc.get("resolved") else None
         clamped = _outage_seconds(
             segments_by_incident[inc["id"]],
-            window_start=start, window_end=end, now=end,
+            window_start=effective_start, window_end=end, now=end,
         )
         downtime += clamped
         if code:
             blame[code] = blame.get(code, 0) + 1
         if longest is None or clamped > longest[0]:
             longest = (clamped, inc.get("ref"))
-    span = max(1.0, end - start)
+    span = max(1.0, end - effective_start)
     uptime_pct = round(max(0.0, 100.0 * (1 - downtime / span)), 2)
     lines = [
         f"{_count_phrase(faults, 'incident')},"
@@ -1401,6 +1435,18 @@ def maybe_send_monthly_digest(now=None):
     prev_year, prev_month = (
         (lt.tm_year - 1, 12) if lt.tm_mon == 1 else (lt.tm_year, lt.tm_mon - 1)
     )
+    prev_start, _ = _month_bounds(prev_year, prev_month)
+    monitoring_started = _monitoring_started()
+    if monitoring_started and monitoring_started > prev_start:
+        # Monitoring began partway through the month that would be reported
+        # (e.g. installed on the 20th) — the "first ever run" branch above
+        # only catches the install month itself, not this one, since a full
+        # calendar month has now rolled over. A report where most of the
+        # month predates Linkmoth even running would undermine the whole
+        # point of this being credible evidence; skip it and wait for the
+        # first fully-observed month instead.
+        _set_meta("monthly_digest_sent", current_month)
+        return False
     lines = monthly_digest_lines(prev_year, prev_month)
     month_label = time.strftime(
         "%B %Y", time.localtime(_month_bounds(prev_year, prev_month)[0])

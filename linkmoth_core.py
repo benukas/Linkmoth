@@ -33,6 +33,7 @@ WHITE_LOGO_PATH = BASE / "linkmoth-white.svg"
 WHITE_MARK_PATH = BASE / "linkmoth-mark-white.svg"
 MASKABLE_ICON_PATH = BASE / "linkmoth-maskable.svg"
 PNG_ICON_PATHS = {
+    "/linkmoth-icon-180.png": BASE / "linkmoth-icon-180.png",
     "/linkmoth-icon-192.png": BASE / "linkmoth-icon-192.png",
     "/linkmoth-icon-512.png": BASE / "linkmoth-icon-512.png",
 }

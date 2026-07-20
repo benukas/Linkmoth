@@ -34,7 +34,7 @@ from linkmoth_core import (
     run_cmd, tls_paths, vacuum_database,
 )
 from linkmoth_backup import build_backup_archive
-from linkmoth_engine import prometheus_metrics
+from linkmoth_engine import _set_meta, fire_drill_status, prometheus_metrics
 from linkmoth_probes import (
     _LOAD_TEST_LOCK, _count_phrase, _validate_load_url, bind_exposure_risk,
     classify_network_interfaces, default_route, isp_report_csv,
@@ -299,6 +299,10 @@ _PUBLIC_EXPOSURE_NOTIFY_LOCK = threading.Lock()
 _LAST_PUBLIC_EXPOSURE_NOTIFY_MONO = 0.0
 
 
+# /metrics also accepts a read-only token, but is handled earlier in do_GET
+# (unauthenticated-by-default text/plain content, plus webhook-bearer
+# backward compatibility) so it isn't part of this generic session-fallback
+# set.
 READONLY_TOKEN_GET_PATHS = frozenset({
     "/api/status", "/api/quality", "/api/report", "/api/history",
 })
@@ -955,11 +959,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"triggered": True})
             return
         if url.path == "/metrics":
-            # Prometheus can't hold a browser session; the webhook bearer
-            # (already LAN-scoped by the public-exposure guard) gates the
-            # read-only exposition instead.
-            if not self._require_webhook():
-                self._send(401, {"error": "webhook authorization required"})
+            # Prometheus can't hold a browser session. Accept a read-only
+            # token first — it's strictly less powerful than the webhook
+            # bearer (it can never reach /trigger or the inbound webhook
+            # routes to create diagnostic activity), so a scraper only
+            # needs least privilege here. The webhook bearer is still
+            # accepted for configs set up before the read-only token type
+            # existed.
+            if not (
+                auth.verify_readonly_token(self.headers.get("Authorization"))
+                or self._require_webhook()
+            ):
+                self._send(401, {"error": "read-only token or webhook authorization required"})
                 return
             self._send(
                 200, prometheus_metrics().encode("utf-8"),
@@ -1219,6 +1230,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(201, {"webhook": created})
             except Exception as exc:
                 self._send_webhook_exception(exc)
+        elif path == "/api/fire-drill":
+            state = str(self._json_object_safe(body).get("state") or "")
+            if state not in ("seen", "completed"):
+                self._send(400, {"error": "state must be seen or completed"})
+                return
+            _set_meta("fire_drill_seen", "1")
+            if state == "completed":
+                _set_meta("fire_drill_completed", "1")
+            auth.audit_event("fire_drill_" + state, self._hdrs(), "")
+            self._send(200, fire_drill_status())
         elif re.fullmatch(
             r"/api/webhooks/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
             r"[0-9a-f]{4}-[0-9a-f]{12}/test",

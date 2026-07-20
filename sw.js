@@ -5,13 +5,14 @@
  * /api/ is ever cached: Linkmoth is a live network-diagnosis tool, and
  * serving a stale diagnosis while offline would be actively misleading.
  */
-const SHELL_CACHE = "linkmoth-shell-v3";
+const SHELL_CACHE = "linkmoth-shell-v4";
 const SHELL_URLS = [
   "/",
   "/manifest.webmanifest",
   "/linkmoth.svg",
   "/linkmoth-white.ico",
   "/linkmoth-mark-white.svg",
+  "/linkmoth-icon-180.png",
   "/linkmoth-icon-192.png",
   "/linkmoth-icon-512.png",
   "/linkmoth-maskable.svg",

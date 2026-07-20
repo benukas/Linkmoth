@@ -168,7 +168,8 @@ def init_webhook_db(conn):
             created REAL NOT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             next_attempt REAL NOT NULL,
-            last_error TEXT
+            last_error TEXT,
+            escalation_seconds REAL NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_webhook_queue_next
             ON webhook_queue(next_attempt);
@@ -178,6 +179,13 @@ def init_webhook_db(conn):
         conn.execute(
             "ALTER TABLE webhooks ADD COLUMN escalation_minutes"
             " INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    try:
+        conn.execute(
+            "ALTER TABLE webhook_queue ADD COLUMN escalation_seconds"
+            " REAL NOT NULL DEFAULT 0"
         )
     except sqlite3.OperationalError:
         pass  # column already exists
@@ -960,9 +968,9 @@ def emit_event(db_connect, event, ctx):
                 if escalation and event in ESCALATABLE_EVENTS else 0
             )
             conn.execute(
-                "INSERT INTO webhook_queue(webhook_id, event, context, created, next_attempt)"
-                " VALUES(?,?,?,?,?)",
-                (webhook_id, event, json.dumps(ctx), now, now + delay),
+                "INSERT INTO webhook_queue(webhook_id, event, context, created,"
+                " next_attempt, escalation_seconds) VALUES(?,?,?,?,?,?)",
+                (webhook_id, event, json.dumps(ctx), now, now + delay, delay),
             )
             queued += 1
         if queued:
@@ -1026,7 +1034,14 @@ def drain_queue_once(db_connect, now=None):
             with db_connect() as conn:
                 conn.execute("DELETE FROM webhook_queue WHERE id=?", (row["id"],))
             continue
-        if now - float(row["created"]) > MAX_AGE_SECONDS:
+        # MAX_AGE_SECONDS is the retry budget *after* a delivery becomes due,
+        # not from the moment it's queued — an escalation-held row can
+        # legitimately sit undelivered for up to escalation_seconds (24h max)
+        # before its first attempt is even allowed. Without adding that hold
+        # time back in, a maximally-escalated entry would become "expired"
+        # before the drain loop ever got a chance to send it.
+        max_age = MAX_AGE_SECONDS + float(row["escalation_seconds"] or 0)
+        if now - float(row["created"]) > max_age:
             with db_connect() as conn:
                 conn.execute("DELETE FROM webhook_queue WHERE id=?", (row["id"],))
             _record_send_result(

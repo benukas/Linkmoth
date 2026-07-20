@@ -11,6 +11,39 @@
   push key, or TLS CA), so it never needs encrypting or special handling —
   restoring on a new device means a short one-time re-setup instead.
 
+### Fixed
+
+- Bufferbloat tests now keep generating traffic for the whole loaded
+  measurement instead of finishing one bounded transfer early on a fast
+  connection, and only sample latency while bytes are actively moving, so a
+  fast line can no longer earn a falsely confident grade. They also retain a
+  download-speed estimate when the bounded transfer limit is reached in
+  under half a second, and recover the estimate for affected results already
+  stored.
+- The monthly network health digest now clamps its uptime window to when
+  Linkmoth actually started observing, instead of crediting uptime for time
+  before install.
+- `/metrics` now accepts the scoped read-only token instead of requiring the
+  write-capable webhook secret (the webhook bearer still works for existing
+  Prometheus configs).
+- Escalation-held webhook deliveries no longer expire before their first
+  delivery attempt is ever made.
+- Expanded Today and device history now use the same Linkmoth-styled range
+  selector as the History accountability report instead of a native dropdown.
+- Expanded-history color keys now use CSP-safe classes instead of blocked
+  inline style attributes, preventing repeated browser-console warnings.
+- Fire Drill prompt state is now stored by the Linkmoth installation and
+  shared across browsers and installed PWAs, with existing browser markers
+  and retained manual runs migrated automatically instead of each device
+  forgetting independently, and its control lives in Settings rather than
+  the Today tab.
+- iOS Home Screen installs now use a dedicated opaque 180×180 Apple touch icon
+  at a fresh URL, instead of relying on larger manifest/Android icon sizes.
+- Expanded latency history now provides actual diagnostic context: observed
+  span, recorded-check and fault counts, detected data gaps, per-series latest,
+  median, 95th-percentile and peak latency, labeled axes, and a persistent
+  latest/hovered sample readout. Its close icon is also optically centered.
+
 ## 0.4.2
 
 ### Added

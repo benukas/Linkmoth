@@ -2,18 +2,22 @@
 
 Copyright © 2026 Benas Urniežius.
 
-Linkmoth is published as a public AGPL-3.0-only project, but the official
-Linkmoth version is maintained solely by its copyright holder. **External code,
-documentation, design, translation, and pull-request contributions are not
-accepted.** Unsolicited pull requests will be closed without review and must
-not be treated as accepted, merged, or licensed to the official project.
+Linkmoth is published as a public AGPL-3.0-only project, and the official
+Linkmoth version is maintained solely by its copyright holder. **Pull requests
+are welcome and will be read**, but review happens at the maintainer's own
+pace and merging is not guaranteed — most will not be merged immediately, if
+at all. A pull request that's a genuinely good fit may be merged and shipped
+in a future update; there is no promise of if, or when. Opening a pull
+request does not make it accepted, merged, or licensed to the official
+project until it is actually merged.
 
 ## Useful reports are welcome
 
 Please use GitHub Issues for concise, reproducible bug reports, compatibility
-reports, and feature requests. Do not attach patches or copied third-party
-code. A useful report includes the Linkmoth version, supported Linux
-distribution, safe reproduction steps, expected behaviour, and actual result.
+reports, and feature requests. Open a pull request instead of attaching a
+patch to an issue, and don't include copied third-party code. A useful report
+includes the Linkmoth version, supported Linux distribution, safe
+reproduction steps, expected behaviour, and actual result.
 
 ## Security reports
 

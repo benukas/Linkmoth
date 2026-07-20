@@ -234,9 +234,10 @@ will find it.
   public modified versions must remain under AGPL, including when offered to
   users over a network. The software is provided without warranty or liability
   to the extent the law allows.
-- Linkmoth does **not** accept external code contributions into the official
-  project. Pull requests will be closed without review; see
-  [Reporting issues](#reporting-issues) above for bug reports.
+- Linkmoth accepts external pull requests, but review happens at the
+  maintainer's own pace and merging is not guaranteed. A good pull request
+  may ship in a future update — there's no promise of if or when; see
+  [CONTRIBUTING.md](CONTRIBUTING.md).
 - The Linkmoth name and logos are not granted by the AGPL. Forks must not imply
   that they are official Linkmoth releases; see [TRADEMARKS.md](TRADEMARKS.md).
 - Third-party code and algorithm acknowledgements are recorded in
