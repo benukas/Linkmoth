@@ -117,13 +117,14 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
-    def test_bufferbloat_promotes_download_speed_as_a_result_metric(self):
+    def test_bufferbloat_load_test_result_omits_download_speed(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('id="q-load-results"', dashboard)
-        self.assertIn('id="q-download"', dashboard)
-        self.assertIn("download speed (est.)", dashboard)
-        self.assertIn('`~${throughput} Mbps`', dashboard)
-        self.assertIn(
+        self.assertIn('id="q-load-grade"', dashboard)
+        self.assertIn('id="q-load-bloat"', dashboard)
+        self.assertNotIn('id="q-download"', dashboard)
+        self.assertNotIn("download speed (est.)", dashboard)
+        self.assertNotIn(
             "Download speed is an estimate from the bounded test transfer.",
             dashboard,
         )
@@ -218,8 +219,8 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(
             ".subnav-btn {\n"
-            "  flex: 1; min-width: 0; min-height: 51px; padding: 10px 8px;\n"
-            "  font: inherit; font-size: 19px; font-weight: 600; line-height: 1.2; cursor: pointer;\n"
+            "  flex: 1; min-width: 0; padding: 13px 8px;\n"
+            "  font-size: 19px; font-weight: 600; line-height: normal; white-space: nowrap; cursor: pointer;\n"
             "  border: 1px solid var(--border); border-radius: 12px;\n"
             "  background: var(--card); color: var(--muted);",
             dashboard,
@@ -352,20 +353,20 @@ class PublicReleaseTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertIn("cosign verify-blob", readme)
-        self.assertIn('sudo bash "linkmoth-v0.4.3-bootstrap.sh"', readme)
+        self.assertIn('sudo bash "linkmoth-v0.4.4-bootstrap.sh"', readme)
         self.assertIn(
-            "releases/download/v0.4.3/linkmoth-v0.4.3-bootstrap.sh",
+            "releases/download/v0.4.4/linkmoth-v0.4.4-bootstrap.sh",
             readme,
         )
-        self.assertIn("refs/tags/v0.4.3", readme)
+        self.assertIn("refs/tags/v0.4.4", readme)
         self.assertNotIn("--insecure-skip-verify", readme)
-        self.assertIn("# Changelog\n\n## Unreleased\n\n## 0.4.3\n", changelog)
+        self.assertIn("# Changelog\n\n## Unreleased\n\n## 0.4.4\n", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.3"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.4"))
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.4.3", advanced)
+        self.assertIn("VERSION=v0.4.4", advanced)
         self.assertIn("cosign verify-blob", advanced)
         self.assertIn("--insecure-skip-verify", advanced)
         self.assertIn('sudo bash "linkmoth-$VERSION-bootstrap.sh"', advanced)

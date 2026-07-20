@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.4.4
+
+### Changed
+
+- The Connection quality card is more compact: the download-speed
+  estimate was removed from the bufferbloat load test, and its
+  explanation moved into an info tooltip instead of a permanent
+  paragraph.
+- Several always-visible Settings explanations (LAN devices, the
+  private-IPv4 address range note, Accountability report, Fire drill,
+  Backup restore instructions, the 2FA follow-up tip, Quiet hours) now
+  live in the existing (i) info tooltips instead of separate paragraphs.
+- The Settings sub-nav tab "Network checks" is now labeled "Network".
+
+### Fixed
+
+- Settings sub-nav pills (General/Network/Notifications/Data/Security)
+  now render at the same height as the main tab bar instead of
+  stretching taller whenever a label wrapped to two lines.
+
 ## 0.4.3
 
 ### Added

@@ -9,13 +9,13 @@
 <link rel="icon" href="/linkmoth.svg" type="image/svg+xml">
 <link rel="icon" href="/linkmoth-white.ico" sizes="any">
 <!-- iOS "Add to Home Screen" ignores the Web App Manifest's icons array
-     entirely — it only ever looks at apple-touch-icon link tags. Without
+     entirely – it only ever looks at apple-touch-icon link tags. Without
      this, Safari falls back to a screenshot of the page as the icon. -->
 <link rel="apple-touch-icon" sizes="180x180" href="/linkmoth-icon-180.png">
 <link rel="manifest" href="/manifest.webmanifest">
 <style>
 :root {
-  /* Default theme — warm dark, shown out of the box. */
+  /* Default theme – warm dark, shown out of the box. */
   --bg: #1c1c1a; --card: #262624; --text: #f0efe9; --muted: #a3a29a;
   --border: #3a3a36; --line: #7ba7dd; --line2: #d99a5f;
   --ok-bg: #1d3a24; --ok-text: #8fd39c;
@@ -25,7 +25,7 @@
   --logo-invert: 0;
 }
 :root[data-theme="dark"] {
-  /* AMOLED — near-black so OLED pixels can switch off. */
+  /* AMOLED – near-black so OLED pixels can switch off. */
   --bg: #050505; --card: #141414; --text: #f0efe9; --muted: #9a9a92;
   --border: #262626; --line: #7ba7dd; --line2: #d99a5f;
   --ok-bg: #14301b; --ok-text: #8fd39c;
@@ -462,7 +462,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 #wh-curl-msg { margin-left: 12px; font-size: 16px; }
 .push-cmd { display: inline-block; margin: 6px 0; padding: 6px 10px; font-family: ui-monospace, monospace; font-size: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; user-select: all; }
 /* Info tooltip: a small "i" badge that reveals its explanation on hover,
-   tap, or keyboard focus — so explanations don't clutter the page. */
+   tap, or keyboard focus – so explanations don't clutter the page. */
 .info-tip {
   position: relative; display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px; margin-left: 7px; border-radius: 50%; vertical-align: middle;
@@ -487,8 +487,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 /* Settings inner sub-tab bar. */
 .subnav { display: flex; gap: 8px; margin: 4px 0 18px; }
 .subnav-btn {
-  flex: 1; min-width: 0; min-height: 51px; padding: 10px 8px;
-  font: inherit; font-size: 19px; font-weight: 600; line-height: 1.2; cursor: pointer;
+  flex: 1; min-width: 0; padding: 13px 8px;
+  font-size: 19px; font-weight: 600; line-height: normal; white-space: nowrap; cursor: pointer;
   border: 1px solid var(--border); border-radius: 12px;
   background: var(--card); color: var(--muted);
   transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 80ms ease;
@@ -672,7 +672,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   </div>
 
   <div id="update-banner" class="banner hidden">
-    <p>Linkmoth was updated on the server since this page loaded — reload to pick up the new version.</p>
+    <p>Linkmoth was updated on the server since this page loaded – reload to pick up the new version.</p>
     <div class="banner-actions">
       <button id="update-reload-btn" type="button" class="action-btn">Reload now</button>
     </div>
@@ -735,7 +735,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     </section>
 
     <section id="quality-card" class="card">
-      <h3>Connection quality</h3>
+      <h3>Connection quality<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop" id="q-load-info">Downloads a bounded test file from a public server to measure your line under real load.</span></span></h3>
       <p id="q-meta" class="set-hint mt0">Measuring…</p>
       <div class="q-head">
         <span id="q-badge" class="q-badge q-unknown">–</span>
@@ -749,13 +749,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <p id="q-findings" class="hint"></p>
       <div id="q-load-results" class="q-stats load-test-results hidden" aria-label="Latest bufferbloat test results">
         <span><b id="q-load-grade">–</b><small>bufferbloat grade</small></span>
-        <span><b id="q-download">–</b><small>download speed (est.)</small></span>
         <span><b id="q-load-bloat">–</b><small>added latency</small></span>
       </div>
       <p id="q-load" class="hint"></p>
       <p id="q-wifi" class="hint"></p>
-      <p id="q-load-info" class="hint">Downloads a bounded test file from a public server to measure your line under real load.</p>
-      <button type="button" id="q-load-btn" class="action-btn" title="Downloads a bounded test file from a public server while measuring latency — grades how badly your connection bloats under load.">Test under load</button>
+      <button type="button" id="q-load-btn" class="action-btn">Test under load</button>
     </section>
 
     <section class="card">
@@ -773,8 +771,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <section class="card">
       <div class="device-toolbar">
         <div>
-          <h3>LAN devices</h3>
-          <p class="set-hint mt4">Watch selected devices without changing Linkmoth network blame.</p>
+          <h3>LAN devices<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Watch selected devices without changing Linkmoth network blame.</span></span></h3>
         </div>
         <button type="button" id="device-add" class="action-btn">Add device</button>
       </div>
@@ -783,8 +780,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <section id="device-form" class="card hidden">
       <h3 id="device-form-title">Add device</h3>
       <div class="set-row"><label for="d-name">Name</label><input id="d-name" maxlength="80" placeholder="Living Room Printer"></div>
-      <div class="set-row"><label for="d-address">Private IPv4 address</label><input id="d-address" inputmode="decimal" placeholder="192.168.1.40"></div>
-      <p class="set-hint">Allowed ranges: 10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16. Hostnames are not accepted.</p>
+      <div class="set-row"><label for="d-address">Private IPv4 address<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Allowed ranges: 10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16. Hostnames are not accepted.</span></span></label><input id="d-address" inputmode="decimal" placeholder="192.168.1.40"></div>
       <div class="set-row">
         <label for="d-preset">Preset</label>
         <select id="d-preset">
@@ -874,8 +870,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <p id="hist-stats"></p>
     </div>
     <section class="card" id="report-card">
-      <h3>Accountability report</h3>
-      <p class="hint">Downtime, blame, and provider-path evidence built from the stored incident history — generated locally, credentials excluded.</p>
+      <h3>Accountability report<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Downtime, blame, and provider-path evidence built from the stored incident history – generated locally, credentials excluded.</span></span></h3>
       <div class="report-controls">
         <div class="custom-select" id="report-days-wrap">
           <button type="button" class="action-btn custom-select-trigger" id="report-days-trigger"
@@ -905,7 +900,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <h3>Settings</h3>
       <nav class="subnav" role="tablist" aria-label="Settings sections">
         <button type="button" class="subnav-btn active" data-subtab="general">General</button>
-        <button type="button" class="subnav-btn" data-subtab="network">Network checks</button>
+        <button type="button" class="subnav-btn" data-subtab="network">Network</button>
         <button type="button" class="subnav-btn" data-subtab="notifications">Notifications</button>
         <button type="button" class="subnav-btn" data-subtab="data">Data</button>
         <button type="button" class="subnav-btn" data-subtab="security">Security</button>
@@ -929,8 +924,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <div class="set-row"><label for="s-kuma">Uptime Kuma link<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">"auto" = this host on port 3001 · leave empty to hide the link · or a full URL like http://192.168.1.20:3001</span></span></label><input id="s-kuma" placeholder="auto"></div>
         </div>
         <div class="set-section" id="fire-drill-settings">
-          <h4>Fire drill</h4>
-          <p class="set-hint">Practice detecting and recovering from a real WAN outage. Run this when a brief internet interruption will not disrupt anyone.</p>
+          <h4>Fire drill<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Practice detecting and recovering from a real WAN outage. Run this when a brief internet interruption will not disrupt anyone.</span></span></h4>
           <button id="drill-open" type="button" class="action-btn" aria-expanded="false" aria-controls="drill-card">Start fire drill</button>
           <p id="drill-hint" class="set-hint hidden">New here? Run the one-minute <b>fire drill</b> to watch Linkmoth catch and diagnose an outage live.</p>
           <div class="drill-panel hidden" id="drill-card">
@@ -1021,7 +1015,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <button type="button" id="push-disable" class="action-btn hidden">Disable push on this device</button>
         </div>
         <div class="set-section">
-          <h4>Quiet hours</h4>
+          <h4>Quiet hours<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Evaluated on the Linkmoth host's clock. Outbound webhooks continue normally during quiet hours.</span></span></h4>
           <div class="set-row">
             <label for="s-quiet-enabled">Hold Discord and push alerts overnight</label>
             <input id="s-quiet-enabled" type="checkbox">
@@ -1099,8 +1093,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           </div>
         </div>
         <div class="set-section">
-          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, webhook token, push key) and the TLS CA, so the file itself is never sensitive — restoring on a new device just means redoing the short one-time setup (new password, TOTP, webhook secret) via the CLI's --restore flag.</span></span></h4>
-          <p class="set-hint">Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped — it's not available from here.</p>
+          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, webhook token, push key) and the TLS CA, so the file itself is never sensitive – restoring on a new device just means redoing the short one-time setup (new password, TOTP, webhook secret) via the CLI's --restore flag. Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped.</span></span></h4>
           <button type="button" id="backup-download" class="action-btn">Download backup</button>
         </div>
         <div class="set-section">
@@ -1124,7 +1117,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         </div>
 
         <div class="set-section">
-          <h4>Two-factor authentication (2FA)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Add an authenticator app (TOTP) as a second factor. Enabling or disabling 2FA, or regenerating recovery codes, signs you out of all sessions – you'll log back in.</span></span></h4>
+          <h4>Two-factor authentication (2FA)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Add an authenticator app (TOTP) as a second factor. Enabling or disabling 2FA, or regenerating recovery codes, signs you out of all sessions – you'll log back in. After signing back in with your password, use the next authenticator code if your app still shows the code you just entered.</span></span></h4>
           <p id="sec-totp-status" class="set-hint">Loading…</p>
 
           <div id="sec-totp-off">
@@ -1145,7 +1138,6 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <div id="sec-totp-activated" class="hidden">
             <p class="device-warning"><b>2FA is on. Save your recovery codes now.</b> Each works once if you lose your authenticator – they are shown only this once.</p>
             <pre id="sec-totp-codes" class="sec-codes"></pre>
-            <p class="set-hint">After signing in with your password, use the next authenticator code if your app still shows the code you just entered.</p>
             <button type="button" id="sec-totp-done" class="action-btn">I've saved my codes – sign in</button>
           </div>
 
@@ -1165,7 +1157,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         </div>
 
         <div class="set-section">
-          <h4>Read-only API tokens<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">For dashboards and widgets (Homepage, Glance, Home Assistant REST sensors). A token can only GET /api/status, /api/quality, /api/report, and /api/history — it can never change settings or read secrets. Shown once at creation; revocable any time.</span></span></h4>
+          <h4>Read-only API tokens<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">For dashboards and widgets (Homepage, Glance, Home Assistant REST sensors). A token can only GET /api/status, /api/quality, /api/report, and /api/history – it can never change settings or read secrets. Shown once at creation; revocable any time.</span></span></h4>
           <div class="set-row"><label for="sec-token-name">Name</label>
             <input id="sec-token-name" type="text" placeholder="e.g. homepage widget" maxlength="60"></div>
           <button type="button" id="sec-token-create" class="action-btn">Create token</button>
@@ -1255,7 +1247,7 @@ let authReady = false;
 let holdAuthForRecoveryCodes = false;
 let localDnsRuntime = null;
 // The server version this page was loaded against. A standalone PWA (no
-// browser chrome, no pull-to-refresh — especially on iOS) can otherwise
+// browser chrome, no pull-to-refresh – especially on iOS) can otherwise
 // keep running old JS against an upgraded server indefinitely, since
 // nothing ever tells the already-open window to reload.
 let loadedAppVersion = null;
@@ -1952,7 +1944,7 @@ function openHistoryModal(kind, opts) {
   historyModal = { kind, ...(opts || {}) };
   historyModalOpener = document.activeElement;
   $("history-modal-title").textContent =
-    kind === "network" ? "Latency history" : `${(opts && opts.name) || "Device"} — check latency`;
+    kind === "network" ? "Latency history" : `${(opts && opts.name) || "Device"} – check latency`;
   $("history-modal-subtitle").textContent = kind === "network"
     ? "Compare typical latency, slow periods, fault markers and data gaps."
     : "Review typical check time, slow checks, failures and gaps.";
@@ -2274,9 +2266,9 @@ async function doSetup() {
   if (!r.ok) {
     if (r.status === 409) {
       // This installation already has a password (the onboarding form was
-      // shown from a stale status read) — recover into normal sign-in.
+      // shown from a stale status read) – recover into normal sign-in.
       showAuthGate("password");
-      $("auth-err").textContent = "This Linkmoth already has a password — sign in below.";
+      $("auth-err").textContent = "This Linkmoth already has a password – sign in below.";
       return;
     }
     $("auth-err").textContent = out.error || "Setup failed";
@@ -2389,7 +2381,7 @@ $("logout-btn").addEventListener("click", doLogout);
 
 // True while a client-initiated load test is in flight. The periodic
 // auto-refresh tick (every ui_refresh_seconds, as low as 2s) re-renders the
-// whole quality card from the server's last-known result — which is still
+// whole quality card from the server's last-known result – which is still
 // the *previous* test, or none, for the ~20s the new one is running. Without
 // this guard, the very next tick would stomp the "Testing under load…"
 // status text right back to the stale result.
@@ -2398,35 +2390,28 @@ let loadTestRunning = false;
 function renderLoadTest(lt) {
   // Deliberately independent of the periodic ping sample (q.current):
   // the load test runs on demand via its own button and can complete
-  // (and be worth showing) long before — or even without — a periodic
+  // (and be worth showing) long before – or even without – a periodic
   // quality sample ever landing, e.g. on a fresh install or when the
   // background checker is disabled.
   if (loadTestRunning) return;
   const loadResults = $("q-load-results");
   if (lt && lt.grade) {
     const age = lt.ts ? fmtAge(Date.now() / 1000 - lt.ts) : "";
-    const throughput = lt.throughput_mbps;
     loadResults.classList.remove("hidden");
     $("q-load-grade").textContent = lt.grade;
-    $("q-download").textContent = throughput !== null && throughput !== undefined
-      ? `~${throughput} Mbps`
-      : "–";
     $("q-load-bloat").textContent = `+${Math.round(lt.bloat_ms)} ms`;
-    const transfer = lt.bytes && lt.seconds
-      ? ` · downloaded ${fmtBytesShort(lt.bytes)} in ${Number(lt.seconds).toFixed(1)} s`
-      : "";
     $("q-load").textContent =
-      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${transfer}${age ? ` · tested ${age}` : ""}. Download speed is an estimate from the bounded test transfer.`;
+      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.`;
   } else {
     loadResults.classList.add("hidden");
-    $("q-load").textContent = "Bufferbloat not tested yet — a load test grades how latency holds up while the line is busy.";
+    $("q-load").textContent = "Bufferbloat not tested yet – a load test grades how latency holds up while the line is busy.";
   }
 }
 
 function renderLoadTestInfo(q) {
   const cfg = q && q.load_test_config;
   $("q-load-info").textContent = cfg && cfg.host
-    ? `Downloads up to ${cfg.max_mb || 25} MB from ${cfg.host} over up to ${cfg.seconds || 10} s to measure your line under load — normal data usage for one test.`
+    ? `Downloads up to ${cfg.max_mb || 25} MB from ${cfg.host} over up to ${cfg.seconds || 10} s to measure your line under load – normal data usage for one test.`
     : "Downloads a bounded test file from a public server to measure your line under real load.";
 }
 
@@ -2510,7 +2495,7 @@ function checkAppVersion(appInfo) {
   const version = appInfo && appInfo.version;
   if (!version) return;
   if (loadedAppVersion === null) {
-    // First observation this page load — this becomes the baseline every
+    // First observation this page load – this becomes the baseline every
     // later check compares against, not a "must reload" event.
     loadedAppVersion = version;
     return;
@@ -2527,7 +2512,7 @@ $("update-reload-btn").addEventListener("click", () => {
 
 // A standalone PWA has no address bar to pull-to-refresh and, on iOS
 // especially, is often just resumed from a frozen/suspended state rather
-// than freshly navigated to — so nothing else here would ever notice the
+// than freshly navigated to – so nothing else here would ever notice the
 // server was upgraded while it was in the background. Reopening the app is
 // exactly the safe moment to reload automatically: the user just switched
 // back in, so nothing mid-interaction gets yanked away underneath them.
@@ -2634,7 +2619,6 @@ async function refresh() {
     else if (q.active) parts.push(`Quiet hours are active until ${q.end}.`);
     else parts.push(`Quiet hours run from ${q.start} to ${q.end}.`);
     if (q.pending) parts.push(`${q.pending} alert${q.pending === 1 ? "" : "s"} waiting for the morning summary.`);
-    parts.push("Evaluated on the Linkmoth host's clock; outbound webhooks continue normally.");
     $("s-quiet-status").textContent = parts.join(" ");
   }
   renderTodayBanner(s);
@@ -2765,7 +2749,7 @@ async function refresh() {
       && !$("subtab-security").classList.contains("hidden")
       // Not mid-TOTP-enrollment: loadSecurityPosture() hides the QR/secret
       // card whenever totp_enabled is still false, which is exactly the
-      // state a fresh, not-yet-confirmed enrollment is in — a periodic
+      // state a fresh, not-yet-confirmed enrollment is in – a periodic
       // refresh here would tear the in-progress setup off the screen.
       && $("sec-totp-enroll").classList.contains("hidden")) {
     loadAuditLog();
@@ -3063,7 +3047,7 @@ function renderDeviceCard(d) {
   const stateLabel = d.running ? "checking…" : cap(state);
   const latest = d.last_run_ts ? `Last checked ${fmtAge(Date.now() / 1000 - d.last_run_ts)}` : "Never checked";
   const alerts = Object.entries(d.alerts || {}).filter(([, on]) => on).map(([name]) => name);
-  // "Scheduled monitoring" is the confirmed/stable state from repeated checks —
+  // "Scheduled monitoring" is the confirmed/stable state from repeated checks –
   // distinct from the single latest check shown in the badge. Until enough
   // checks have run it has no stable verdict yet, so say so plainly rather than
   // printing "unknown" beside a badge that already shows Up/Down.
@@ -3838,7 +3822,7 @@ const QR = (() => {
     for (const b of bytes) put(b, 8);
     put(0, 4);                // terminator (may be truncated by capacity)
     // Always pad to the next byte boundary (adds a full zero byte if already
-    // aligned) — this matches the QR spec exactly, verified against a
+    // aligned) – this matches the QR spec exactly, verified against a
     // reference encoder byte-for-byte.
     for (let n = 8 - (bits.length % 8); n > 0; n--) bits.push(0);
     const cw = [];
@@ -3917,7 +3901,7 @@ const QR = (() => {
         if (grid[r][c] === grid[r][c + 1] && grid[r][c] === grid[r + 1][c] && grid[r][c] === grid[r + 1][c + 1]) p += 3;
       // Rule 3: literal 1:1:3:1:1 dark:light:dark:dark:dark:light:dark pattern,
       // scored only when preceded or followed by >=4 light modules (or the
-      // symbol edge). Single-module-width, per ISO/IEC 18004:2015 Table 11 —
+      // symbol edge). Single-module-width, per ISO/IEC 18004:2015 Table 11 –
       // matches the reference (segno) implementation exactly, not a scaled
       // generalization.
       const N3_PATTERN = [1, 0, 1, 1, 1, 0, 1];
@@ -4023,7 +4007,7 @@ $("sec-token-create").addEventListener("click", async () => {
   const { ok, body } = await secPost("/api/auth/tokens", { name });
   if (!ok) { secMsg("sec-token-msg", body.error || "Could not create the token.", false); return; }
   $("sec-token-value").textContent =
-    `${body.token}\n\nThis token is shown only once — store it now.\n` +
+    `${body.token}\n\nThis token is shown only once – store it now.\n` +
     `Use it as:  Authorization: Bearer ${body.token}`;
   $("sec-token-value").classList.remove("hidden");
   $("sec-token-name").value = "";
@@ -4537,7 +4521,7 @@ $("drill-dismiss").addEventListener("click", () => {
 $("drill-go").addEventListener("click", async () => {
   const btn = $("drill-go");
   btn.disabled = true;
-  drillStatus("Diagnosing — Linkmoth is walking the fault ladder…");
+  drillStatus("Diagnosing – Linkmoth is walking the fault ladder…");
   try {
     await fetch("/api/diagnose", { method: "POST", headers: authHeaders() });
   } catch (e) { /* poll regardless */ }
@@ -4567,12 +4551,12 @@ $("drill-verify").addEventListener("click", async () => {
     const r = await fetch("/api/verify", { method: "POST", headers: authHeaders() });
     const out = await r.json().catch(() => ({}));
     if (r.status === 429) {
-      drillStatus(`Give it a moment — try again in ${out.retry_after || "a few"} s.`, false);
+      drillStatus(`Give it a moment – try again in ${out.retry_after || "a few"} s.`, false);
       return;
     }
     if (r.ok && out.verdict && out.verdict.severity === "ok") {
       drillStatus(
-        "Drill complete — outage caught, diagnosed, and recovery confirmed. The incident closes itself after two clean loop passes; its story is in History.",
+        "Drill complete – outage caught, diagnosed, and recovery confirmed. The incident closes itself after two clean loop passes; its story is in History.",
         true,
       );
       $("drill-verify").classList.add("hidden");
@@ -4585,7 +4569,7 @@ $("drill-verify").addEventListener("click", async () => {
       );
     }
   } catch (e) {
-    drillStatus("Could not reach Linkmoth — it may still be diagnosing. Try again.", false);
+    drillStatus("Could not reach Linkmoth – it may still be diagnosing. Try again.", false);
   } finally {
     btn.disabled = false;
   }
@@ -4612,7 +4596,7 @@ $("q-load-btn").addEventListener("click", async () => {
       $("q-load").textContent = body.error || "Load test could not start.";
       return;
     }
-    $("q-load").textContent = "Testing under load — takes about 20 seconds…";
+    $("q-load").textContent = "Testing under load – takes about 20 seconds…";
     // The test runs server-side; only now clear the flag and refresh, so
     // auto-refresh ticks during the wait leave this status text alone.
     setTimeout(() => { stopRunning(); refresh(); }, 22000);
@@ -5088,7 +5072,7 @@ $("s-theme").addEventListener("change", (e) => {
 
 if ("serviceWorker" in navigator) {
   // Registered unconditionally (not just when push is enabled) so the app
-  // shell — this page, the manifest, and icons — loads instantly and still
+  // shell – this page, the manifest, and icons – loads instantly and still
   // works with no network. Live diagnostic data is never cached; see sw.js.
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
