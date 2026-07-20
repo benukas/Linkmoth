@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.3
+
 ### Added
 
 - **Backup and restore**: `--backup`/`--restore` CLI flags and a dashboard
