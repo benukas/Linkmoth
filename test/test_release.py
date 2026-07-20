@@ -76,6 +76,17 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_bufferbloat_promotes_download_speed_as_a_result_metric(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('id="q-load-results"', dashboard)
+        self.assertIn('id="q-download"', dashboard)
+        self.assertIn("download speed (est.)", dashboard)
+        self.assertIn('`~${throughput} Mbps`', dashboard)
+        self.assertIn(
+            "Download speed is an estimate from the bounded test transfer.",
+            dashboard,
+        )
+
     def test_settings_subtabs_match_the_main_navigation_treatment(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(

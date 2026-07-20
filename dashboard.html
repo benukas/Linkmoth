@@ -155,6 +155,8 @@ svg.spark:focus-visible { outline: 2px solid var(--line); outline-offset: 3px; b
 .q-stats span { display: flex; flex-direction: column; line-height: 1.2; }
 .q-stats b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .q-stats small { color: var(--muted); font-size: 13px; }
+.load-test-results { margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.load-test-results span { min-width: 112px; }
 .row { display: flex; align-items: center; gap: 14px; padding: 12px 0; }
 /* One divider per check, above each check block (not between a check and its
    own evidence, and never trailing after the last check). */
@@ -658,6 +660,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       </div>
       <p id="q-reasons" class="hint"></p>
       <p id="q-findings" class="hint"></p>
+      <div id="q-load-results" class="q-stats load-test-results hidden" aria-label="Latest bufferbloat test results">
+        <span><b id="q-load-grade">–</b><small>bufferbloat grade</small></span>
+        <span><b id="q-download">–</b><small>download speed (est.)</small></span>
+        <span><b id="q-load-bloat">–</b><small>added latency</small></span>
+      </div>
       <p id="q-load" class="hint"></p>
       <p id="q-wifi" class="hint"></p>
       <button type="button" id="q-load-btn" class="action-btn" title="Downloads up to 25 MB from the configured public test URL while measuring latency — grades how badly your connection bloats under load.">Test under load</button>
@@ -1859,12 +1866,23 @@ function renderQuality(q) {
     ? "Over the last week: " + findings.join(" ")
     : "";
   const lt = q.load_test;
+  const loadResults = $("q-load-results");
   if (lt && lt.grade) {
     const age = lt.ts ? fmtAge(Date.now() / 1000 - lt.ts) : "";
-    const speed = lt.throughput_mbps ? ` · ~${lt.throughput_mbps} Mbps down` : "";
+    const throughput = lt.throughput_mbps;
+    loadResults.classList.remove("hidden");
+    $("q-load-grade").textContent = lt.grade;
+    $("q-download").textContent = throughput !== null && throughput !== undefined
+      ? `~${throughput} Mbps`
+      : "–";
+    $("q-load-bloat").textContent = `+${Math.round(lt.bloat_ms)} ms`;
+    const transfer = lt.bytes && lt.seconds
+      ? ` · downloaded ${fmtBytesShort(lt.bytes)} in ${Number(lt.seconds).toFixed(1)} s`
+      : "";
     $("q-load").textContent =
-      `Bufferbloat grade ${lt.grade} — +${Math.round(lt.bloat_ms)} ms under load (${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms)${speed}${age ? ` · tested ${age}` : ""}`;
+      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${transfer}${age ? ` · tested ${age}` : ""}. Download speed is an estimate from the bounded test transfer.`;
   } else {
+    loadResults.classList.add("hidden");
     $("q-load").textContent = "Bufferbloat not tested yet — a load test grades how latency holds up while the line is busy.";
   }
 }
