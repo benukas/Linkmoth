@@ -1041,6 +1041,11 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           </div>
         </div>
         <div class="set-section">
+          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, webhook token, push key) and the TLS CA, so the file itself is never sensitive — restoring on a new device just means redoing the short one-time setup (new password, TOTP, webhook secret) via the CLI's --restore flag.</span></span></h4>
+          <p class="set-hint">Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped — it's not available from here.</p>
+          <button type="button" id="backup-download" class="action-btn">Download backup</button>
+        </div>
+        <div class="set-section">
           <h4>Database maintenance</h4>
           <p id="db-status" class="set-hint">Loading database info…</p>
           <button type="button" id="vacuum-db" class="action-btn">Run VACUUM</button><span id="db-msg"></span>
@@ -4200,6 +4205,28 @@ async function downloadEvidenceExport(tier, filename) {
       finally { button.disabled = false; }
     });
   });
+
+$("backup-download").addEventListener("click", async () => {
+  const button = $("backup-download");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/backup");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Could not create backup");
+    }
+    const blob = await response.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "linkmoth-backup.zip";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } catch (error) {
+    alert(error.message || "Could not create backup");
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $("copy-diagnosis").addEventListener("click", async () => {
   const button = $("copy-diagnosis");

@@ -58,10 +58,15 @@ class BoundedTLSServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_http_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_handler
+        linkmoth_handler = importlib.import_module("linkmoth_handler")
     def test_connection_cap_rejects_excess_slow_handshakes(self):
         context = _BlockingTLSContext()
         server = self.linkmoth.BoundedTLSServer(
@@ -100,7 +105,7 @@ class BoundedTLSServerTests(unittest.TestCase):
 
         peers = []
         with mock.patch.object(
-            self.linkmoth, "REQUEST_HEADER_DEADLINE_SECONDS", 0.3,
+            linkmoth_core, "REQUEST_HEADER_DEADLINE_SECONDS", 0.3,
         ):
             server = self.linkmoth.BoundedTLSServer(
                 ("127.0.0.1", 0), HealthyHandler, context,
@@ -161,8 +166,8 @@ class BoundedTLSServerTests(unittest.TestCase):
 
         deadline_s = 0.6
         with mock.patch.object(
-            self.linkmoth, "REQUEST_HEADER_DEADLINE_SECONDS", deadline_s,
-        ), mock.patch.object(self.linkmoth, "HEADER_POLL_SECONDS", 0.1):
+            linkmoth_core, "REQUEST_HEADER_DEADLINE_SECONDS", deadline_s,
+        ), mock.patch.object(linkmoth_handler, "HEADER_POLL_SECONDS", 0.1):
             server = self.linkmoth.BoundedTLSServer(
                 ("127.0.0.1", 0), HealthyHandler, context,
             )
@@ -253,7 +258,7 @@ class BoundedTLSServerTests(unittest.TestCase):
             connection,
             time.monotonic() + 1,
         )
-        with mock.patch.object(self.linkmoth, "MAX_HTTP_HEADER_BYTES", 64):
+        with mock.patch.object(linkmoth_handler, "MAX_HTTP_HEADER_BYTES", 64):
             reader.readline()
             with self.assertRaises(self.linkmoth._HeaderLimitExceeded):
                 reader.readline()
@@ -265,7 +270,7 @@ class BoundedTLSServerTests(unittest.TestCase):
             connection,
             time.monotonic() + 1,
         )
-        with mock.patch.object(self.linkmoth, "MAX_HTTP_HEADER_COUNT", 2):
+        with mock.patch.object(linkmoth_handler, "MAX_HTTP_HEADER_COUNT", 2):
             reader.readline()
             reader.readline()
             reader.readline()

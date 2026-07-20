@@ -95,11 +95,19 @@ class LinkmothTestBase(unittest.TestCase):
         os.environ["LINKMOTH_CONFIG"] = str(self.config_path)
         os.environ["LINKMOTH_STATE_DIR"] = str(self.state)
 
-        for mod in ("linkmoth", "linkmoth_auth"):
+        for mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler', "linkmoth_auth"):
             if mod in sys.modules:
                 del sys.modules[mod]
         import linkmoth
         self.linkmoth = importlib.reload(linkmoth)
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_handler
+        linkmoth_handler = importlib.import_module("linkmoth_handler")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
+        global linkmoth_engine
+        linkmoth_engine = importlib.import_module("linkmoth_engine")
         self.linkmoth.init_db()
         self.auth = self.linkmoth.get_auth()
 
@@ -359,13 +367,13 @@ class PublicExposureGuardRouteTests(LinkmothTestBase):
     is mocked to simulate a request arriving from a public IP address."""
 
     def test_get_is_rejected_when_peer_looks_public(self):
-        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=False):
+        with patch.object(linkmoth_handler, "_peer_is_trusted_local", return_value=False):
             code, body, _, _ = http("GET", f"{self.base}/health")
         self.assertEqual(code, 403)
         self.assertIn("LAN-only", body["error"])
 
     def test_post_is_rejected_before_touching_auth_state(self):
-        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=False):
+        with patch.object(linkmoth_handler, "_peer_is_trusted_local", return_value=False):
             code, body, _, _ = http(
                 "POST", f"{self.base}/api/auth/login", {"password": "wrong"},
             )
@@ -379,7 +387,7 @@ class PublicExposureGuardRouteTests(LinkmothTestBase):
 
     def test_rejection_is_audited_and_surfaced_in_security_posture(self):
         self._configure_auth()
-        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=False):
+        with patch.object(linkmoth_handler, "_peer_is_trusted_local", return_value=False):
             code, _, _, _ = http("GET", f"{self.base}/health")
         self.assertEqual(code, 403)
         events = self.auth.audit_events(limit=10)
@@ -398,7 +406,7 @@ class PublicExposureGuardRouteTests(LinkmothTestBase):
         # The trusted_proxy_cidrs allowlist behavior itself is covered at the
         # unit level in test_linkmoth_bind_exposure.py; this just confirms the
         # do_GET wiring actually respects a "trusted" verdict from the guard.
-        with patch.object(self.linkmoth, "_peer_is_trusted_local", return_value=True):
+        with patch.object(linkmoth_handler, "_peer_is_trusted_local", return_value=True):
             code, body, _, _ = http("GET", f"{self.base}/health")
         self.assertEqual(code, 200)
         self.assertTrue(body["ok"])
@@ -562,7 +570,7 @@ class AuthenticatedTests(LinkmothTestBase):
             "update_command": "VERSION=v0.2.1",
             "verified_update_command": "VERSION=v0.2.1",
         }
-        with patch.object(self.linkmoth, "manual_update_check", return_value=result):
+        with patch.object(linkmoth_handler, "manual_update_check", return_value=result):
             code, body, _, _ = http(
                 "POST", f"{self.base}/api/update/check", {},
                 headers={"X-CSRF-Token": csrf},
@@ -582,6 +590,19 @@ class AuthenticatedTests(LinkmothTestBase):
         self.assertEqual(code, 200)
         self.assertEqual(body["tier"], "support-safe")
         self.assertNotIn("discord_webhook_url", body["configuration"])
+
+    def test_backup_download_requires_auth_and_is_a_zip_with_no_secrets(self):
+        code, _, _, _ = http("GET", f"{self.base}/api/backup")
+        self.assertEqual(code, 401)
+        _, _, cookie, _ = self._login()
+        code, body, _, headers = http(
+            "GET", f"{self.base}/api/backup",
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertIn("attachment", headers.get("Content-Disposition", ""))
+        secret = self.auth.ensure_webhook_secret()
+        self.assertNotIn(secret.encode(), body)
 
     def test_csrf_rejected_without_token(self):
         _, _, cookie, _ = self._login()
@@ -1237,6 +1258,9 @@ class AuthCryptoTests(unittest.TestCase):
 
     def test_server_refuses_invalid_configuration(self):
         import linkmoth
+        # main() reads its own bootstrap-bound copies of CONFIG_ERROR/init_db
+        # (re-exported from linkmoth_core at import time), so the patch must
+        # target linkmoth itself, not linkmoth_core, to intercept that call.
         with patch.object(linkmoth, "CONFIG_ERROR", "broken config"), patch.object(
             linkmoth.sys, "argv", ["linkmoth.py"]
         ), patch.object(linkmoth, "init_db") as init:
@@ -1298,7 +1322,7 @@ class GuidedVerifyTests(LinkmothTestBase):
     def test_verify_reports_fixed_rung(self):
         self._seed_before_run(gateway=False)
         _, _, cookie, csrf = self._login()
-        with patch.object(self.linkmoth, "run_ladder",
+        with patch.object(linkmoth_engine, "run_ladder",
                           return_value=(_ladder_checks(), 1.0)):
             code, body, _, _ = http(
                 "POST", f"{self.base}/api/verify", {},
@@ -1313,7 +1337,7 @@ class GuidedVerifyTests(LinkmothTestBase):
     def test_verify_reports_still_bad(self):
         self._seed_before_run(gateway=False)
         _, _, cookie, csrf = self._login()
-        with patch.object(self.linkmoth, "run_ladder",
+        with patch.object(linkmoth_engine, "run_ladder",
                           return_value=(_ladder_checks(gateway=False), 1.0)):
             code, body, _, _ = http(
                 "POST", f"{self.base}/api/verify", {},
@@ -1335,7 +1359,7 @@ class GuidedVerifyTests(LinkmothTestBase):
         after_dns["state"] = "passed"
         after_dns["label"] = "Upstream DNS (direct)"
         _, _, cookie, csrf = self._login()
-        with patch.object(self.linkmoth, "run_ladder", return_value=(after, 1.0)):
+        with patch.object(linkmoth_engine, "run_ladder", return_value=(after, 1.0)):
             code, body, _, _ = http(
                 "POST", f"{self.base}/api/verify", {},
                 headers={"X-CSRF-Token": csrf},
@@ -1357,7 +1381,7 @@ class GuidedVerifyTests(LinkmothTestBase):
     def test_verify_cooldown_returns_429(self):
         self._seed_before_run(gateway=False)
         _, _, cookie, csrf = self._login()
-        with patch.object(self.linkmoth, "run_ladder",
+        with patch.object(linkmoth_engine, "run_ladder",
                           return_value=(_ladder_checks(), 1.0)):
             first, _, _, _ = http(
                 "POST", f"{self.base}/api/verify", {},
@@ -1399,7 +1423,7 @@ class SecurityManagementTests(LinkmothTestBase):
             {"iface": "eth0", "address": "192.168.1.10", "kind": "lan"},
             {"iface": "wg0", "address": "10.8.0.2", "kind": "tunnel"},
         ]
-        with patch.object(self.linkmoth, "classify_network_interfaces",
+        with patch.object(linkmoth_probes, "classify_network_interfaces",
                           return_value=fake_ifaces):
             with patch.dict(self.linkmoth.CFG, {"bind": "0.0.0.0"}):
                 code, body, _, _ = http(
@@ -1414,7 +1438,7 @@ class SecurityManagementTests(LinkmothTestBase):
         fake_ifaces = [
             {"iface": "wg0", "address": "10.8.0.2", "kind": "tunnel"},
         ]
-        with patch.object(self.linkmoth, "classify_network_interfaces",
+        with patch.object(linkmoth_probes, "classify_network_interfaces",
                           return_value=fake_ifaces):
             with patch.dict(self.linkmoth.CFG, {"bind": "192.168.1.10"}):
                 code, body, _, _ = http(

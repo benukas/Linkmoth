@@ -37,10 +37,15 @@ class ParsePingStatsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_q_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.lm = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_parses_full_stats(self):
         s = self.lm.parse_ping_stats(GOOD_PING)
         self.assertEqual(s["sent"], 10)
@@ -74,9 +79,14 @@ class ClassifyQualityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_q_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.lm = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.q = cls.lm.quality_config()
 
     def classify(self, latency, jitter, loss):
@@ -117,16 +127,21 @@ class MeasureQualityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_q_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.lm = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_picks_best_responding_target(self):
         def fake_run_cmd(cmd, timeout=None):
             host = cmd[-1]
             return (0, GOOD_PING if host == "1.1.1.1" else LOSSY_PING)
 
-        with mock.patch.object(self.lm, "run_cmd", side_effect=fake_run_cmd):
+        with mock.patch.object(linkmoth_probes, "run_cmd", side_effect=fake_run_cmd):
             sample = self.lm.measure_quality(["8.8.8.8", "1.1.1.1"], count=10)
         self.assertIsNotNone(sample)
         self.assertEqual(sample["target"], "1.1.1.1")
@@ -134,7 +149,7 @@ class MeasureQualityTests(unittest.TestCase):
         self.assertEqual(sample["loss_pct"], 0.0)
 
     def test_none_when_all_dead(self):
-        with mock.patch.object(self.lm, "run_cmd", return_value=(1, "")):
+        with mock.patch.object(linkmoth_probes, "run_cmd", return_value=(1, "")):
             self.assertIsNone(self.lm.measure_quality(["1.1.1.1"], count=3))
 
 
@@ -144,9 +159,14 @@ class LoadTestTests(unittest.TestCase):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(
             prefix="linkmoth_load_"
         )
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.lm = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.lm.init_db()
 
     def setUp(self):
@@ -181,11 +201,11 @@ class LoadTestTests(unittest.TestCase):
             stats["elapsed"] = 2.0
 
         with mock.patch.object(
-            self.lm, "measure_quality", side_effect=[idle, loaded],
+            linkmoth_probes, "measure_quality", side_effect=[idle, loaded],
         ), mock.patch.object(
-            self.lm, "_load_downloader", side_effect=fake_downloader,
+            linkmoth_probes, "_load_downloader", side_effect=fake_downloader,
         ), mock.patch.object(
-            self.lm, "_resolve_load_target",
+            linkmoth_probes, "_resolve_load_target",
             return_value=(
                 self.lm.urlparse("https://speed.example.com/file"),
                 ["104.16.0.1"],
@@ -203,9 +223,9 @@ class LoadTestTests(unittest.TestCase):
 
     def test_run_load_test_none_when_idle_unmeasurable(self):
         with mock.patch.object(
-            self.lm, "measure_quality", return_value=None,
+            linkmoth_probes, "measure_quality", return_value=None,
         ), mock.patch.object(
-            self.lm, "_resolve_load_target",
+            linkmoth_probes, "_resolve_load_target",
             return_value=(
                 self.lm.urlparse("https://speed.example.com/file"),
                 ["104.16.0.1"],
@@ -221,8 +241,7 @@ class LoadTestTests(unittest.TestCase):
         conn = mock.MagicMock()
         conn.getresponse.return_value = response
         stats = {"bytes": 0, "elapsed": 0.0, "error": None}
-        with mock.patch.object(
-            self.lm, "_PinnedHTTPSConnection", return_value=conn,
+        with mock.patch.object(linkmoth_probes, "_PinnedHTTPSConnection", return_value=conn,
         ) as pinned:
             self.lm._load_downloader(
                 "https://speed.example.com/file?size=8",
@@ -242,8 +261,7 @@ class LoadTestTests(unittest.TestCase):
         conn = mock.MagicMock()
         conn.getresponse.return_value = response
         stats = {"bytes": 0, "elapsed": 0.0, "error": None}
-        with mock.patch.object(
-            self.lm, "_PinnedHTTPSConnection", return_value=conn,
+        with mock.patch.object(linkmoth_probes, "_PinnedHTTPSConnection", return_value=conn,
         ):
             self.lm._load_downloader(
                 "https://speed.example.com/file", ["104.16.0.1"],
@@ -294,9 +312,14 @@ class QualityFindingsTests(unittest.TestCase):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(
             prefix="linkmoth_qfind_"
         )
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.lm = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.lm.init_db()
 
     def setUp(self):

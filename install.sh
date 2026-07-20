@@ -317,6 +317,11 @@ if [ "$DOCTOR_ONLY" -eq 1 ]; then
   exit $?
 fi
 [ -f "$SRC/linkmoth.py" ] || die "linkmoth.py not found next to install.sh"
+[ -f "$SRC/linkmoth_core.py" ] || die "linkmoth_core.py not found next to install.sh"
+[ -f "$SRC/linkmoth_probes.py" ] || die "linkmoth_probes.py not found next to install.sh"
+[ -f "$SRC/linkmoth_engine.py" ] || die "linkmoth_engine.py not found next to install.sh"
+[ -f "$SRC/linkmoth_handler.py" ] || die "linkmoth_handler.py not found next to install.sh"
+[ -f "$SRC/linkmoth_backup.py" ] || die "linkmoth_backup.py not found next to install.sh"
 [ -f "$SRC/linkmoth_auth.py" ] || die "linkmoth_auth.py not found next to install.sh"
 [ -f "$SRC/linkmoth_discord.py" ] || die "linkmoth_discord.py not found next to install.sh"
 [ -f "$SRC/linkmoth_kuma_proxy.py" ] || die "linkmoth_kuma_proxy.py not found next to install.sh"
@@ -555,7 +560,8 @@ fi
 # Stage the new application files in a temporary directory. The live service
 # keeps running off $APP until the swap in the "activate" step, so any failure
 # up to that point leaves the previous version untouched and online.
-APP_FILES="linkmoth.py linkmoth_auth.py linkmoth_discord.py linkmoth_kuma_proxy.py
+APP_FILES="linkmoth.py linkmoth_core.py linkmoth_probes.py linkmoth_engine.py
+linkmoth_handler.py linkmoth_backup.py linkmoth_auth.py linkmoth_discord.py linkmoth_kuma_proxy.py
 linkmoth_outage.py linkmoth_push.py linkmoth_notify.py linkmoth_devices.py
 linkmoth_webhooks.py dashboard.html linkmoth.svg linkmoth-white.svg
 linkmoth-mark-white.svg linkmoth-maskable.svg

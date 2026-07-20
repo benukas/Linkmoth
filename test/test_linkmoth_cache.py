@@ -19,9 +19,12 @@ class LadderCacheTests(unittest.TestCase):
     def setUpClass(cls):
         cls.state = Path(tempfile.mkdtemp(prefix="linkmoth_cache_"))
         os.environ["LINKMOTH_STATE_DIR"] = str(cls.state)
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_engine
+        linkmoth_engine = importlib.import_module("linkmoth_engine")
         cls.linkmoth.init_db()
 
     def test_second_call_uses_cache(self):
@@ -32,8 +35,8 @@ class LadderCacheTests(unittest.TestCase):
             calls.append(1)
             return [{"id": "link", "ok": True, "detail": "ok"}], 1.0
 
-        with mock.patch.object(self.linkmoth, "run_ladder", side_effect=fake_ladder):
-            with mock.patch.object(self.linkmoth, "verdict", return_value={
+        with mock.patch.object(linkmoth_engine, "run_ladder", side_effect=fake_ladder):
+            with mock.patch.object(linkmoth_engine, "verdict", return_value={
                 "severity": "ok", "code": "all_clear", "title": "ok", "explain": "", "hint": "",
             }):
                 engine.run_ladder_cached(force=False)
@@ -48,8 +51,8 @@ class LadderCacheTests(unittest.TestCase):
             calls.append(1)
             return [], 1.0
 
-        with mock.patch.object(self.linkmoth, "run_ladder", side_effect=fake_ladder):
-            with mock.patch.object(self.linkmoth, "verdict", return_value={
+        with mock.patch.object(linkmoth_engine, "run_ladder", side_effect=fake_ladder):
+            with mock.patch.object(linkmoth_engine, "verdict", return_value={
                 "severity": "ok", "code": "all_clear", "title": "ok", "explain": "", "hint": "",
             }):
                 engine.run_ladder_cached(force=False)
@@ -70,8 +73,8 @@ class LadderCacheTests(unittest.TestCase):
             started.wait()
             engine.run_ladder_cached(force=False)
 
-        with mock.patch.object(self.linkmoth, "run_ladder", side_effect=fake_ladder):
-            with mock.patch.object(self.linkmoth, "verdict", return_value={
+        with mock.patch.object(linkmoth_engine, "run_ladder", side_effect=fake_ladder):
+            with mock.patch.object(linkmoth_engine, "verdict", return_value={
                 "severity": "ok", "code": "all_clear", "title": "ok", "explain": "", "hint": "",
             }):
                 threads = [threading.Thread(target=worker) for _ in range(3)]
@@ -87,9 +90,12 @@ class IncidentRefTests(unittest.TestCase):
     def setUpClass(cls):
         cls.state = Path(tempfile.mkdtemp(prefix="linkmoth_ref_"))
         os.environ["LINKMOTH_STATE_DIR"] = str(cls.state)
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_engine
+        linkmoth_engine = importlib.import_module("linkmoth_engine")
         cls.linkmoth.init_db()
 
     def test_make_incident_ref_format(self):

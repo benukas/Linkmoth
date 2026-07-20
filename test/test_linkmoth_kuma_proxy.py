@@ -67,8 +67,9 @@ class KumaProxyLogicTests(unittest.TestCase):
             state = Path(tmp) / "state"
             state.mkdir()
             os.environ["LINKMOTH_STATE_DIR"] = str(state)
-            if "linkmoth" in sys.modules:
-                del sys.modules["linkmoth"]
+            for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+                if _mod in sys.modules:
+                    del sys.modules[_mod]
             linkmoth = importlib.import_module("linkmoth")
             linkmoth.init_db()
             payload = {"monitor": {"name": "Plex"}, "heartbeat": {"status": 0}}
@@ -92,8 +93,9 @@ class KumaProxyLogicTests(unittest.TestCase):
             state = Path(tmp) / "state"
             state.mkdir()
             os.environ["LINKMOTH_STATE_DIR"] = str(state)
-            if "linkmoth" in sys.modules:
-                del sys.modules["linkmoth"]
+            for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+                if _mod in sys.modules:
+                    del sys.modules[_mod]
             linkmoth = importlib.import_module("linkmoth")
             linkmoth.init_db()
             with mock.patch.object(proxy, "MAX_SUPPRESSED_ALERTS", 3):
@@ -136,7 +138,7 @@ class KumaProxyHandlerTests(unittest.TestCase):
         self.config_path.write_text(json.dumps(self.config))
         os.environ["LINKMOTH_CONFIG"] = str(self.config_path)
         os.environ["LINKMOTH_STATE_DIR"] = str(self.state)
-        for mod in ("linkmoth", "linkmoth_kuma_proxy", "linkmoth_discord"):
+        for mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler', "linkmoth_kuma_proxy", "linkmoth_discord"):
             if mod in sys.modules:
                 del sys.modules[mod]
         self.linkmoth = importlib.import_module("linkmoth")

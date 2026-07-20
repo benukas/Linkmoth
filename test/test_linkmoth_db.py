@@ -18,9 +18,12 @@ class DbMaintenanceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.state = Path(tempfile.mkdtemp(prefix="linkmoth_db_"))
         os.environ["LINKMOTH_STATE_DIR"] = str(cls.state)
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
         cls.linkmoth.init_db()
 
     def test_db_info_reports_auto_vacuum(self):
@@ -41,15 +44,15 @@ class DbMaintenanceTests(unittest.TestCase):
         finally:
             conn.close()
 
-        original_path = self.linkmoth.DB_PATH
+        original_path = linkmoth_core.DB_PATH
         try:
-            self.linkmoth.DB_PATH = legacy_path
+            linkmoth_core.DB_PATH = legacy_path
             self.linkmoth.init_db()
             self.assertEqual(
                 self.linkmoth.db_maintenance_info()["journal_mode"], "WAL"
             )
         finally:
-            self.linkmoth.DB_PATH = original_path
+            linkmoth_core.DB_PATH = original_path
 
     @unittest.skipIf(os.name == "nt", "Windows does not expose POSIX mode bits")
     def test_state_database_is_owner_readable_only(self):
