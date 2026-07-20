@@ -9,6 +9,11 @@ case "$DIST" in
 esac
 FILES=(
   linkmoth.py
+  linkmoth_core.py
+  linkmoth_probes.py
+  linkmoth_engine.py
+  linkmoth_handler.py
+  linkmoth_backup.py
   linkmoth_auth.py
   linkmoth_discord.py
   linkmoth_kuma_proxy.py

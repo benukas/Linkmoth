@@ -7,6 +7,11 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 DIST_FILES = {
     "linkmoth.py",
+    "linkmoth_core.py",
+    "linkmoth_probes.py",
+    "linkmoth_engine.py",
+    "linkmoth_handler.py",
+    "linkmoth_backup.py",
     "linkmoth_auth.py",
     "linkmoth_discord.py",
     "linkmoth_kuma_proxy.py",
@@ -185,7 +190,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_quiet_hours_controls_and_settings_are_wired(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
-        source = (ROOT / "linkmoth.py").read_text(encoding="utf-8")
+        source = (ROOT / "linkmoth_core.py").read_text(encoding="utf-8")
         config = (ROOT / "config.example.json").read_text(encoding="utf-8")
         for control in (
             'id="s-quiet-enabled"',
@@ -275,7 +280,8 @@ class PublicReleaseTests(unittest.TestCase):
         )
         self.assertIn("refs/tags/v0.4.2", readme)
         self.assertNotIn("--insecure-skip-verify", readme)
-        self.assertIn("# Changelog\n\n## Unreleased\n\n## 0.4.2\n", changelog)
+        self.assertIn("# Changelog\n\n## Unreleased\n\n### Added\n", changelog)
+        self.assertIn("Backup and restore", changelog)
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")

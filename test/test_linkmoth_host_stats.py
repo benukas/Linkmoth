@@ -16,10 +16,15 @@ class HostStatsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_host_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_engine
+        linkmoth_engine = importlib.import_module("linkmoth_engine")
     def test_stats_are_best_effort_and_include_dashboard_fields(self):
         first = self.linkmoth.host_stats()
         second = self.linkmoth.host_stats()
@@ -37,15 +42,15 @@ class HostStatsTests(unittest.TestCase):
     def test_status_includes_host_telemetry(self):
         self.linkmoth.init_db()
         engine = self.linkmoth.Engine()
-        with mock.patch.object(self.linkmoth, "host_stats", return_value={"cpu_percent": 12.5}):
+        with mock.patch.object(linkmoth_engine, "host_stats", return_value={"cpu_percent": 12.5}):
             self.assertEqual(engine.status()["host"], {"cpu_percent": 12.5})
 
     def test_cpu_sampler_uses_moving_average_and_excludes_guest_time(self):
-        self.linkmoth.HOST_CPU_SAMPLE = None
-        self.linkmoth.HOST_CPU_VALUES.clear()
-        self.linkmoth.HOST_CPU_VALUE = None
-        self.linkmoth.HOST_CPU_UPDATED_AT = None
-        with mock.patch.object(self.linkmoth, "_cpu_totals", side_effect=[
+        linkmoth_core.HOST_CPU_SAMPLE = None
+        linkmoth_core.HOST_CPU_VALUES.clear()
+        linkmoth_core.HOST_CPU_VALUE = None
+        linkmoth_core.HOST_CPU_UPDATED_AT = None
+        with mock.patch.object(linkmoth_core, "_cpu_totals", side_effect=[
             (100, 80),  # seed
             (200, 80),  # 100% instantaneous
             (300, 180), # 0% instantaneous; 50% two-sample average
@@ -67,8 +72,8 @@ class HostStatsTests(unittest.TestCase):
         host = {"cpu_percent": 12.5, "disk_percent": 1, "memory_percent": 1,
                 "temperature_c": 1}
         database = {"exists": True, "journal_mode": "WAL", "lock_retries": 0}
-        with mock.patch.object(self.linkmoth, "host_stats", return_value=host) as stats, \
-             mock.patch.object(self.linkmoth, "db_maintenance_info", return_value=database):
+        with mock.patch.object(linkmoth_engine, "host_stats", return_value=host) as stats, \
+             mock.patch.object(linkmoth_engine, "db_maintenance_info", return_value=database):
             status = engine.status()
         self.assertEqual(status["host"], host)
         self.assertEqual(stats.call_count, 1)

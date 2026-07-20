@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- **Backup and restore**: `--backup`/`--restore` CLI flags and a dashboard
+  "Download backup" button produce a portable snapshot of history, settings,
+  and device/webhook configuration for moving to new hardware. The archive
+  is deliberately secret-free (no password hash, TOTP seed, webhook secret,
+  push key, or TLS CA), so it never needs encrypting or special handling —
+  restoring on a new device means a short one-time re-setup instead.
+
 ## 0.4.2
 
 ### Added

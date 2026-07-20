@@ -50,10 +50,13 @@ class DnsResolverTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_dns_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_valid_answer_reports_success(self):
         with mock.patch.object(self.linkmoth.socket, "socket",
                                return_value=_FakeDNSSocket("ok")):
@@ -82,10 +85,13 @@ class ProbeEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_probes_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_partial_group_keeps_each_target_result(self):
         ok, detail, ms, evidence = self.linkmoth.probe_group([
             ("first", (True, "first answered", 12.0)),
@@ -130,12 +136,15 @@ class LinkNegotiationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_ladder_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_downgraded_speed_shows_warning(self):
-        with mock.patch.object(self.linkmoth, "_read_link_speed_duplex", return_value=(100, "full")):
+        with mock.patch.object(linkmoth_probes, "_read_link_speed_duplex", return_value=(100, "full")):
             with mock.patch.object(Path, "read_text", return_value="1"):
                 ok, detail = self.linkmoth.check_link("eth0")
         self.assertTrue(ok)
@@ -143,7 +152,7 @@ class LinkNegotiationTests(unittest.TestCase):
         self.assertIn("downgraded to 100 Mb/s", detail)
 
     def test_gigabit_full_duplex_is_clean(self):
-        with mock.patch.object(self.linkmoth, "_read_link_speed_duplex", return_value=(1000, "full")):
+        with mock.patch.object(linkmoth_probes, "_read_link_speed_duplex", return_value=(1000, "full")):
             with mock.patch.object(Path, "read_text", return_value="1"):
                 ok, detail = self.linkmoth.check_link("eth0")
         self.assertTrue(ok)
@@ -151,7 +160,7 @@ class LinkNegotiationTests(unittest.TestCase):
         self.assertIn("1000 Mb/s", detail)
 
     def test_half_duplex_shows_warning(self):
-        with mock.patch.object(self.linkmoth, "_read_link_speed_duplex", return_value=(1000, "half")):
+        with mock.patch.object(linkmoth_probes, "_read_link_speed_duplex", return_value=(1000, "half")):
             with mock.patch.object(Path, "read_text", return_value="1"):
                 ok, detail = self.linkmoth.check_link("eth0")
         self.assertTrue(ok)
@@ -163,10 +172,13 @@ class RouterWlanTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_ladder_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_skipped_when_not_configured(self):
         self.linkmoth.CFG["target_wifi_clients"] = []
         ok, detail = self.linkmoth.check_router_wlan(True)
@@ -182,7 +194,7 @@ class RouterWlanTests(unittest.TestCase):
 
     def test_fails_when_all_clients_silent(self):
         self.linkmoth.CFG["target_wifi_clients"] = ["192.168.1.50", "192.168.1.51"]
-        with mock.patch.object(self.linkmoth, "ping", return_value=(False, "no reply", None)):
+        with mock.patch.object(linkmoth_probes, "ping", return_value=(False, "no reply", None)):
             ok, detail = self.linkmoth.check_router_wlan(True)
         self.assertFalse(ok)
         self.assertIn("No configured Wi-Fi witness replied", detail)
@@ -190,9 +202,7 @@ class RouterWlanTests(unittest.TestCase):
 
     def test_passes_when_any_client_replies(self):
         self.linkmoth.CFG["target_wifi_clients"] = ["192.168.1.50", "192.168.1.51"]
-        with mock.patch.object(
-            self.linkmoth,
-            "ping",
+        with mock.patch.object(linkmoth_probes, "ping",
             side_effect=[(False, "192.168.1.50: no reply", None), (True, "192.168.1.51: 3 ms", 3.0)],
         ):
             ok, detail = self.linkmoth.check_router_wlan(True)
@@ -201,9 +211,7 @@ class RouterWlanTests(unittest.TestCase):
 
     def test_wlan_disagreement_is_retained_as_partial_evidence(self):
         self.linkmoth.CFG["target_wifi_clients"] = ["192.168.1.50", "192.168.1.51"]
-        with mock.patch.object(
-            self.linkmoth,
-            "ping",
+        with mock.patch.object(linkmoth_probes, "ping",
             side_effect=[(False, "first asleep", None), (True, "second replied", 3.0)],
         ):
             ok, detail, evidence = self.linkmoth.check_router_wlan(
@@ -223,6 +231,8 @@ class VerdictIntegrationTests(unittest.TestCase):
             os.environ.setdefault("LINKMOTH_STATE_DIR", tempfile.mkdtemp(prefix="linkmoth_ladder_"))
             cls.linkmoth = importlib.import_module("linkmoth")
 
+            global linkmoth_probes
+            linkmoth_probes = importlib.import_module("linkmoth_probes")
     def _base_checks(self, **overrides):
         checks = [
             {"id": "power", "ok": True, "detail": "power ok"},
@@ -336,10 +346,13 @@ class MicroStepTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_micro_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_disk_full_flags_failure(self):
         usage = type("U", (), {"total": 100, "used": 100, "free": 0})()
         with mock.patch.object(self.linkmoth.shutil, "disk_usage", return_value=usage):
@@ -348,42 +361,38 @@ class MicroStepTests(unittest.TestCase):
         self.assertIn("100% full", detail)
 
     def test_micro_pihole_runs_service_and_disk_checks(self):
-        with mock.patch.object(
-            self.linkmoth,
-            "run_cmd",
+        with mock.patch.object(linkmoth_probes, "run_cmd",
             side_effect=[(0, "loaded"), (0, "inactive"), (0, "dead"), (0, ""), (0, "")],
         ):
-            with mock.patch.object(self.linkmoth, "check_disk_pressure", return_value=(True, "disk 42% used on /")):
+            with mock.patch.object(linkmoth_probes, "check_disk_pressure", return_value=(True, "disk 42% used on /")):
                 steps = self.linkmoth.micro_pihole_dns()
         self.assertEqual(len(steps), 2)
         self.assertFalse(steps[0]["ok"])
         self.assertIn("inactive", steps[0]["detail"])
 
     def test_pihole_pass_skips_micro_steps(self):
-        with mock.patch.object(self.linkmoth, "default_route", return_value=("192.168.1.1", "eth0")):
-            with mock.patch.object(self.linkmoth, "check_power", return_value=(True, "ok")):
-                with mock.patch.object(self.linkmoth, "check_link", return_value=(True, "eth0: link up, 1000 Mb/s")):
-                    with mock.patch.object(self.linkmoth, "ping", return_value=(True, "gw ok", 1.0)):
-                        with mock.patch.object(self.linkmoth, "check_router_wlan", return_value=(None, "skipped")):
-                            with mock.patch.object(self.linkmoth, "dig", return_value=(True, "dns ok", 1.0)):
-                                with mock.patch.object(
-                                    self.linkmoth,
-                                    "run_cmd",
+        with mock.patch.object(linkmoth_probes, "default_route", return_value=("192.168.1.1", "eth0")):
+            with mock.patch.object(linkmoth_probes, "check_power", return_value=(True, "ok")):
+                with mock.patch.object(linkmoth_probes, "check_link", return_value=(True, "eth0: link up, 1000 Mb/s")):
+                    with mock.patch.object(linkmoth_probes, "ping", return_value=(True, "gw ok", 1.0)):
+                        with mock.patch.object(linkmoth_probes, "check_router_wlan", return_value=(None, "skipped")):
+                            with mock.patch.object(linkmoth_probes, "dig", return_value=(True, "dns ok", 1.0)):
+                                with mock.patch.object(linkmoth_probes, "run_cmd",
                                     return_value=(0, "loaded"),
                                 ):
-                                    with mock.patch.object(self.linkmoth, "micro_local_dns") as micro:
-                                        with mock.patch.object(self.linkmoth, "http_get", return_value=(True, "ok", 1.0)):
+                                    with mock.patch.object(linkmoth_probes, "micro_local_dns") as micro:
+                                        with mock.patch.object(linkmoth_probes, "http_get", return_value=(True, "ok", 1.0)):
                                             checks, _ = self.linkmoth.run_ladder()
         micro.assert_not_called()
         local_dns = next(c for c in checks if c["id"] == "local_dns")
         self.assertNotIn("micro", local_dns)
 
     def test_pihole_fail_runs_micro_steps(self):
-        with mock.patch.object(self.linkmoth, "default_route", return_value=("192.168.1.1", "eth0")):
-            with mock.patch.object(self.linkmoth, "check_power", return_value=(True, "ok")):
-                with mock.patch.object(self.linkmoth, "check_link", return_value=(True, "eth0: link up, 1000 Mb/s")):
-                    with mock.patch.object(self.linkmoth, "ping", return_value=(True, "gw ok", 1.0)):
-                        with mock.patch.object(self.linkmoth, "check_router_wlan", return_value=(None, "skipped")):
+        with mock.patch.object(linkmoth_probes, "default_route", return_value=("192.168.1.1", "eth0")):
+            with mock.patch.object(linkmoth_probes, "check_power", return_value=(True, "ok")):
+                with mock.patch.object(linkmoth_probes, "check_link", return_value=(True, "eth0: link up, 1000 Mb/s")):
+                    with mock.patch.object(linkmoth_probes, "ping", return_value=(True, "gw ok", 1.0)):
+                        with mock.patch.object(linkmoth_probes, "check_router_wlan", return_value=(None, "skipped")):
                             def dig_side_effect(server, domain):
                                 if server == "127.0.0.1":
                                     return (False, "@127.0.0.1: no answer", None)
@@ -397,16 +406,14 @@ class MicroStepTests(unittest.TestCase):
                                     "provider": "pihole",
                                 }},
                             ):
-                                with mock.patch.object(self.linkmoth, "dig", side_effect=dig_side_effect):
-                                    with mock.patch.object(
-                                        self.linkmoth,
-                                        "micro_local_dns",
+                                with mock.patch.object(linkmoth_probes, "dig", side_effect=dig_side_effect):
+                                    with mock.patch.object(linkmoth_probes, "micro_local_dns",
                                         return_value=[
                                             {"label": "Pi-hole service", "ok": False, "detail": "service inactive (dead)"},
                                             {"label": "Root disk space", "ok": True, "detail": "disk 40% used on /"},
                                         ],
                                     ):
-                                        with mock.patch.object(self.linkmoth, "http_get", return_value=(True, "ok", 1.0)):
+                                        with mock.patch.object(linkmoth_probes, "http_get", return_value=(True, "ok", 1.0)):
                                             checks, _ = self.linkmoth.run_ladder()
         local_dns = next(c for c in checks if c["id"] == "local_dns")
         self.assertFalse(local_dns["ok"])
@@ -435,10 +442,13 @@ class LocalDnsProviderTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_local_dns_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def _checks(self, provider="generic"):
         return [
             {"id": "power", "ok": True, "detail": "ok"},
@@ -493,10 +503,10 @@ class LocalDnsProviderTests(unittest.TestCase):
         }
         with mock.patch.dict(self.linkmoth.CFG, {"local_dns": cfg}):
             with mock.patch.object(
-                self.linkmoth, "local_dns_is_same_host", return_value=False
+                linkmoth_probes, "local_dns_is_same_host", return_value=False
             ):
                 with mock.patch.object(
-                    self.linkmoth, "_active_local_dns_adapters"
+                    linkmoth_probes, "_active_local_dns_adapters"
                 ) as detect:
                     info = self.linkmoth.local_dns_runtime_info()
         detect.assert_not_called()
@@ -511,29 +521,21 @@ class LocalDnsProviderTests(unittest.TestCase):
             "provider": "pihole",
         }
         with mock.patch.dict(self.linkmoth.CFG, {"local_dns": cfg}):
-            with mock.patch.object(
-                self.linkmoth, "default_route",
+            with mock.patch.object(linkmoth_probes, "default_route",
                 return_value=("192.168.1.1", "eth0"),
             ):
-                with mock.patch.object(
-                    self.linkmoth, "check_power", return_value=(True, "ok")
-                ), mock.patch.object(
-                    self.linkmoth, "check_link", return_value=(True, "ok")
-                ), mock.patch.object(
-                    self.linkmoth, "check_router_wlan",
+                with mock.patch.object(linkmoth_probes, "check_power", return_value=(True, "ok")
+                ), mock.patch.object(linkmoth_probes, "check_link", return_value=(True, "ok")
+                ), mock.patch.object(linkmoth_probes, "check_router_wlan",
                     return_value=(None, "skipped"),
+                ), mock.patch.object(linkmoth_probes, "ping", return_value=(True, "ok", 1.0)
+                ), mock.patch.object(linkmoth_probes, "http_get", return_value=(True, "ok", 1.0)
                 ), mock.patch.object(
-                    self.linkmoth, "ping", return_value=(True, "ok", 1.0)
+                    linkmoth_probes, "local_dns_is_same_host", return_value=False
                 ), mock.patch.object(
-                    self.linkmoth, "http_get", return_value=(True, "ok", 1.0)
-                ), mock.patch.object(
-                    self.linkmoth, "local_dns_is_same_host", return_value=False
-                ), mock.patch.object(
-                    self.linkmoth, "_active_local_dns_adapters"
-                ) as detect, mock.patch.object(
-                    self.linkmoth, "micro_local_dns"
-                ) as micro, mock.patch.object(
-                    self.linkmoth, "dig", return_value=(False, "no answer", None)
+                    linkmoth_probes, "_active_local_dns_adapters"
+                ) as detect, mock.patch.object(linkmoth_probes, "micro_local_dns"
+                ) as micro, mock.patch.object(linkmoth_probes, "dig", return_value=(False, "no answer", None)
                 ) as dig:
                     checks, _ = self.linkmoth.run_ladder()
         local = next(check for check in checks if check["id"] == "local_dns")
@@ -554,16 +556,16 @@ class LocalDnsProviderTests(unittest.TestCase):
         }
         with mock.patch.dict(self.linkmoth.CFG, {"local_dns": cfg}):
             with mock.patch.object(
-                self.linkmoth, "local_dns_is_same_host", return_value=True
+                linkmoth_probes, "local_dns_is_same_host", return_value=True
             ):
                 with mock.patch.object(
-                    self.linkmoth,
+                    linkmoth_probes,
                     "_active_local_dns_adapters",
                     return_value=["unbound"],
                 ):
                     one = self.linkmoth.local_dns_runtime_info()
                 with mock.patch.object(
-                    self.linkmoth,
+                    linkmoth_probes,
                     "_active_local_dns_adapters",
                     return_value=["pihole", "unbound"],
                 ):
@@ -598,16 +600,12 @@ class LocalDnsProviderTests(unittest.TestCase):
             ("dnsmasq", "dnsmasq"),
         ):
             with self.subTest(provider=provider):
-                with mock.patch.object(
-                    self.linkmoth,
-                    "run_cmd",
+                with mock.patch.object(linkmoth_probes, "run_cmd",
                     side_effect=[
                         (0, "loaded"), (0, "active"), (0, "running"),
                     ],
                 ) as run:
-                    with mock.patch.object(
-                        self.linkmoth,
-                        "check_disk_pressure",
+                    with mock.patch.object(linkmoth_probes, "check_disk_pressure",
                         return_value=(True, "disk ok"),
                     ):
                         steps = self.linkmoth.micro_local_dns(provider)
@@ -619,10 +617,13 @@ class PowerSupplyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_power_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_poe_offline_fails(self):
         supply = Path("/fake/usb-pd")
         files = {
@@ -633,11 +634,11 @@ class PowerSupplyTests(unittest.TestCase):
         with mock.patch.object(Path, "is_dir", return_value=True):
             with mock.patch.object(Path, "iterdir", return_value=[supply]):
                 with mock.patch.object(
-                    self.linkmoth,
+                    linkmoth_probes,
                     "_read_power_supply_file",
                     side_effect=lambda p: files.get(p),
                 ):
-                    with mock.patch.object(self.linkmoth, "run_cmd", return_value=(0, "throttled=0x0")):
+                    with mock.patch.object(linkmoth_probes, "run_cmd", return_value=(0, "throttled=0x0")):
                         ok, detail = self.linkmoth.check_power()
         self.assertFalse(ok)
         self.assertIn("offline", detail)
@@ -653,11 +654,11 @@ class PowerSupplyTests(unittest.TestCase):
         with mock.patch.object(Path, "is_dir", return_value=True):
             with mock.patch.object(Path, "iterdir", return_value=[supply]):
                 with mock.patch.object(
-                    self.linkmoth,
+                    linkmoth_probes,
                     "_read_power_supply_file",
                     side_effect=lambda p: files.get(p),
                 ):
-                    with mock.patch.object(self.linkmoth, "run_cmd", return_value=(0, "throttled=0x0")):
+                    with mock.patch.object(linkmoth_probes, "run_cmd", return_value=(0, "throttled=0x0")):
                         ok, detail = self.linkmoth.check_power()
         self.assertTrue(ok)
         self.assertIn("5.1V", detail)
@@ -674,6 +675,8 @@ class WifiWiredDifferentialTests(unittest.TestCase):
         else:
             cls.lm = importlib.import_module("linkmoth")
 
+            global linkmoth_probes
+            linkmoth_probes = importlib.import_module("linkmoth_probes")
     def _checks(self, wlan_ok, wlan_ms=None, gateway_ok=True, gateway_ms=2.0,
                 ping_ok=True):
         return [

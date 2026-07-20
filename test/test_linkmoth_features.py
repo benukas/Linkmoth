@@ -36,9 +36,16 @@ class VerifyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_verify_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
+        global linkmoth_engine
+        linkmoth_engine = importlib.import_module("linkmoth_engine")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -63,7 +70,7 @@ class VerifyTests(unittest.TestCase):
             calls.append(1)
             return make_checks(), 2.0
 
-        with mock.patch.object(self.linkmoth, "run_ladder", side_effect=fake_ladder):
+        with mock.patch.object(linkmoth_engine, "run_ladder", side_effect=fake_ladder):
             engine.diagnose_once(kind="manual", force=False)
             self.assertEqual(len(calls), 0)  # fresh cache reused
             engine.diagnose_once(kind="verify", force=True)
@@ -71,7 +78,7 @@ class VerifyTests(unittest.TestCase):
 
     def test_verify_fix_persists_verify_run(self):
         engine = self.linkmoth.Engine()
-        with mock.patch.object(self.linkmoth, "run_ladder",
+        with mock.patch.object(linkmoth_engine, "run_ladder",
                                return_value=(make_checks(), 1.0)):
             result = engine.verify_fix()
         self.assertIsNotNone(result)
@@ -87,7 +94,7 @@ class VerifyTests(unittest.TestCase):
         # Checking the cooldown is read-only: it never starts the window.
         self.assertEqual(engine.verify_cooldown_remaining(), 0.0)
         self.assertEqual(engine.verify_cooldown_remaining(), 0.0)
-        with mock.patch.object(self.linkmoth, "run_ladder",
+        with mock.patch.object(linkmoth_engine, "run_ladder",
                                return_value=(make_checks(), 1.0)):
             self.assertIsNotNone(engine.verify_fix())
         self.assertGreater(engine.verify_cooldown_remaining(), 0.0)
@@ -124,9 +131,14 @@ class PatternTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_pat_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -187,9 +199,14 @@ class LifecycleAndExportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_export_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -241,10 +258,15 @@ class LifecycleAndExportTests(unittest.TestCase):
 class InstallationProvenanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_versioned_build_without_record_is_unverified_manual(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -252,18 +274,18 @@ class InstallationProvenanceTests(unittest.TestCase):
                 '{"schema":1,"version":"v0.2.0","release_commit":"' + "a" * 40 + '"}',
                 encoding="utf-8",
             )
-            with mock.patch.object(self.linkmoth, "SYSTEM_INSTALL", True), \
-                 mock.patch.object(self.linkmoth, "BASE", base), \
-                 mock.patch.object(self.linkmoth, "INSTALLATION_RECORD", base / "installation.json"):
+            with mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True), \
+                 mock.patch.object(linkmoth_core, "BASE", base), \
+                 mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", base / "installation.json"):
                 result = self.linkmoth.installation_provenance()
         self.assertEqual(result["state"], "unverified-manual")
 
     def test_install_without_record_or_build_metadata_is_legacy(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
-            with mock.patch.object(self.linkmoth, "SYSTEM_INSTALL", True), \
-                 mock.patch.object(self.linkmoth, "BASE", base), \
-                 mock.patch.object(self.linkmoth, "INSTALLATION_RECORD", base / "installation.json"):
+            with mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True), \
+                 mock.patch.object(linkmoth_core, "BASE", base), \
+                 mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", base / "installation.json"):
                 result = self.linkmoth.installation_provenance()
         self.assertEqual(result["state"], "legacy-unavailable")
 
@@ -273,9 +295,9 @@ class InstallationProvenanceTests(unittest.TestCase):
             record = base / "installation.json"
             record.write_text("{}", encoding="utf-8")
             record.chmod(0o644)
-            with mock.patch.object(self.linkmoth, "SYSTEM_INSTALL", True), \
-                 mock.patch.object(self.linkmoth, "BASE", base), \
-                 mock.patch.object(self.linkmoth, "INSTALLATION_RECORD", record):
+            with mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True), \
+                 mock.patch.object(linkmoth_core, "BASE", base), \
+                 mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", record):
                 result = self.linkmoth.installation_provenance()
         self.assertEqual(result["state"], "invalid")
 
@@ -298,9 +320,9 @@ class InstallationProvenanceTests(unittest.TestCase):
                 st_mode=self.linkmoth.stat.S_IFREG | 0o644, st_uid=0, st_gid=0,
             )
             patches = (
-                mock.patch.object(self.linkmoth, "SYSTEM_INSTALL", True),
-                mock.patch.object(self.linkmoth, "BASE", base),
-                mock.patch.object(self.linkmoth, "INSTALLATION_RECORD", record),
+                mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True),
+                mock.patch.object(linkmoth_core, "BASE", base),
+                mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", record),
                 mock.patch.object(self.linkmoth.os, "lstat", return_value=safe_stat),
             )
             with patches[0], patches[1], patches[2], patches[3]:
@@ -315,10 +337,15 @@ class ManualUpdateCheckTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_update_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def _response(self, payload, status=200):
         response = mock.Mock(status=status)
         response.getheader.return_value = str(len(payload))
@@ -329,9 +356,9 @@ class ManualUpdateCheckTests(unittest.TestCase):
         payload = b'{"tag_name":"v0.2.1","published_at":"2026-07-13T00:00:00Z","html_url":"https://github.com/benukas/Linkmoth/releases/tag/v0.2.1","ignored":"secret"}'
         conn = mock.Mock()
         conn.getresponse.return_value = self._response(payload)
-        self.linkmoth.VERSION = "0.2.0"
+        linkmoth_core.VERSION = "0.2.0"
         with mock.patch.object(self.linkmoth.socket, "getaddrinfo", return_value=[(None, None, None, None, ("140.82.112.5", 443))]), \
-             mock.patch.object(self.linkmoth, "_PinnedHTTPSConnection", return_value=conn):
+             mock.patch.object(linkmoth_core, "_PinnedHTTPSConnection", return_value=conn):
             result = self.linkmoth.manual_update_check()
         self.assertEqual(result["latest_version"], "0.2.1")
         self.assertTrue(result["update_available"])
@@ -346,29 +373,29 @@ class ManualUpdateCheckTests(unittest.TestCase):
         payload = b'{"tag_name":"v0.2.1","published_at":"2026-07-13T00:00:00Z","html_url":"https://example.test/release"}'
         conn = mock.Mock()
         conn.getresponse.return_value = self._response(payload)
-        self.linkmoth.VERSION = "0.2.0"
+        linkmoth_core.VERSION = "0.2.0"
         with mock.patch.object(self.linkmoth.socket, "getaddrinfo", return_value=[(None, None, None, None, ("140.82.112.5", 443))]), \
-             mock.patch.object(self.linkmoth, "_PinnedHTTPSConnection", return_value=conn):
+             mock.patch.object(linkmoth_core, "_PinnedHTTPSConnection", return_value=conn):
             with self.assertRaisesRegex(ValueError, "invalid"):
                 self.linkmoth.manual_update_check()
 
     def test_update_check_rejects_private_dns_before_connecting(self):
-        self.linkmoth.VERSION = "0.2.0"
+        linkmoth_core.VERSION = "0.2.0"
         with mock.patch.object(self.linkmoth.socket, "getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 443))]), \
-             mock.patch.object(self.linkmoth, "_PinnedHTTPSConnection") as connect:
+             mock.patch.object(linkmoth_core, "_PinnedHTTPSConnection") as connect:
             with self.assertRaisesRegex(ValueError, "public address"):
                 self.linkmoth.manual_update_check()
         connect.assert_not_called()
 
     def test_update_check_rejects_redirect_and_oversized_response(self):
-        self.linkmoth.VERSION = "0.2.0"
+        linkmoth_core.VERSION = "0.2.0"
         for response in (
             self._response(b"{}", status=302),
             mock.Mock(status=200, getheader=mock.Mock(return_value="999999")),
         ):
             conn = mock.Mock(); conn.getresponse.return_value = response
             with mock.patch.object(self.linkmoth.socket, "getaddrinfo", return_value=[(None, None, None, None, ("140.82.112.5", 443))]), \
-                 mock.patch.object(self.linkmoth, "_PinnedHTTPSConnection", return_value=conn):
+                 mock.patch.object(linkmoth_core, "_PinnedHTTPSConnection", return_value=conn):
                 with self.assertRaises(ValueError):
                     self.linkmoth.manual_update_check()
             conn.request.assert_called_once()
@@ -390,9 +417,14 @@ class FirstBadRunChecksTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_fbr_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -482,9 +514,14 @@ class IncidentStoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_story_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -565,9 +602,14 @@ class OutageSegmentAccountingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_segments_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -674,9 +716,14 @@ class StatsWindowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_stats_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -727,9 +774,14 @@ class IspReportTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_report_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -803,9 +855,14 @@ class FalseAlarmAccountingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_fa_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -884,9 +941,14 @@ class JanitorTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_jan_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def test_sweep_keeps_runs_of_open_incident(self):
@@ -926,9 +988,14 @@ class MonthlyDigestTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_month_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -989,9 +1056,14 @@ class HistoryRangeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_hr_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
         cls.linkmoth.init_db()
 
     def setUp(self):
@@ -1067,10 +1139,15 @@ class DoctorJsonTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ["LINKMOTH_STATE_DIR"] = tempfile.mkdtemp(prefix="linkmoth_doc_")
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
 
+        global linkmoth_core
+        linkmoth_core = importlib.import_module("linkmoth_core")
+        global linkmoth_probes
+        linkmoth_probes = importlib.import_module("linkmoth_probes")
     def test_doctor_json_emits_machine_readable_checks(self):
         import contextlib
         import io
@@ -1094,8 +1171,9 @@ class ConfigCoercionTests(unittest.TestCase):
         os.environ["LINKMOTH_CONFIG"] = str(tmp / "config.json")
         os.environ["LINKMOTH_STATE_DIR"] = str(tmp)
         try:
-            if "linkmoth" in sys.modules:
-                del sys.modules["linkmoth"]
+            for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+                if _mod in sys.modules:
+                    del sys.modules[_mod]
             return importlib.import_module("linkmoth")
         finally:
             os.environ.pop("LINKMOTH_CONFIG", None)

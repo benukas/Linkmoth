@@ -41,8 +41,10 @@ jobs:
         if: matrix.python == '3.14'
         run: >-
           python -m py_compile
-          linkmoth.py linkmoth_auth.py linkmoth_devices.py linkmoth_discord.py
-          linkmoth_kuma_proxy.py linkmoth_notify.py linkmoth_outage.py linkmoth_push.py
+          linkmoth.py linkmoth_core.py linkmoth_probes.py linkmoth_engine.py
+          linkmoth_handler.py linkmoth_backup.py linkmoth_auth.py linkmoth_devices.py
+          linkmoth_discord.py linkmoth_kuma_proxy.py linkmoth_notify.py linkmoth_outage.py
+          linkmoth_push.py linkmoth_webhooks.py
 
       - name: Check shell syntax
         if: matrix.python == '3.14'

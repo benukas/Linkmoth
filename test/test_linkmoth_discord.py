@@ -293,7 +293,7 @@ class EngineDiscordIntegrationTests(unittest.TestCase):
         self.config_path.write_text(json.dumps(self.config))
         os.environ["LINKMOTH_CONFIG"] = str(self.config_path)
         os.environ["LINKMOTH_STATE_DIR"] = str(self.state)
-        for mod in ("linkmoth", "linkmoth_discord"):
+        for mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler', "linkmoth_discord"):
             if mod in sys.modules:
                 del sys.modules[mod]
         self.linkmoth = importlib.import_module("linkmoth")
@@ -429,8 +429,9 @@ class SettingsValidationTests(unittest.TestCase):
         self.state = Path(self.tmp) / "state"
         self.state.mkdir()
         os.environ["LINKMOTH_STATE_DIR"] = str(self.state)
-        if "linkmoth" in sys.modules:
-            del sys.modules["linkmoth"]
+        for _mod in ("linkmoth", 'linkmoth_core', 'linkmoth_probes', 'linkmoth_engine', 'linkmoth_handler'):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
