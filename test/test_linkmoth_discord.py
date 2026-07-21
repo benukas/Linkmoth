@@ -446,6 +446,17 @@ class SettingsValidationTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("discord_webhook_url", result)
 
+    def test_non_dict_settings_rejected_cleanly(self):
+        """A restored backup's settings.json (or any other caller) handing
+        apply_settings something other than an object used to reach
+        data.items() and raise an uncaught AttributeError instead of the
+        normal (False, errors) result every other invalid input gets."""
+        import linkmoth
+        for bad in ([1, 2, 3], "not an object", None, 42):
+            ok, result = linkmoth.apply_settings(bad)
+            self.assertFalse(ok)
+            self.assertIn("_settings", result)
+
     def test_valid_discord_settings_saved(self):
         import linkmoth
         ok, result = linkmoth.apply_settings({

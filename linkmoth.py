@@ -226,15 +226,15 @@ def backup_restore():
         print("--restore requires a path to a backup archive", file=sys.stderr)
         return 2
     path = sys.argv[idx + 1]
-    if "--force" not in sys.argv:
-        rc, _ = run_cmd(["systemctl", "is-active", "linkmoth"])
-        if rc == 0:
-            print(
-                "linkmoth service is active; stop it first "
-                "(systemctl stop linkmoth) or pass --force",
-                file=sys.stderr,
-            )
-            return 1
+    rc, _ = run_cmd(["systemctl", "is-active", "linkmoth"])
+    if rc == 0:
+        print(
+            "linkmoth service is active; stop it first (systemctl stop linkmoth) "
+            "-- restore always requires a stopped service, since a running one "
+            "can still be writing to the database this would replace",
+            file=sys.stderr,
+        )
+        return 1
     try:
         summary = restore_backup_archive(path, DB_PATH, init_db, apply_settings)
     except (ValueError, OSError) as e:

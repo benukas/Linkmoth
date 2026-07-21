@@ -679,6 +679,8 @@ SETTABLE = {
 
 def apply_settings(data):
     """Validate and persist dashboard-editable settings; applied live."""
+    if not isinstance(data, dict):
+        return False, {"_settings": "settings must be a JSON object"}
     clean, errors = {}, {}
     for key, value in data.items():
         if key not in SETTABLE:
@@ -743,10 +745,13 @@ def public_settings():
 
 
 @contextmanager
-def db():
+def db(path=None):
+    """`path` targets an arbitrary database file (e.g. a restore scratch
+    copy) instead of the live DB_PATH; every other caller omits it."""
     global DB_LOCK_RETRIES
-    _ensure_private_state_file(DB_PATH)
-    conn = sqlite3.connect(DB_PATH, timeout=10)
+    target = Path(path) if path is not None else DB_PATH
+    _ensure_private_state_file(target)
+    conn = sqlite3.connect(target, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
     try:
@@ -885,16 +890,20 @@ AUTO_VACUUM_NAMES = {0: "NONE", 1: "FULL", 2: "INCREMENTAL"}
 AUTO_VACUUM_MODE = 2  # INCREMENTAL — reclaims pages on delete; manual VACUUM still repacks fully
 
 
-def init_db():
-    fresh = _ensure_private_state_file(DB_PATH)
+def init_db(path=None):
+    """`path` runs schema creation/migration against an arbitrary database
+    file instead of the live DB_PATH -- used by restore to migrate a scratch
+    copy before it's ever swapped in; every other caller omits it."""
+    target = Path(path) if path is not None else DB_PATH
+    fresh = _ensure_private_state_file(target)
     if fresh:
-        conn = sqlite3.connect(str(DB_PATH), timeout=10)
+        conn = sqlite3.connect(str(target), timeout=10)
         try:
             conn.isolation_level = None
             conn.execute(f"PRAGMA auto_vacuum = {AUTO_VACUUM_MODE}")
         finally:
             conn.close()
-    with db() as conn:
+    with db(target) as conn:
         # WAL permits readers during the short writes made by the dashboard,
         # scheduler, auth and webhook threads.  SQLite preserves this setting
         # in the database, so this also upgrades existing installations.
@@ -1013,7 +1022,7 @@ def init_db():
     # SQLite can recreate the main file while enabling WAL on some platforms;
     # restore the private state-file mode after schema/journal initialization.
     try:
-        os.chmod(DB_PATH, 0o600)
+        os.chmod(target, 0o600)
     except (AttributeError, OSError):
         pass
 

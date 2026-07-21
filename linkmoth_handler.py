@@ -1,10 +1,19 @@
 """Linkmoth HTTP layer: the request handler (every /api/* route, static
 asset serving, session/CSRF/CSP enforcement) and the --doctor CLI dump.
 
-Imports linkmoth's own module object (not `from linkmoth import ...`) so the
-ENGINE/DEVICES/AUTH singletons -- created in linkmoth_engine.py and imported
-by linkmoth.py's bootstrap -- are looked up lazily as `linkmoth.ENGINE` etc.
-at request time rather than at import time, avoiding a circular import.
+Looks up linkmoth's own module object as `linkmoth.ENGINE`/`linkmoth.DEVICES`/
+`linkmoth.get_auth()` etc. (created in linkmoth_engine.py and imported by
+linkmoth.py's bootstrap) rather than `from linkmoth import ...`, since
+linkmoth.py imports names back from this module -- a module-level
+`import linkmoth` here would be circular for any caller that imports this
+module before linkmoth.py has run (linkmoth.py's own bootstrap works around
+that for itself by aliasing `sys.modules["linkmoth"]` to `__main__` before
+its own imports run, but that trick is specific to being __main__, so it
+doesn't help a caller that imports linkmoth_handler directly or first). The
+`linkmoth` global below is a lazy proxy (_LazyLinkmothModule) that only
+performs the real `import linkmoth` the first time something reads an
+attribute off it -- always at request time, well after linkmoth.py has
+actually finished loading, regardless of who constructed the server.
 """
 import ipaddress
 import json
@@ -18,12 +27,13 @@ import socket
 import sqlite3
 import ssl
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-import linkmoth
 from linkmoth_core import (
     BASE, CONFIG_ERROR, CONFIG_PATH, FAVICON_PATH, ICON_PATH, MANIFEST_PATH,
     MASKABLE_ICON_PATH, MAX_HTTP_CONNECTIONS, PNG_ICON_PATHS, SW_PATH,
@@ -33,13 +43,37 @@ from linkmoth_core import (
     build_tls_context, db, db_maintenance_info, init_db, manual_update_check,
     run_cmd, tls_paths, vacuum_database,
 )
-from linkmoth_backup import build_backup_archive
+from linkmoth_backup import BackupInProgress, build_backup_archive_to_path
 from linkmoth_engine import _set_meta, fire_drill_status, prometheus_metrics
 from linkmoth_probes import (
     _LOAD_TEST_LOCK, _count_phrase, _validate_load_url, bind_exposure_risk,
     classify_network_interfaces, default_route, isp_report_csv,
     quality_config, quality_summary, run_load_test, wifi_wired_differential,
 )
+
+class _LazyLinkmothModule:
+    """Defers `import linkmoth` until the first actual attribute access
+    (e.g. `linkmoth.ENGINE`) instead of this module's own import time -- see
+    the module docstring for why an eager import here is circular for a
+    caller that imports linkmoth_handler before linkmoth.py has run. Every
+    Handler method reads through this at request time, always well after
+    linkmoth.py has actually finished loading regardless of how the caller
+    got here (normal `__main__` startup, or a test that wires this module's
+    Handler into its own server without ever calling create_server())."""
+    __slots__ = ("_module",)
+
+    def __init__(self):
+        self._module = None
+
+    def __getattr__(self, name):
+        module = self._module
+        if module is None:
+            import linkmoth as module
+            object.__setattr__(self, "_module", module)
+        return getattr(module, name)
+
+
+linkmoth = _LazyLinkmothModule()
 
 
 def create_server():
@@ -481,6 +515,29 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(k, v)
         self.end_headers()
         self.wfile.write(payload)
+
+    def _send_file(self, code, file_path, ctype, extra_headers=None, chunk_size=262144):
+        """Like _send, but streams `file_path`'s contents in chunks instead
+        of holding the whole body in memory -- used for the backup archive,
+        which can be multiple megabytes on a long-lived install."""
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(os.path.getsize(file_path)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Strict-Transport-Security", "max-age=31536000")
+        self.send_header(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+        )
+        if extra_headers:
+            for k, v in extra_headers:
+                self.send_header(k, v)
+        self.end_headers()
+        with open(file_path, "rb") as f:
+            shutil.copyfileobj(f, self.wfile, chunk_size)
 
     def _send_json(self, code, body, session=None, set_cookie=None, clear_cookie=False):
         extra = []
@@ -1027,15 +1084,27 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, exported)
         elif url.path == "/api/backup":
-            archive = build_backup_archive(db, _export_settings, VERSION)
-            auth.audit_event("backup_downloaded", self._hdrs(), "")
-            filename = f"linkmoth-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
-            self._send(
-                200, archive, "application/zip",
-                extra_headers=[(
-                    "Content-Disposition", f'attachment; filename="{filename}"',
-                )],
-            )
+            fd, tmp_name = tempfile.mkstemp(prefix="linkmoth-backup-", suffix=".zip")
+            os.close(fd)
+            tmp_path = Path(tmp_name)
+            try:
+                try:
+                    build_backup_archive_to_path(tmp_path, db, _export_settings, VERSION)
+                except BackupInProgress:
+                    self._send(429, {
+                        "error": "a backup is already being created; try again shortly",
+                    })
+                    return
+                auth.audit_event("backup_downloaded", self._hdrs(), "")
+                filename = f"linkmoth-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
+                self._send_file(
+                    200, tmp_path, "application/zip",
+                    extra_headers=[(
+                        "Content-Disposition", f'attachment; filename="{filename}"',
+                    )],
+                )
+            finally:
+                tmp_path.unlink(missing_ok=True)
         elif url.path == "/api/auth/security":
             self._send(200, self._security_posture(auth))
         elif url.path == "/api/devices":
