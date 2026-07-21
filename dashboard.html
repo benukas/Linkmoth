@@ -1093,7 +1093,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           </div>
         </div>
         <div class="set-section">
-          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, webhook token, push key) and the TLS CA, so the file itself is never sensitive – restoring on a new device just means redoing the short one-time setup (new password, TOTP, webhook secret) via the CLI's --restore flag. Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped.</span></span></h4>
+          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, this installation's inbound webhook token, push key) and the TLS CA – and the included database snapshot is itself sanitized, clearing every outbound webhook's destination URL and custom headers, push subscriptions, and session/login state. Restoring on a new device means redoing the one-time setup (new password, TOTP, webhook secret) and re-entering each webhook's destination, via the CLI's --restore flag. Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped.</span></span></h4>
           <button type="button" id="backup-download" class="action-btn">Download backup</button>
         </div>
         <div class="set-section">
@@ -4786,8 +4786,17 @@ function pushSetupBlocker() {
 function pushHttpsErrorHint(err) {
   const name = (err && err.name) || "";
   const text = String((err && err.message) || err || "").toLowerCase();
-  if (name === "SecurityError" || text.includes("ssl") || text.includes("secure")
-      || text.includes("certificate") || text.includes("https")) {
+  // A partially-trusted CA (profile installed but not enabled under iOS
+  // Certificate Trust Settings) rarely surfaces as a SecurityError – WebKit
+  // just fails the fetch with a generic network TypeError instead, since
+  // the browser doesn't expose low-level TLS failure detail to JS.
+  const looksLikeUntrustedCert =
+    name === "SecurityError" || text.includes("ssl") || text.includes("secure")
+    || text.includes("certificate") || text.includes("https")
+    || (name === "TypeError" && (
+      text.includes("networkerror") || text.includes("failed to fetch") || text.includes("load failed")
+    ));
+  if (looksLikeUntrustedCert) {
     if (isAppleMobile()) {
       return "HTTPS/certificate error on this device. Install the Linkmoth CA, then enable full trust in Settings → General → About → Certificate Trust Settings. Reopen the Home Screen app and try again.";
     }
