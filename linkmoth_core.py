@@ -1327,6 +1327,11 @@ def run_cmd(args, timeout=10):
         return -1, "timeout"
     except FileNotFoundError:
         return -2, "tool missing"
+    except OSError as e:
+        # e.g. the tool exists but isn't executable (PermissionError), or the
+        # OS can't spawn it right now. Callers all branch on rc != 0; returning
+        # a sentinel keeps a probe/ladder step from raising out of its caller.
+        return -3, f"could not run: {e.__class__.__name__}"
 
 
 def _cpu_totals():

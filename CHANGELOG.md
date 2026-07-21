@@ -14,7 +14,10 @@
   still looked healthy. The loop now logs and continues, matching the other
   background workers. The incident-recheck loop got the same guard (a dead
   one would leave an incident stuck open forever), and the device scheduler
-  now survives any error, not just SQLite errors.
+  now survives any error, not just SQLite errors. Relatedly, `run_cmd` now
+  returns a sentinel on any OS-level spawn failure (for example a tool that
+  exists but isn't executable) instead of only handling "not found" and
+  "timeout", so a probe can't raise out of the ladder that way.
 - Restore is now safe against stale SQLite WAL sidecars. Linkmoth runs the
   database in WAL mode, and restore previously replaced only `state.db`,
   leaving any `state.db-wal`/`state.db-shm` from the old database beside the
