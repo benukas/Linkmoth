@@ -677,8 +677,13 @@ SETTABLE = {
 }
 
 
-def apply_settings(data):
-    """Validate and persist dashboard-editable settings; applied live."""
+def validate_settings(data):
+    """Validate dashboard-editable settings WITHOUT persisting anything.
+
+    Returns (True, clean_dict) or (False, errors). apply_settings() below is
+    just this plus a write; restore uses it directly to reject a bad
+    settings payload before it swaps the database, rather than discovering
+    the failure only afterward."""
     if not isinstance(data, dict):
         return False, {"_settings": "settings must be a JSON object"}
     clean, errors = {}, {}
@@ -719,6 +724,14 @@ def apply_settings(data):
         return False, {
             "quiet_hours_end": "end time must differ from start time",
         }
+    return True, clean
+
+
+def apply_settings(data):
+    """Validate and persist dashboard-editable settings; applied live."""
+    ok, clean = validate_settings(data)
+    if not ok:
+        return False, clean
     current = {}
     if SETTINGS_PATH.exists():
         try:

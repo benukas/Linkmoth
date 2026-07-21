@@ -69,7 +69,7 @@ from linkmoth_core import (
     host_stats, init_db, installation_provenance, load_config,
     make_incident_ref, manual_update_check, normalize_local_dns_config,
     observer_health_warnings, public_settings, run_cmd, sample_host_cpu,
-    start_host_cpu_sampler, tls_paths, vacuum_database,
+    start_host_cpu_sampler, tls_paths, vacuum_database, validate_settings,
 )
 from linkmoth_probes import (
     HISTORY_RANGE_HOURS, ISP_ATTRIBUTABLE_CODES, LOCAL_DNS_ADAPTERS,
@@ -108,7 +108,7 @@ from linkmoth_handler import (
     _PUBLIC_EXPOSURE_NOTIFY_LOCK, _peer_is_trusted_local,
     _public_exposure_notify_allowed, create_server, doctor, parse_kuma,
 )
-from linkmoth_backup import build_backup_archive, restore_backup_archive
+from linkmoth_backup import build_backup_archive_to_path, restore_backup_archive
 
 
 def auth_set_password():
@@ -214,9 +214,11 @@ def backup_create():
         path = sys.argv[idx + 1]
     if not path:
         path = f"linkmoth-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
-    archive = build_backup_archive(db, _export_settings, VERSION)
-    Path(path).write_bytes(archive)
-    print(f"backup written to {path} ({len(archive)} bytes)")
+    # Stream straight to the destination (0600) instead of building the whole
+    # archive in RAM first -- the same path the dashboard endpoint uses.
+    dest = Path(path)
+    build_backup_archive_to_path(dest, db, _export_settings, VERSION)
+    print(f"backup written to {path} ({dest.stat().st_size} bytes)")
     return 0
 
 
@@ -236,7 +238,9 @@ def backup_restore():
         )
         return 1
     try:
-        summary = restore_backup_archive(path, DB_PATH, init_db, apply_settings)
+        summary = restore_backup_archive(
+            path, DB_PATH, init_db, apply_settings, validate_settings,
+        )
     except (ValueError, OSError) as e:
         print(f"restore failed: {e}", file=sys.stderr)
         return 1
