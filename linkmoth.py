@@ -320,32 +320,43 @@ def main():
                 continue
             if sample_m <= 0:
                 sample_m = baseline_m
-            if (not ENGINE.run_in_progress and ENGINE.open_incident() is None):
-                v = ENGINE.diagnose_once(kind="baseline")
-                now = time.time()
-                if (baseline_m > 0 and v and v["severity"] == "bad"
-                        and now - last_incident_probe >= baseline_m * 60):
-                    ENGINE.trigger("baseline", f"self-detected: {v['code']}")
-                    last_incident_probe = now
-                record_quality_sample()
-                # Scheduled bufferbloat runs are opt-in (load_test_hours > 0)
-                # and never start while an incident is open or another test
-                # is already running.
-                try:
-                    load_hours = int(quality_config().get("load_test_hours", 0) or 0)
-                except (TypeError, ValueError):
-                    load_hours = 0
-                if load_hours > 0 and _LOAD_TEST_LOCK.acquire(blocking=False):
+            # Guard the self-monitoring work: diagnose_once()/record_quality_
+            # sample() open the database (which raises if a lock can't be
+            # acquired within its retry budget) and run live probes, any of
+            # which can raise. An unhandled error here must not kill this
+            # thread -- that would silently stop incident auto-detection and
+            # latency-history recording while the dashboard still looked
+            # healthy. The pacing sleep stays outside the guard.
+            try:
+                if (not ENGINE.run_in_progress and ENGINE.open_incident() is None):
+                    v = ENGINE.diagnose_once(kind="baseline")
+                    now = time.time()
+                    if (baseline_m > 0 and v and v["severity"] == "bad"
+                            and now - last_incident_probe >= baseline_m * 60):
+                        ENGINE.trigger("baseline", f"self-detected: {v['code']}")
+                        last_incident_probe = now
+                    record_quality_sample()
+                    # Scheduled bufferbloat runs are opt-in (load_test_hours > 0)
+                    # and never start while an incident is open or another test
+                    # is already running.
                     try:
-                        last_test = latest_load_test()
-                        if (not last_test
-                                or now - float(last_test["ts"]) >= load_hours * 3600):
-                            run_load_test()
-                    except Exception as e:
-                        print(f"scheduled load test: {e}",
-                              file=sys.stderr, flush=True)
-                    finally:
-                        _LOAD_TEST_LOCK.release()
+                        load_hours = int(quality_config().get("load_test_hours", 0) or 0)
+                    except (TypeError, ValueError):
+                        load_hours = 0
+                    if load_hours > 0 and _LOAD_TEST_LOCK.acquire(blocking=False):
+                        try:
+                            last_test = latest_load_test()
+                            if (not last_test
+                                    or now - float(last_test["ts"]) >= load_hours * 3600):
+                                run_load_test()
+                        except Exception as e:
+                            print(f"scheduled load test: {e}",
+                                  file=sys.stderr, flush=True)
+                        finally:
+                            _LOAD_TEST_LOCK.release()
+            except Exception as e:
+                print(f"baseline monitoring loop: {e}",
+                      file=sys.stderr, flush=True)
             time.sleep(max(60, sample_m * 60))
     from linkmoth_notify import quiet_hours_scheduler_loop
     from linkmoth_webhooks import drain_loop, migrate_legacy_webhook

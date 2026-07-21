@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -383,6 +384,42 @@ class EngineDiscordIntegrationTests(unittest.TestCase):
 
         types = [t for t, _ in self.sent]
         self.assertEqual(types, ["recovery"])
+
+    def test_incident_loop_survives_transient_diagnose_error(self):
+        """A transient failure during a recheck (e.g. a DB lock that exhausts
+        its retry budget) must not kill the recheck thread and leave the
+        incident stuck open forever -- the loop logs it and keeps going."""
+        inc_id = self._open_incident()
+        ok = {"severity": "ok", "code": "all_clear", "title": "All clear",
+              "explain": "fine", "hint": ""}
+        calls = {"n": 0}
+
+        def fake_diagnose(incident_id=None, kind=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise sqlite3.OperationalError("database is locked")
+            with self.linkmoth.db() as conn:
+                conn.execute(
+                    "INSERT INTO runs(incident_id, ts, severity, code, title, explain, hint, checks, duration_ms, kind)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (incident_id, time.time(), ok["severity"], ok["code"], ok["title"],
+                     ok["explain"], ok["hint"], json.dumps(SAMPLE_CHECKS), 1.0, kind or "incident"),
+                )
+            return dict(ok)
+
+        with mock.patch.object(self.engine, "diagnose_once", side_effect=fake_diagnose):
+            with mock.patch("linkmoth.time.sleep"):
+                # Must not propagate the transient error out of the loop.
+                self.engine._loop(inc_id)
+
+        # Kept running past the error (reached the two healthy rechecks) and
+        # closed the incident rather than leaving it open forever.
+        self.assertGreater(calls["n"], 1)
+        with self.linkmoth.db() as conn:
+            row = conn.execute(
+                "SELECT resolved FROM incidents WHERE id=?", (inc_id,)
+            ).fetchone()
+        self.assertIsNotNone(row["resolved"])
 
     def test_recovery_flushes_suppressed_digest(self):
         import linkmoth_kuma_proxy as proxy

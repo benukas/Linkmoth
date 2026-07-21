@@ -6,6 +6,15 @@
 
 ### Fixed
 
+- The background self-monitoring loop can no longer die silently. A
+  transient error during a baseline check (for example a database lock that
+  exhausts its retry budget, or a probe raising unexpectedly) previously
+  propagated out of the loop and killed the thread, quietly stopping
+  incident auto-detection and latency-history recording while the dashboard
+  still looked healthy. The loop now logs and continues, matching the other
+  background workers. The incident-recheck loop got the same guard (a dead
+  one would leave an incident stuck open forever), and the device scheduler
+  now survives any error, not just SQLite errors.
 - Restore is now safe against stale SQLite WAL sidecars. Linkmoth runs the
   database in WAL mode, and restore previously replaced only `state.db`,
   leaving any `state.db-wal`/`state.db-shm` from the old database beside the
