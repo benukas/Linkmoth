@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+## 0.4.5
+
+### Security
+
+- Backup archives no longer carry outbound webhook destination URLs and
+  custom headers (commonly an `Authorization` bearer token), or browser
+  push subscriptions, in plaintext. The included database snapshot is now
+  sanitized before it's written: those, plus queued-but-undelivered webhook
+  events and authentication session/login-attempt/TOTP-replay state, are
+  cleared. Webhook names, presets, event selections, templates, and
+  escalation timing still survive the round trip; only the destination and
+  any credentials need re-entering after a restore.
+- `--restore` no longer accepts `--force` to bypass the active-service
+  check. Restoring while `linkmoth.service` is running risked replacing a
+  database the running process still held open connections against.
+
+### Fixed
+
+- Restore now validates and migrates a scratch copy of the archived
+  database in a temporary directory — integrity-checked, schema-migrated,
+  settings validated — before ever touching the live database, and swaps
+  it into place with an atomic rename only once that succeeds. Previously,
+  the live database was replaced and migrated in place before settings
+  were applied; a malformed `settings.json` (or any other unexpected
+  failure partway through) could leave a half-restored install running
+  with no rollback.
+- Push notification setup on iOS now recognizes an untrusted-CA failure
+  even when it surfaces as a generic network error rather than a
+  `SecurityError` — WebKit frequently reports a partially-trusted
+  certificate that way, and the dashboard was previously falling back to
+  an unhelpful generic message instead of pointing at Certificate Trust
+  Settings.
+- `linkmoth_handler.py` no longer imports `linkmoth` at module scope,
+  which could fail with a circular-import `ImportError` if something
+  imported `linkmoth_handler` before `linkmoth.py` had run; it's now a
+  lazy proxy resolved at first use instead.
+
 ## 0.4.4
 
 ### Changed

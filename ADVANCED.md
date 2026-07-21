@@ -17,7 +17,7 @@ identity before using `sudo`, and run the bootstrap. It then verifies the
 archive, checksum, and manifest against that same identity:
 
 ```bash
-VERSION=v0.4.4
+VERSION=v0.4.5
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
@@ -268,7 +268,7 @@ script (the quick-start path), the installer isn't left on the host, so
 re-run the versioned bootstrap — it forwards the flag through:
 
 ```bash
-VERSION=v0.4.4   # use your installed version (shown in the dashboard footer)
+VERSION=v0.4.5   # use your installed version (shown in the dashboard footer)
 curl -fLO https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh
 sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
 ```
@@ -652,12 +652,20 @@ sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --backup /path/to/linkmoth-ba
 
 or from the dashboard: **Settings → Data → Backup → Download backup**.
 
-The archive is deliberately **secret-free** — it never contains the admin
-password hash, the TOTP seed, the webhook bearer secret, the VAPID push key,
-or the TLS CA. Those either can't be reconstructed from a hash (the password)
-or are directly usable credentials that a portable file shouldn't carry (TOTP
-seed and webhook secret are stored plaintext, since the server has to read
-them back). Because of this, the archive needs no encryption or special
+The archive is deliberately **secret-free**. It never contains the admin
+password hash, the TOTP seed, this installation's own inbound-webhook bearer
+secret, the VAPID push key, or the TLS CA — those either can't be
+reconstructed from a hash (the password) or are directly usable credentials
+that a portable file shouldn't carry (the rest are stored plaintext, since
+the server has to read them back). The included database snapshot is also
+sanitized before it's written: every outbound webhook's destination URL and
+custom headers (commonly an `Authorization` bearer token for something like
+Discord or ntfy), and any browser push subscriptions, are cleared, along
+with queued-but-undelivered webhook events and authentication session/login-
+attempt/TOTP-replay state that's meaningless on a different device anyway.
+Webhook names, presets, event selections, templates, and escalation timing
+all survive the round trip; only the destination and any credentials need
+re-entering. Because of all this, the archive needs no encryption or special
 handling — it's just data.
 
 On the new device, with the service stopped:
@@ -667,13 +675,18 @@ sudo systemctl stop linkmoth
 sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --restore /path/to/linkmoth-backup.zip
 ```
 
-`--restore` refuses to run against an active service unless you pass
-`--force`. If a database already exists at the target, it's renamed aside as
-`state.db.pre-restore-<timestamp>` rather than overwritten — nothing is ever
-silently discarded. Restoring re-applies the archived settings through the
-same validation the dashboard's Save button uses, and re-runs the normal
-schema migrations, so a backup taken by an older Linkmoth version restores
-cleanly on a newer one.
+`--restore` always refuses to run against an active service — there's no
+override, since a running instance can still hold WAL connections open
+against the database being replaced. Restore also validates and migrates a
+scratch copy of the archived database in a temporary directory first
+(integrity-checked, schema-migrated, settings validated) and only swaps it
+into place once that succeeds; if anything fails, the current installation
+is left exactly as it was. If a database already exists at the target, it's
+renamed aside as `state.db.pre-restore-<timestamp>` rather than overwritten —
+nothing is ever silently discarded. Restoring re-applies the archived
+settings through the same validation the dashboard's Save button uses, and
+re-runs the normal schema migrations, so a backup taken by an older Linkmoth
+version restores cleanly on a newer one.
 
 Because secrets aren't included, finish setup once the restore completes:
 
@@ -682,11 +695,13 @@ sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --auth-onboarding-token
 sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --auth-set-password
 ```
 
-then re-enroll TOTP if you used it (`--auth-setup-totp`), and note the
-freshly generated webhook secret (`--auth-show-webhook`) to update any
-Kuma/Prometheus/webhook configs that pointed at the old one. Restoring also
-doesn't carry over the TLS CA, so browsers and monitors that already trust
-this installation's certificate will need to trust the new device's CA too
+then re-enroll TOTP if you used it (`--auth-setup-totp`), note the freshly
+generated webhook secret (`--auth-show-webhook`) to update any
+Kuma/Prometheus/webhook configs that pointed at the old one, and re-enter
+each outbound webhook's destination URL and any custom headers in
+**Settings → Notifications → Outbound webhooks**. Restoring also doesn't
+carry over the TLS CA, so browsers and monitors that already trust this
+installation's certificate will need to trust the new device's CA too
 (`GET /ca.crt`) — the same one-time step as a fresh install.
 
 ## TLS certificates
