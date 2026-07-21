@@ -774,9 +774,11 @@ class DeviceManager:
     def scheduler_loop(self):
         time.sleep(5)
         while True:
+            # Any unhandled error (not just sqlite3.Error) must not kill this
+            # thread, or scheduled device checks silently stop.
             try:
                 self.process_due()
-            except sqlite3.Error as exc:
+            except Exception as exc:
                 print(f"device scheduler: {exc}", file=sys.stderr, flush=True)
             time.sleep(10)
 

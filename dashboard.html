@@ -1093,7 +1093,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           </div>
         </div>
         <div class="set-section">
-          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, this installation's inbound webhook token, push key) and the TLS CA – and the included database snapshot is itself sanitized, clearing every outbound webhook's destination URL and custom headers, push subscriptions, and session/login state. Restoring on a new device means redoing the one-time setup (new password, TOTP, webhook secret) and re-entering each webhook's destination, via the CLI's --restore flag. Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped.</span></span></h4>
+          <h4>Backup<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A portable snapshot of history, settings, and device/webhook configuration for moving to new hardware. Deliberately excludes secrets (TOTP seed, this installation's inbound webhook token, push key) and the TLS CA – and the included database snapshot is itself sanitized, clearing every outbound webhook's destination URL and custom headers (the webhooks are also left disabled), push subscriptions, and session/login state. Restoring on a new device means redoing the one-time setup (new password, TOTP, webhook secret) and re-entering then re-enabling each webhook's destination, via the CLI's --restore flag. Restoring requires the CLI (<code>linkmoth.py --restore &lt;file&gt;</code>) with the service stopped.</span></span></h4>
           <button type="button" id="backup-download" class="action-btn">Download backup</button>
         </div>
         <div class="set-section">
@@ -2379,13 +2379,16 @@ $("auth-totp-btn").addEventListener("click", doTotp);
 $("auth-totp").addEventListener("keydown", (e) => { if (e.key === "Enter") doTotp(); });
 $("logout-btn").addEventListener("click", doLogout);
 
-// True while a client-initiated load test is in flight. The periodic
-// auto-refresh tick (every ui_refresh_seconds, as low as 2s) re-renders the
-// whole quality card from the server's last-known result – which is still
-// the *previous* test, or none, for the ~20s the new one is running. Without
-// this guard, the very next tick would stomp the "Testing under load…"
-// status text right back to the stale result.
-let loadTestRunning = false;
+// Wall-clock deadline (Date.now()-based, not a boolean) until which the
+// periodic auto-refresh tick (every ui_refresh_seconds, as low as 2s)
+// should leave the quality card alone instead of re-rendering it from the
+// server's last-known result – which is still the *previous* test, or
+// none, for the ~20s the new one is running. A plain "is it running" flag
+// cleared only by a setTimeout would stay stuck true forever if that timer
+// never fires (e.g. the tab/PWA gets backgrounded mid-test on a phone),
+// permanently freezing this card; a deadline instead expires on its own
+// the moment enough real time has passed, with or without that timer.
+let loadTestRunningUntil = 0;
 
 function renderLoadTest(lt) {
   // Deliberately independent of the periodic ping sample (q.current):
@@ -2393,7 +2396,7 @@ function renderLoadTest(lt) {
   // (and be worth showing) long before – or even without – a periodic
   // quality sample ever landing, e.g. on a fresh install or when the
   // background checker is disabled.
-  if (loadTestRunning) return;
+  if (Date.now() < loadTestRunningUntil) return;
   const loadResults = $("q-load-results");
   if (lt && lt.grade) {
     const age = lt.ts ? fmtAge(Date.now() / 1000 - lt.ts) : "";
@@ -4579,9 +4582,9 @@ $("q-load-btn").addEventListener("click", async () => {
   const btn = $("q-load-btn");
   btn.disabled = true;
   btn.textContent = "Testing…";
-  loadTestRunning = true;
+  loadTestRunningUntil = Date.now() + 22000;
   const stopRunning = () => {
-    loadTestRunning = false;
+    loadTestRunningUntil = 0;
     btn.disabled = false;
     btn.textContent = "Test under load";
   };
@@ -4597,8 +4600,11 @@ $("q-load-btn").addEventListener("click", async () => {
       return;
     }
     $("q-load").textContent = "Testing under load – takes about 20 seconds…";
-    // The test runs server-side; only now clear the flag and refresh, so
-    // auto-refresh ticks during the wait leave this status text alone.
+    // The test runs server-side; this is just the fast path for updating
+    // the button/result the moment it's likely done instead of waiting for
+    // the next periodic tick. If the tab is backgrounded and this timer
+    // never fires, loadTestRunningUntil above expires on its own regardless
+    // once real time passes, so the next tick that does run still recovers.
     setTimeout(() => { stopRunning(); refresh(); }, 22000);
   } catch (e) {
     stopRunning();

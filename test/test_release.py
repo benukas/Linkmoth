@@ -353,20 +353,20 @@ class PublicReleaseTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertIn("cosign verify-blob", readme)
-        self.assertIn('sudo bash "linkmoth-v0.4.5-bootstrap.sh"', readme)
+        self.assertIn('sudo bash "linkmoth-v0.4.6-bootstrap.sh"', readme)
         self.assertIn(
-            "releases/download/v0.4.5/linkmoth-v0.4.5-bootstrap.sh",
+            "releases/download/v0.4.6/linkmoth-v0.4.6-bootstrap.sh",
             readme,
         )
-        self.assertIn("refs/tags/v0.4.5", readme)
+        self.assertIn("refs/tags/v0.4.6", readme)
         self.assertNotIn("--insecure-skip-verify", readme)
-        self.assertIn("# Changelog\n\n## Unreleased\n\n## 0.4.5\n", changelog)
+        self.assertIn("# Changelog\n\n## Unreleased\n\n## 0.4.6\n", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.5"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.6"))
 
     def test_advanced_docs_cover_sigstore_verified_install(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.4.5", advanced)
+        self.assertIn("VERSION=v0.4.6", advanced)
         self.assertIn("cosign verify-blob", advanced)
         self.assertIn("--insecure-skip-verify", advanced)
         self.assertIn('sudo bash "linkmoth-$VERSION-bootstrap.sh"', advanced)

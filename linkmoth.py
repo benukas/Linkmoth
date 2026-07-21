@@ -69,7 +69,7 @@ from linkmoth_core import (
     host_stats, init_db, installation_provenance, load_config,
     make_incident_ref, manual_update_check, normalize_local_dns_config,
     observer_health_warnings, public_settings, run_cmd, sample_host_cpu,
-    start_host_cpu_sampler, tls_paths, vacuum_database,
+    start_host_cpu_sampler, tls_paths, vacuum_database, validate_settings,
 )
 from linkmoth_probes import (
     HISTORY_RANGE_HOURS, ISP_ATTRIBUTABLE_CODES, LOCAL_DNS_ADAPTERS,
@@ -108,7 +108,7 @@ from linkmoth_handler import (
     _PUBLIC_EXPOSURE_NOTIFY_LOCK, _peer_is_trusted_local,
     _public_exposure_notify_allowed, create_server, doctor, parse_kuma,
 )
-from linkmoth_backup import build_backup_archive, restore_backup_archive
+from linkmoth_backup import build_backup_archive_to_path, restore_backup_archive
 
 
 def auth_set_password():
@@ -214,9 +214,11 @@ def backup_create():
         path = sys.argv[idx + 1]
     if not path:
         path = f"linkmoth-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
-    archive = build_backup_archive(db, _export_settings, VERSION)
-    Path(path).write_bytes(archive)
-    print(f"backup written to {path} ({len(archive)} bytes)")
+    # Stream straight to the destination (0600) instead of building the whole
+    # archive in RAM first -- the same path the dashboard endpoint uses.
+    dest = Path(path)
+    build_backup_archive_to_path(dest, db, _export_settings, VERSION)
+    print(f"backup written to {path} ({dest.stat().st_size} bytes)")
     return 0
 
 
@@ -236,7 +238,9 @@ def backup_restore():
         )
         return 1
     try:
-        summary = restore_backup_archive(path, DB_PATH, init_db, apply_settings)
+        summary = restore_backup_archive(
+            path, DB_PATH, init_db, apply_settings, validate_settings,
+        )
     except (ValueError, OSError) as e:
         print(f"restore failed: {e}", file=sys.stderr)
         return 1
@@ -316,32 +320,43 @@ def main():
                 continue
             if sample_m <= 0:
                 sample_m = baseline_m
-            if (not ENGINE.run_in_progress and ENGINE.open_incident() is None):
-                v = ENGINE.diagnose_once(kind="baseline")
-                now = time.time()
-                if (baseline_m > 0 and v and v["severity"] == "bad"
-                        and now - last_incident_probe >= baseline_m * 60):
-                    ENGINE.trigger("baseline", f"self-detected: {v['code']}")
-                    last_incident_probe = now
-                record_quality_sample()
-                # Scheduled bufferbloat runs are opt-in (load_test_hours > 0)
-                # and never start while an incident is open or another test
-                # is already running.
-                try:
-                    load_hours = int(quality_config().get("load_test_hours", 0) or 0)
-                except (TypeError, ValueError):
-                    load_hours = 0
-                if load_hours > 0 and _LOAD_TEST_LOCK.acquire(blocking=False):
+            # Guard the self-monitoring work: diagnose_once()/record_quality_
+            # sample() open the database (which raises if a lock can't be
+            # acquired within its retry budget) and run live probes, any of
+            # which can raise. An unhandled error here must not kill this
+            # thread -- that would silently stop incident auto-detection and
+            # latency-history recording while the dashboard still looked
+            # healthy. The pacing sleep stays outside the guard.
+            try:
+                if (not ENGINE.run_in_progress and ENGINE.open_incident() is None):
+                    v = ENGINE.diagnose_once(kind="baseline")
+                    now = time.time()
+                    if (baseline_m > 0 and v and v["severity"] == "bad"
+                            and now - last_incident_probe >= baseline_m * 60):
+                        ENGINE.trigger("baseline", f"self-detected: {v['code']}")
+                        last_incident_probe = now
+                    record_quality_sample()
+                    # Scheduled bufferbloat runs are opt-in (load_test_hours > 0)
+                    # and never start while an incident is open or another test
+                    # is already running.
                     try:
-                        last_test = latest_load_test()
-                        if (not last_test
-                                or now - float(last_test["ts"]) >= load_hours * 3600):
-                            run_load_test()
-                    except Exception as e:
-                        print(f"scheduled load test: {e}",
-                              file=sys.stderr, flush=True)
-                    finally:
-                        _LOAD_TEST_LOCK.release()
+                        load_hours = int(quality_config().get("load_test_hours", 0) or 0)
+                    except (TypeError, ValueError):
+                        load_hours = 0
+                    if load_hours > 0 and _LOAD_TEST_LOCK.acquire(blocking=False):
+                        try:
+                            last_test = latest_load_test()
+                            if (not last_test
+                                    or now - float(last_test["ts"]) >= load_hours * 3600):
+                                run_load_test()
+                        except Exception as e:
+                            print(f"scheduled load test: {e}",
+                                  file=sys.stderr, flush=True)
+                        finally:
+                            _LOAD_TEST_LOCK.release()
+            except Exception as e:
+                print(f"baseline monitoring loop: {e}",
+                      file=sys.stderr, flush=True)
             time.sleep(max(60, sample_m * 60))
     from linkmoth_notify import quiet_hours_scheduler_loop
     from linkmoth_webhooks import drain_loop, migrate_legacy_webhook

@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+## 0.4.6
+
+### Fixed
+
+- The background self-monitoring loop can no longer die silently. A
+  transient error during a baseline check (for example a database lock that
+  exhausts its retry budget, or a probe raising unexpectedly) previously
+  propagated out of the loop and killed the thread, quietly stopping
+  incident auto-detection and latency-history recording while the dashboard
+  still looked healthy. The loop now logs and continues, matching the other
+  background workers. The incident-recheck loop got the same guard (a dead
+  one would leave an incident stuck open forever), and the device scheduler
+  now survives any error, not just SQLite errors. Relatedly, `run_cmd` now
+  returns a sentinel on any OS-level spawn failure (for example a tool that
+  exists but isn't executable) instead of only handling "not found" and
+  "timeout", so a probe can't raise out of the ladder that way.
+- Restore is now safe against stale SQLite WAL sidecars. Linkmoth runs the
+  database in WAL mode, and restore previously replaced only `state.db`,
+  leaving any `state.db-wal`/`state.db-shm` from the old database beside the
+  newly installed one. After an unclean shutdown that WAL could be replayed
+  on top of the restored data, silently overriding it (and the preserved
+  `state.db.pre-restore-*` copy could omit records that lived only in that
+  WAL). Restore now checkpoints the existing database first, preserves the
+  complete result, and removes both sidecars before installing the restored
+  file.
+- Restore now validates the archived settings *before* swapping the
+  database, not after, so an unapplyable settings payload refuses the
+  restore up front instead of leaving a swapped-in database with settings
+  that silently never took. Credential-dependent flags (Discord alerts, the
+  outbound notify webhook) are also forced off in every backup, since their
+  URLs aren't carried — previously a backup taken while Discord alerts were
+  enabled would fail settings validation when restored onto a fresh device.
+- Restored outbound webhooks now come back **disabled** with their delivery
+  bookkeeping cleared, in addition to the destination URL and headers being
+  stripped. Previously they stayed enabled, so a restored install would
+  immediately queue and retry deliveries against empty destinations.
+- The bufferbloat "under load" result no longer freezes permanently if the
+  tab or installed PWA is backgrounded during a test. The refresh-suppression
+  guard is now a wall-clock deadline that expires on its own, instead of a
+  flag that only a `setTimeout` could clear — a timer that never fires (as
+  when a phone suspends the app mid-test) previously left the card stuck on a
+  stale "tested N h ago" reading forever.
+
+### Security
+
+- Backup archive members are now bounded by per-file size limits (64 KiB
+  manifest, 1 MiB settings, a large database ceiling) checked before any
+  member is read, instead of a single 2 GiB limit that still let the small
+  JSON members be expanded into memory.
+- The CLI `--backup` path now streams the archive to a `0600` file directly
+  instead of building the whole thing in memory first, matching the
+  dashboard endpoint.
+
 ## 0.4.5
 
 ### Security

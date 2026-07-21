@@ -677,8 +677,13 @@ SETTABLE = {
 }
 
 
-def apply_settings(data):
-    """Validate and persist dashboard-editable settings; applied live."""
+def validate_settings(data):
+    """Validate dashboard-editable settings WITHOUT persisting anything.
+
+    Returns (True, clean_dict) or (False, errors). apply_settings() below is
+    just this plus a write; restore uses it directly to reject a bad
+    settings payload before it swaps the database, rather than discovering
+    the failure only afterward."""
     if not isinstance(data, dict):
         return False, {"_settings": "settings must be a JSON object"}
     clean, errors = {}, {}
@@ -719,6 +724,14 @@ def apply_settings(data):
         return False, {
             "quiet_hours_end": "end time must differ from start time",
         }
+    return True, clean
+
+
+def apply_settings(data):
+    """Validate and persist dashboard-editable settings; applied live."""
+    ok, clean = validate_settings(data)
+    if not ok:
+        return False, clean
     current = {}
     if SETTINGS_PATH.exists():
         try:
@@ -1314,6 +1327,11 @@ def run_cmd(args, timeout=10):
         return -1, "timeout"
     except FileNotFoundError:
         return -2, "tool missing"
+    except OSError as e:
+        # e.g. the tool exists but isn't executable (PermissionError), or the
+        # OS can't spawn it right now. Callers all branch on rc != 0; returning
+        # a sentinel keeps a probe/ladder step from raising out of its caller.
+        return -3, f"could not run: {e.__class__.__name__}"
 
 
 def _cpu_totals():

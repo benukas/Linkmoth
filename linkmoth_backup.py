@@ -41,18 +41,39 @@ DB_NAME = "state.db"
 SETTINGS_NAME = "settings.json"
 ARCHIVE_MEMBERS = frozenset({MANIFEST_NAME, DB_NAME, SETTINGS_NAME})
 
-# Generous but bounded: a Raspberry Pi-scale history database is nowhere
-# near this size, so a member past it is either corrupt or hostile.
-MAX_MEMBER_BYTES = 2 * 1024 * 1024 * 1024
+# Per-member ceilings, checked (against the ZIP-declared uncompressed size)
+# before any member is read into memory, so a hostile or corrupt archive is
+# rejected cheaply instead of expanding a tiny compressed blob into gigabytes
+# of RAM. The manifest and settings are small JSON documents read wholesale;
+# the database is streamed to disk, but is still bounded well above any
+# realistic long-lived Raspberry Pi history.
+MEMBER_MAX_BYTES = {
+    MANIFEST_NAME: 64 * 1024,
+    SETTINGS_NAME: 1 * 1024 * 1024,
+    DB_NAME: 4 * 1024 * 1024 * 1024,
+}
+
+# Settings flags whose paired credential (a webhook URL) is stripped from
+# every backup -- so the flag must be forced off, or a restore onto a fresh
+# device fails validation ("enabled but no URL") for a backup that was
+# perfectly valid on the source.
+_BACKUP_DISABLED_SETTING_FLAGS = (
+    "discord_notifications_enabled",
+    "notify_webhook_enabled",
+)
 
 # Statements that strip secrets and device-specific state from a DB snapshot
 # before it's embedded in a backup archive. Table names are hardcoded, not
 # user input, so the string formatting here isn't building SQL from
 # untrusted data -- but each statement is still guarded individually so a
 # schema that predates one of these tables (a very old backup) doesn't fail
-# the whole snapshot.
+# the whole snapshot. Outbound webhooks are also disabled (enabled=0) and
+# their last-delivery bookkeeping cleared: their destination URL/headers are
+# gone, so leaving them enabled would make a restored install immediately
+# queue and retry deliveries against empty destinations.
 _SANITIZE_STATEMENTS = (
-    "UPDATE webhooks SET url = '', headers = '{}'",
+    "UPDATE webhooks SET url = '', headers = '{}', enabled = 0,"
+    " last_send_ts = NULL, last_status = NULL, last_error = NULL",
     "DELETE FROM webhook_queue",
     "DELETE FROM push_subscriptions",
     "DELETE FROM auth_sessions",
@@ -74,6 +95,21 @@ def _sanitize_snapshot(conn):
     # Reclaims freed pages so deleted secrets don't linger in the snapshot
     # file's slack space before it's embedded in the archive.
     conn.execute("VACUUM")
+
+
+def _sanitize_backup_settings(settings):
+    """Force credential-dependent flags off in a settings dict, since the
+    matching webhook URLs are never carried in a backup. Applied both when
+    building an archive (so the stored settings.json is honest) and again at
+    restore (so even an older backup, made before this existed, still
+    validates cleanly before the database is swapped)."""
+    if not isinstance(settings, dict):
+        return settings
+    cleaned = dict(settings)
+    for flag in _BACKUP_DISABLED_SETTING_FLAGS:
+        if flag in cleaned:
+            cleaned[flag] = False
+    return cleaned
 
 
 class BackupInProgress(RuntimeError):
@@ -122,10 +158,11 @@ def build_backup_archive_to_path(archive_path, db_connect, export_settings, vers
                 _snapshot_db_to_path(conn, snapshot_path)
             archive_path.touch(exist_ok=True)
             os.chmod(archive_path, 0o600)
+            settings = _sanitize_backup_settings(export_settings())
             with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.writestr(MANIFEST_NAME, json.dumps(manifest, indent=2))
                 zf.write(snapshot_path, arcname=DB_NAME)
-                zf.writestr(SETTINGS_NAME, json.dumps(export_settings(), indent=2))
+                zf.writestr(SETTINGS_NAME, json.dumps(settings, indent=2))
     finally:
         BACKUP_LOCK.release()
 
@@ -180,30 +217,86 @@ def _validate_archive_members(zf):
             f"expected set {sorted(ARCHIVE_MEMBERS)!r}"
         )
     for info in zf.infolist():
-        if info.file_size > MAX_MEMBER_BYTES:
+        limit = MEMBER_MAX_BYTES.get(info.filename)
+        if limit is not None and info.file_size > limit:
             raise ValueError(
-                f"{info.filename} ({info.file_size} bytes) exceeds the "
-                f"maximum allowed backup member size"
+                f"{info.filename} ({info.file_size} bytes) exceeds its "
+                f"maximum allowed backup member size ({limit} bytes)"
             )
 
 
-def restore_backup_archive(archive_path, db_path, init_db, apply_settings):
+def _db_sidecars(db_path):
+    """The WAL-mode sidecar files SQLite keeps beside the main database."""
+    return (
+        db_path.with_name(db_path.name + "-wal"),
+        db_path.with_name(db_path.name + "-shm"),
+    )
+
+
+def _replace_live_database(scratch_path, db_path):
+    """Swap the migrated scratch database in for the live one, safely under
+    WAL mode.
+
+    Linkmoth runs the database in WAL mode, so committed data can be sitting
+    in `state.db-wal` rather than the main file, and a stale `-wal`/`-shm`
+    left by an unclean shutdown will be replayed on top of whatever main
+    file it finds next to it. Moving only `state.db` aside would therefore
+    both (a) let the old WAL silently override the freshly installed
+    database, and (b) leave the preserved `.pre-restore-*` copy missing any
+    records that lived only in that WAL. So: checkpoint the live database
+    first (folding the WAL into the main file), preserve the now-complete
+    main file, delete both sidecars, then atomically rename the scratch file
+    into place. Returns the preserved copy's path, or None if there was no
+    existing database.
+    """
+    preserved = None
+    wal, shm = _db_sidecars(db_path)
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                conn.close()
+        except sqlite3.DatabaseError:
+            # Corrupt or unreadable live database: nothing to fold in, and
+            # we're replacing it anyway. Preserve whatever bytes exist.
+            pass
+        preserved = db_path.with_name(f"{db_path.name}.pre-restore-{int(time.time())}")
+        shutil.move(str(db_path), str(preserved))
+        wal.unlink(missing_ok=True)
+        shm.unlink(missing_ok=True)
+    try:
+        os.replace(scratch_path, db_path)
+    except OSError:
+        if preserved is not None:
+            shutil.move(str(preserved), str(db_path))
+        raise
+    return preserved
+
+
+def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
+                           validate_settings=None):
     """Restore history and settings from a backup archive.
 
     Everything is validated and migrated against a scratch copy in a
     temporary directory -- on the same filesystem as `db_path`, so the final
     swap is an atomic rename -- before the live database is touched at all.
     `init_db` runs schema creation/migration against that scratch copy first
-    (it accepts an optional path, same as linkmoth_core.init_db); only after
-    that succeeds does the scratch file replace the live one. `apply_settings`
-    then validates and applies the archived settings the same way a
-    dashboard save would, rather than overwriting blind; if that fails
-    unexpectedly, the previous database is put back rather than left
-    half-restored.
+    (it accepts an optional path, same as linkmoth_core.init_db). The
+    archived settings are validated up front too, via `validate_settings`
+    (linkmoth_core.validate_settings) when provided, so a settings payload
+    that can't be applied refuses the restore before the database is
+    touched rather than leaving a swapped-in database with settings that
+    silently didn't take. Only once both the database and the settings check
+    out does the scratch file replace the live one (WAL-safely, preserving
+    the previous database as `.pre-restore-*`); `apply_settings` then writes
+    the settings. If that final write fails unexpectedly, the previous
+    database is put back rather than left half-restored.
 
     Returns a summary dict. Raises ValueError for a malformed, oversized, or
-    incompatible archive, or a database currently in use, before anything on
-    disk is touched.
+    incompatible archive, an unapplyable settings payload, or a database
+    currently in use, before anything on disk is touched.
     """
     archive_path = Path(archive_path)
     db_path = Path(db_path)
@@ -227,6 +320,17 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings):
             raise ValueError(f"backup archive is incomplete or corrupt: {e}") from None
         if not isinstance(settings, dict):
             raise ValueError("backup settings.json is not a valid settings object")
+
+        # Re-force credential-dependent flags off even for an older backup
+        # made before the builder did this, then validate the result up
+        # front -- so a settings payload that can't be applied refuses the
+        # restore now, before the database is swapped, instead of leaving a
+        # restored database with settings that silently never took.
+        settings = _sanitize_backup_settings(settings)
+        if validate_settings is not None:
+            ok, result = validate_settings(settings)
+            if not ok:
+                raise ValueError(f"backup settings failed validation: {result}")
 
         _ensure_db_not_in_use(db_path)
 
@@ -275,16 +379,7 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings):
             finally:
                 conn.close()
 
-            preserved = None
-            if db_path.exists():
-                preserved = db_path.with_name(f"{db_path.name}.pre-restore-{int(time.time())}")
-                shutil.move(str(db_path), str(preserved))
-            try:
-                os.replace(scratch_path, db_path)
-            except OSError:
-                if preserved is not None:
-                    shutil.move(str(preserved), str(db_path))
-                raise
+            preserved = _replace_live_database(scratch_path, db_path)
 
     try:
         settings_ok, settings_result = apply_settings(settings)
@@ -292,7 +387,10 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings):
         # Leave the current installation untouched rather than half-restored:
         # put the previous database back if applying settings blew up in a
         # way apply_settings itself doesn't turn into a clean (False, errors).
+        # Pre-swap validation makes this path unlikely, but keep it exact.
         db_path.unlink(missing_ok=True)
+        for sidecar in _db_sidecars(db_path):
+            sidecar.unlink(missing_ok=True)
         if preserved is not None:
             shutil.move(str(preserved), str(db_path))
         raise ValueError(f"settings could not be applied to the restored archive: {e}") from None

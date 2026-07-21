@@ -89,6 +89,7 @@ class BackupRestoreRoundTripTests(unittest.TestCase):
         summary = backup.restore_backup_archive(
             self.archive_path, target_core.DB_PATH,
             target_core.init_db, target_core.apply_settings,
+            target_core.validate_settings,
         )
         self.assertEqual(summary["manifest"]["linkmoth_version"], "1.2.3")
 
@@ -104,6 +105,171 @@ class BackupRestoreRoundTripTests(unittest.TestCase):
         hooks = list_webhooks(target_core.db)
         self.assertEqual(len(hooks), 1)
         self.assertEqual(hooks[0]["name"], "Test hook")
+        # No stale WAL/SHM sidecars left beside the restored database.
+        self.assertFalse(Path(str(target_core.DB_PATH) + "-wal").exists())
+        self.assertFalse(Path(str(target_core.DB_PATH) + "-shm").exists())
+
+    def test_archive_disables_restored_webhooks_and_clears_delivery_state(self):
+        """A webhook whose URL/headers were stripped must also come back
+        disabled, or a restored install immediately queues retries against
+        an empty destination."""
+        core = self._seed_source()
+        with core.db() as conn:
+            conn.execute(
+                "UPDATE webhooks SET last_send_ts=?, last_status=?, last_error=?",
+                (time.time(), 500, "boom"),
+            )
+        archive = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn = _open_db_from_archive(archive, tmpdir)
+            try:
+                row = conn.execute("SELECT * FROM webhooks").fetchone()
+            finally:
+                conn.close()
+        self.assertEqual(row["enabled"], 0)
+        self.assertEqual(row["url"], "")
+        self.assertIsNone(row["last_send_ts"])
+        self.assertIsNone(row["last_status"])
+        self.assertIsNone(row["last_error"])
+
+    def test_backup_forces_credential_dependent_flags_off(self):
+        """Discord/notify-webhook enable flags are forced off in the backup,
+        since their URLs aren't carried -- otherwise a restore onto a fresh
+        device fails 'enabled but no URL' validation."""
+        core = self._seed_source()
+        core.CFG["discord_notifications_enabled"] = True
+        core.CFG["discord_webhook_url"] = (
+            "https://discord.com/api/webhooks/123/abc"
+        )
+        core.CFG["notify_webhook_enabled"] = True
+        archive = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")
+
+        with zipfile.ZipFile(io.BytesIO(archive)) as zf:
+            settings = json.loads(zf.read("settings.json"))
+        self.assertFalse(settings.get("discord_notifications_enabled", False))
+        self.assertFalse(settings.get("notify_webhook_enabled", False))
+
+    def test_discord_enabled_source_restores_onto_fresh_target(self):
+        """End-to-end: a backup taken while Discord alerts were on restores
+        cleanly onto a fresh device instead of failing settings validation."""
+        core = self._seed_source()
+        core.CFG["discord_notifications_enabled"] = True
+        core.CFG["discord_webhook_url"] = (
+            "https://discord.com/api/webhooks/123/abc"
+        )
+        archive = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")
+        self.archive_path.write_bytes(archive)
+
+        target_core = _reimport_core(self.target_dir)
+        summary = backup.restore_backup_archive(
+            self.archive_path, target_core.DB_PATH,
+            target_core.init_db, target_core.apply_settings,
+            target_core.validate_settings,
+        )
+        self.assertTrue(summary["settings_applied"])
+        self.assertFalse(target_core.CFG.get("discord_notifications_enabled", False))
+
+    def test_replace_live_database_removes_stale_sidecars(self):
+        """Directly exercises the WAL-safe swap: stale -wal/-shm files
+        sitting beside the target are removed, the scratch DB is installed,
+        and the preserved copy holds the previous contents."""
+        live = self.target_dir / "state.db"
+        c = sqlite3.connect(live)
+        c.execute("CREATE TABLE t(v)")
+        c.execute("INSERT INTO t VALUES('OLD')")
+        c.commit()
+        c.close()
+        wal = Path(str(live) + "-wal")
+        shm = Path(str(live) + "-shm")
+        wal.write_bytes(b"stale-wal-bytes")
+        shm.write_bytes(b"stale-shm-bytes")
+
+        scratch = self.target_dir / "scratch.db"
+        c = sqlite3.connect(scratch)
+        c.execute("CREATE TABLE t(v)")
+        c.execute("INSERT INTO t VALUES('NEW')")
+        c.commit()
+        c.close()
+
+        preserved = backup._replace_live_database(scratch, live)
+
+        self.assertFalse(wal.exists())
+        self.assertFalse(shm.exists())
+        c = sqlite3.connect(live)
+        try:
+            self.assertEqual(c.execute("SELECT v FROM t").fetchone()[0], "NEW")
+        finally:
+            c.close()
+        self.assertIsNotNone(preserved)
+        c = sqlite3.connect(preserved)
+        try:
+            self.assertEqual(c.execute("SELECT v FROM t").fetchone()[0], "OLD")
+        finally:
+            c.close()
+
+    def test_restore_discards_stale_wal_from_previous_database(self):
+        """The P1 regression: committed data sitting only in the previous
+        database's WAL sidecar (as after an unclean shutdown) must not be
+        replayed on top of the freshly restored database."""
+        core = self._seed_source()
+        archive = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")
+        self.archive_path.write_bytes(archive)
+
+        target_core = _reimport_core(self.target_dir)
+        live = target_core.DB_PATH
+        # Insert a distinctive row and capture the on-disk state while that
+        # row still lives only in the WAL, then reconstruct that state so the
+        # main file lacks the row but a valid WAL carries it.
+        conn = sqlite3.connect(live)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA wal_autocheckpoint=0")
+        conn.execute(
+            "INSERT INTO incidents(started, source, detail, resolved)"
+            " VALUES(?,?,?,?)",
+            (time.time(), "stale-wal-only", "x", None),
+        )
+        conn.commit()
+        wal_path = Path(str(live) + "-wal")
+        main_bytes = live.read_bytes()
+        wal_bytes = wal_path.read_bytes()
+        conn.close()
+        live.write_bytes(main_bytes)
+        wal_path.write_bytes(wal_bytes)
+
+        backup.restore_backup_archive(
+            self.archive_path, target_core.DB_PATH,
+            target_core.init_db, target_core.apply_settings,
+            target_core.validate_settings,
+        )
+        with target_core.db() as conn:
+            sources = [r["source"] for r in conn.execute("SELECT source FROM incidents")]
+        self.assertIn("baseline", sources)
+        self.assertNotIn("stale-wal-only", sources)
+        self.assertFalse(Path(str(target_core.DB_PATH) + "-wal").exists())
+
+    def test_restore_rejects_oversized_manifest_before_reading(self):
+        """A member declaring a size past its per-member ceiling is rejected
+        without being read into memory."""
+        core = self._seed_source()
+        archive_bytes = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as src:
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w") as dst:
+                for name in src.namelist():
+                    if name == "manifest.json":
+                        dst.writestr(name, b"{}" + b" " * (128 * 1024))
+                    else:
+                        dst.writestr(name, src.read(name))
+        self.archive_path.write_bytes(buf.getvalue())
+
+        target_core = _reimport_core(self.target_dir)
+        with self.assertRaises(ValueError):
+            backup.restore_backup_archive(
+                self.archive_path, target_core.DB_PATH,
+                target_core.init_db, target_core.apply_settings,
+                target_core.validate_settings,
+            )
 
     def test_archive_contains_no_auth_secrets(self):
         core = self._seed_source()

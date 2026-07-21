@@ -557,64 +557,74 @@ class Engine:
                 step += 1
             else:
                 time.sleep(CFG["recheck_repeat"])
-            inc = self._incident_by_id(inc_id)
-            if not inc or inc.get("resolved"):
-                return  # closed externally (manual close / false alarm)
-            v = self.diagnose_once(inc_id, kind="incident")
-            if v is None:
-                continue
-            if v["severity"] == "ok":
-                consecutive_ok += 1
-                if consecutive_ok >= 2:
-                    recovery_verdict = {
-                        "severity": "ok",
-                        "code": "all_clear",
-                        "title": "All network checks passed",
-                        "explain": v.get("explain", ""),
-                        "hint": "",
-                    }
-                    self._discord_notify(
-                        inc_id, "recovery", recovery_verdict,
-                        prior_fault=worst if fault_notified else None,
-                    )
-                    self._emit_webhook(
-                        inc_id,
-                        "fault_recovered",
-                        recovery_verdict,
-                        checks=self._first_bad_run_checks(inc_id),
-                    )
-                    break
-            else:
-                consecutive_ok = 0
-                # Preserve the incident's strongest confirmed attribution.
-                # A later warning often means partial recovery; it must not
-                # overwrite an earlier bad WAN/router fault in the final
-                # incident record or recovery handoff.
-                rank = {"ok": 0, "warn": 1, "bad": 2}
-                if (
-                    worst is None
-                    or rank.get(v.get("severity"), 0)
-                    >= rank.get(worst.get("severity"), 0)
-                ):
-                    worst = v
-                    with db() as conn:
-                        conn.execute(
-                            "UPDATE incidents SET diagnosis_code=?, diagnosis_title=?, verdict_code=?, verdict_title=? "
-                            "WHERE id=? AND resolved IS NULL",
-                            (v["code"], v["title"], v["code"], v["title"], inc_id),
+            # Guard the whole recheck body: a transient failure (a DB lock that
+            # exhausts its retry budget, a probe raising unexpectedly) must not
+            # kill this thread, or the incident would never be rechecked and
+            # would hang open forever. Sleeps stay outside the guard so a
+            # persistent error still paces instead of spin-looping; the outer
+            # `deadline` still bounds the incident overall.
+            try:
+                inc = self._incident_by_id(inc_id)
+                if not inc or inc.get("resolved"):
+                    return  # closed externally (manual close / false alarm)
+                v = self.diagnose_once(inc_id, kind="incident")
+                if v is None:
+                    continue
+                if v["severity"] == "ok":
+                    consecutive_ok += 1
+                    if consecutive_ok >= 2:
+                        recovery_verdict = {
+                            "severity": "ok",
+                            "code": "all_clear",
+                            "title": "All network checks passed",
+                            "explain": v.get("explain", ""),
+                            "hint": "",
+                        }
+                        self._discord_notify(
+                            inc_id, "recovery", recovery_verdict,
+                            prior_fault=worst if fault_notified else None,
                         )
-                if not fault_notified:
-                    fault_notified = True
-                    self._discord_notify(inc_id, "fault", v)
-                    event = (
-                        "degradation_detected" if v["severity"] == "warn"
-                        else "fault_opened"
-                    )
-                    self._emit_webhook(inc_id, event, v)
-                    last_emitted = (v["code"], v["severity"])
-                elif (v["code"], v["severity"]) != last_emitted:
-                    self._emit_webhook(inc_id, "fault_updated", v)
-                    last_emitted = (v["code"], v["severity"])
+                        self._emit_webhook(
+                            inc_id,
+                            "fault_recovered",
+                            recovery_verdict,
+                            checks=self._first_bad_run_checks(inc_id),
+                        )
+                        break
+                else:
+                    consecutive_ok = 0
+                    # Preserve the incident's strongest confirmed attribution.
+                    # A later warning often means partial recovery; it must not
+                    # overwrite an earlier bad WAN/router fault in the final
+                    # incident record or recovery handoff.
+                    rank = {"ok": 0, "warn": 1, "bad": 2}
+                    if (
+                        worst is None
+                        or rank.get(v.get("severity"), 0)
+                        >= rank.get(worst.get("severity"), 0)
+                    ):
+                        worst = v
+                        with db() as conn:
+                            conn.execute(
+                                "UPDATE incidents SET diagnosis_code=?, diagnosis_title=?, verdict_code=?, verdict_title=? "
+                                "WHERE id=? AND resolved IS NULL",
+                                (v["code"], v["title"], v["code"], v["title"], inc_id),
+                            )
+                    if not fault_notified:
+                        fault_notified = True
+                        self._discord_notify(inc_id, "fault", v)
+                        event = (
+                            "degradation_detected" if v["severity"] == "warn"
+                            else "fault_opened"
+                        )
+                        self._emit_webhook(inc_id, event, v)
+                        last_emitted = (v["code"], v["severity"])
+                    elif (v["code"], v["severity"]) != last_emitted:
+                        self._emit_webhook(inc_id, "fault_updated", v)
+                        last_emitted = (v["code"], v["severity"])
+            except Exception as e:
+                print(f"incident recheck loop (incident {inc_id}): {e}",
+                      file=sys.stderr, flush=True)
         recovery_confirmed = consecutive_ok >= 2
         final = worst or {"severity": "ok", "code": "all_clear",
                           "title": "Nothing wrong seen from the network side"}
