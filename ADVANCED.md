@@ -15,26 +15,15 @@ bootstrap from the official Linkmoth GitHub Release:
 
 ```bash
 VERSION=v0.4.7
-BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
-download_linkmoth_asset() {
-  local name="$1" source="$BASE/$1" target
-  target="$(curl --fail --silent --show-error --head --proto '=https' \
-    --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$source")" || return 1
-  case "$target" in
-    https://release-assets.githubusercontent.com/github-production-release-asset/*) ;;
-    *) echo "Unexpected release asset redirect" >&2; return 1 ;;
-  esac
-  curl --fail --show-error --proto '=https' --noproxy '*' --output "$name" "$target"
-}
-download_linkmoth_asset "linkmoth-$VERSION-bootstrap.sh" &&
-sudo bash "linkmoth-$VERSION-bootstrap.sh"
+curl -fsSLO --proto '=https' --proto-redir '=https' --noproxy '*' --max-redirs 1 "https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh" && sudo bash "linkmoth-$VERSION-bootstrap.sh"
 ```
 
-The bootstrap downloads only the exact archive, checksum, and manifest for
-`$VERSION` from `benukas/Linkmoth`. It ignores environment proxy settings and
-does not automatically follow release-asset redirects: it permits only an
-explicit HTTPS redirect to GitHub's `release-assets.githubusercontent.com`
-release-asset path. The checksum file must contain one well-formed SHA-256
+The entry command permits the single HTTPS redirect used by GitHub Release
+downloads. The bootstrap itself downloads only the exact archive, checksum,
+and manifest for `$VERSION` from `benukas/Linkmoth`. It ignores environment
+proxy settings and permits only an explicit HTTPS redirect to GitHub's
+`release-assets.githubusercontent.com` release-asset path. The checksum file
+must contain one well-formed SHA-256
 entry naming the exact archive. A missing file, wrong filename or version,
 malformed digest, mismatch, or unexpected download location stops before
 extraction and before the archive's installer runs.
@@ -305,19 +294,7 @@ re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
 VERSION=v0.4.7   # use your installed version (shown in the dashboard footer)
-BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
-download_linkmoth_asset() {
-  local name="$1" source="$BASE/$1" target
-  target="$(curl --fail --silent --show-error --head --proto '=https' \
-    --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$source")" || return 1
-  case "$target" in
-    https://release-assets.githubusercontent.com/github-production-release-asset/*) ;;
-    *) echo "Unexpected release asset redirect" >&2; return 1 ;;
-  esac
-  curl --fail --show-error --proto '=https' --noproxy '*' --output "$name" "$target"
-}
-download_linkmoth_asset "linkmoth-$VERSION-bootstrap.sh" &&
-sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
+curl -fsSLO --proto '=https' --proto-redir '=https' --noproxy '*' --max-redirs 1 "https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh" && sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
 ```
 
 From a git checkout, run `sudo bash install.sh --with-push` in that folder

@@ -379,15 +379,14 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('sudo bash "$NAME"', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.4.7-bootstrap.sh', readme)
         self.assertIn(
             "releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
         self.assertIn("does not require Cosign", readme)
-        self.assertIn("release-assets.githubusercontent.com/github-production-release-asset/", readme)
-        self.assertNotIn("--location", readme)
+        self.assertIn("--max-redirs 1", readme)
         self.assertNotIn("--insecure-skip-verify", readme)
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)

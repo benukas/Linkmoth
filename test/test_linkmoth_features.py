@@ -371,8 +371,7 @@ class ManualUpdateCheckTests(unittest.TestCase):
         self.assertIn("--sigstore-verified", result["verified_update_command"])
         self.assertEqual(result["sigstore_update_command"], result["verified_update_command"])
         self.assertIn("--noproxy '*'", result["update_command"])
-        self.assertIn("release-assets.githubusercontent.com", result["update_command"])
-        self.assertNotIn("--location", result["update_command"])
+        self.assertIn("--max-redirs 1", result["update_command"])
         self.assertNotIn("cosign", result["update_command"])
 
     def test_update_check_rejects_wrong_release_url(self):

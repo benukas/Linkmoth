@@ -90,17 +90,7 @@ ssh user@<host-ip>
 **2. Install the latest release:**
 
 ```bash
-VERSION=v0.4.7
-NAME="linkmoth-$VERSION-bootstrap.sh"
-SOURCE="https://github.com/benukas/Linkmoth/releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh"
-REDIRECT="$(curl --fail --silent --show-error --head --proto '=https' \
-  --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$SOURCE")" &&
-case "$REDIRECT" in
-  https://release-assets.githubusercontent.com/github-production-release-asset/*)
-    curl --fail --show-error --proto '=https' --noproxy '*' --output "$NAME" "$REDIRECT" ;;
-  *) echo "Unexpected release asset redirect" >&2; false ;;
-esac &&
-sudo bash "$NAME"
+curl -fsSLO --proto '=https' --proto-redir '=https' --noproxy '*' --max-redirs 1 https://github.com/benukas/Linkmoth/releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh && sudo bash linkmoth-v0.4.7-bootstrap.sh
 ```
 
 The versioned bootstrap downloads the exact `v0.4.7` archive and its published

@@ -233,8 +233,9 @@ def manual_update_check():
         "--noproxy '*' --connect-timeout 10 --max-time 300 --output \"$name\" \"$target\"; };"
     )
     normal_command = (
-        f"VERSION=v{latest}; BASE={release_base}; {safe_download} "
-        f"download_linkmoth_asset {bootstrap_name} && sudo bash {bootstrap_name}"
+        f"VERSION=v{latest}; curl -fsSLO --proto '=https' --proto-redir '=https' "
+        f"--noproxy '*' --max-redirs 1 {release_base}/{bootstrap_name} "
+        f"&& sudo bash {bootstrap_name}"
     )
     sigstore_command = (
         f"VERSION=v{latest}; BASE={release_base}; {safe_download} "
