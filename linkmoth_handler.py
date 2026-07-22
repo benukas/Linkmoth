@@ -48,7 +48,8 @@ from linkmoth_engine import _set_meta, fire_drill_status, prometheus_metrics
 from linkmoth_probes import (
     _LOAD_TEST_LOCK, _count_phrase, _validate_load_url, bind_exposure_risk,
     classify_network_interfaces, default_route, isp_report_csv,
-    quality_config, quality_summary, run_load_test, wifi_wired_differential,
+    connection_score, quality_config, quality_summary, run_load_test,
+    wifi_wired_differential,
 )
 
 class _LazyLinkmothModule:
@@ -338,7 +339,7 @@ _LAST_PUBLIC_EXPOSURE_NOTIFY_MONO = 0.0
 # backward compatibility) so it isn't part of this generic session-fallback
 # set.
 READONLY_TOKEN_GET_PATHS = frozenset({
-    "/api/status", "/api/quality", "/api/report", "/api/history",
+    "/api/status", "/api/quality", "/api/report", "/api/history", "/api/score",
 })
 
 # Selectable windows for the expanded latency-history view (hours).
@@ -1058,10 +1059,17 @@ class Handler(BaseHTTPRequestHandler):
             payload = linkmoth.ENGINE.status()
             payload["auth"] = auth.public_status(session)
             payload["quality"] = quality_summary(limit=120)
+            payload["score"] = connection_score()
             payload["wifi_note"] = wifi_wired_differential(
                 linkmoth.ENGINE.last_run_checks()
             )
             self._send(200, payload)
+        elif url.path == "/api/score":
+            try:
+                days = int(qs.get("days", ["30"])[0])
+            except (ValueError, TypeError):
+                days = 30
+            self._send(200, connection_score(days))
         elif url.path == "/api/auth/audit":
             try:
                 limit = int(qs.get("limit", ["50"])[0])

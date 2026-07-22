@@ -22,7 +22,8 @@ from urllib.parse import urlparse
 
 from linkmoth_core import (
     CFG, DEFAULT_CONFIG, _PinnedHTTPSConnection, _dns_domain,
-    _network_targets, db, normalize_local_dns_config, run_cmd,
+    _incident_outage_segments, _network_targets, _outage_seconds, db,
+    normalize_local_dns_config, run_cmd,
 )
 
 def default_route():
@@ -1777,6 +1778,193 @@ def quality_findings(days=7):
                 f" {round(good_share * 100)}% of samples good."
             )
     result["findings"] = findings
+    return result
+
+
+# Score bands. Deliberately generous at the top: the grade answers "was the
+# line fine today", not "is this a datacentre link".
+SCORE_GRADES = (
+    (97, "A+"), (93, "A"), (90, "A-"), (87, "B+"), (83, "B"), (80, "B-"),
+    (77, "C+"), (73, "C"), (70, "C-"), (60, "D"), (0, "F"),
+)
+# Below this many samples in a day there is not enough evidence to grade it.
+MIN_SCORE_SAMPLES = 6
+# Days needing a grade before a personal baseline means anything.
+MIN_BASELINE_DAYS = 5
+
+
+def _score_grade(score):
+    for floor, letter in SCORE_GRADES:
+        if score >= floor:
+            return letter
+    return "F"
+
+
+def _bloat_penalty(bloat_ms):
+    if bloat_ms is None:
+        return 0.0
+    for limit, penalty in ((30, 0.0), (60, 3.0), (120, 7.0), (250, 12.0)):
+        if bloat_ms < limit:
+            return penalty
+    return 18.0
+
+
+def _score_one_day(samples, bloat_ms, downtime_s, baseline_latency):
+    """Score a single day from its own samples. Starts at 100 and subtracts;
+    latency is judged against `baseline_latency` (this line's own normal)
+    rather than an absolute target, so a stable slow link is not permanently
+    failed and a fast link that degrades is still caught."""
+    latencies = [s["latency_ms"] for s in samples if s["latency_ms"] is not None]
+    jitters = [s["jitter_ms"] for s in samples if s["jitter_ms"] is not None]
+    losses = [s["loss_pct"] or 0.0 for s in samples]
+    median_latency = _median(latencies)
+    median_jitter = _median(jitters)
+    median_loss = _median(losses) or 0.0
+
+    loss_penalty = min(40.0, median_loss * 8.0)
+    jitter_penalty = min(15.0, (median_jitter or 0.0) / 2.0)
+    latency_penalty = 0.0
+    if baseline_latency and median_latency is not None and baseline_latency > 0:
+        excess = max(0.0, median_latency - baseline_latency)
+        latency_penalty = min(25.0, excess / baseline_latency * 40.0)
+    bloat_penalty = _bloat_penalty(bloat_ms)
+    downtime_penalty = min(40.0, (downtime_s or 0.0) / 60.0 * 2.0)
+
+    factors = {
+        "latency": -round(latency_penalty),
+        "jitter": -round(jitter_penalty),
+        "loss": -round(loss_penalty),
+        "bufferbloat": -round(bloat_penalty),
+        "downtime": -round(downtime_penalty),
+    }
+    total = (loss_penalty + jitter_penalty + latency_penalty
+             + bloat_penalty + downtime_penalty)
+    score = int(round(max(0.0, 100.0 - total)))
+    return score, factors, median_latency
+
+
+_FACTOR_PHRASES = {
+    "latency": "latency ran above your normal",
+    "jitter": "jitter was unsettled",
+    "loss": "packets were dropping",
+    "bufferbloat": "the line bloated under load",
+    "downtime": "the connection dropped out",
+}
+
+
+def _day_start(ts):
+    lt = time.localtime(ts)
+    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+
+
+def connection_score(days=30):
+    """A daily connection-health grade built only from evidence already
+    stored -- quality samples, any bufferbloat tests that were run, and
+    recorded outage segments. Read-only: it never probes the network, so
+    calling it costs nothing but a few SQLite reads.
+
+    Today's grade is compared against this line's own recent baseline
+    rather than an absolute target, which is what lets a slow-but-steady
+    connection score well and a fast one that degrades still get flagged.
+    Days with too little evidence are reported ungraded instead of being
+    given a number that would not mean anything.
+    """
+    days = max(2, min(90, int(days or 30)))
+    now = time.time()
+    window_start = _day_start(now) - (days - 1) * 86400
+    samples, segments_by_incident, load_rows = [], {}, []
+    try:
+        with db() as conn:
+            samples = [dict(r) for r in conn.execute(
+                "SELECT ts, latency_ms, jitter_ms, loss_pct FROM quality_samples"
+                " WHERE ts >= ? ORDER BY ts ASC", (window_start,),
+            )]
+            load_rows = [dict(r) for r in conn.execute(
+                "SELECT ts, bloat_ms FROM load_tests"
+                " WHERE ts >= ? AND bloat_ms IS NOT NULL ORDER BY ts ASC",
+                (window_start,),
+            )]
+            incidents = [dict(r) for r in conn.execute(
+                "SELECT * FROM incidents WHERE started >= ?"
+                " OR resolved IS NULL OR resolved >= ?",
+                (window_start, window_start),
+            )]
+            for incident in incidents:
+                if incident.get("false_alarm"):
+                    continue
+                segments_by_incident[incident["id"]] = _incident_outage_segments(
+                    conn, incident)
+    except sqlite3.Error as e:
+        print(f"connection score read failed: {e}", file=sys.stderr, flush=True)
+
+    by_day, bloat_by_day = {}, {}
+    for sample in samples:
+        by_day.setdefault(_day_start(sample["ts"]), []).append(sample)
+    for row in load_rows:
+        bloat_by_day[_day_start(row["ts"])] = row["bloat_ms"]
+    all_segments = [s for group in segments_by_incident.values() for s in group]
+
+    history, latency_by_day = [], {}
+    for index in range(days):
+        start = window_start + index * 86400
+        end = start + 86400
+        day_samples = by_day.get(start, [])
+        entry = {"day": time.strftime("%Y-%m-%d", time.localtime(start)),
+                 "samples": len(day_samples)}
+        if len(day_samples) < MIN_SCORE_SAMPLES:
+            entry.update({"score": None, "grade": None})
+            history.append(entry)
+            continue
+        downtime = _outage_seconds(
+            all_segments, window_start=start, window_end=min(end, now), now=now)
+        median = _median([s["latency_ms"] for s in day_samples
+                          if s["latency_ms"] is not None])
+        if median is not None:
+            latency_by_day[start] = median
+        # Baseline for a given day is the median of the graded days before
+        # it, so the series is not scored against its own future.
+        prior = [latency_by_day[key] for key in sorted(latency_by_day) if key < start]
+        baseline_latency = _median(prior) if len(prior) >= MIN_BASELINE_DAYS else median
+        score, factors, _ = _score_one_day(
+            day_samples, bloat_by_day.get(start), downtime, baseline_latency)
+        entry.update({"score": score, "grade": _score_grade(score),
+                      "factors": factors})
+        history.append(entry)
+
+    graded = [item for item in history if item["score"] is not None]
+    today = history[-1] if history else {"score": None, "samples": 0}
+    result = {
+        "days": days,
+        "history": [{"day": i["day"], "score": i["score"]} for i in history],
+        "sample_count": today.get("samples", 0),
+        "graded": today.get("score") is not None,
+        "score": today.get("score"),
+        "grade": today.get("grade"),
+        "factors": today.get("factors"),
+        "baseline_score": None,
+        "baseline_grade": None,
+        "trend": None,
+        "headline": "",
+    }
+    if not result["graded"]:
+        result["headline"] = "Not enough data yet today."
+        return result
+
+    earlier = [item["score"] for item in graded[:-1]]
+    if len(earlier) >= MIN_BASELINE_DAYS:
+        baseline = int(round(_median(earlier)))
+        result["baseline_score"] = baseline
+        result["baseline_grade"] = _score_grade(baseline)
+        delta = result["score"] - baseline
+        result["trend"] = ("steady" if abs(delta) <= 3
+                           else "above" if delta > 0 else "below")
+    worst = min(result["factors"].items(), key=lambda item: item[1])
+    if worst[1] <= -3:
+        result["headline"] = (
+            f"Today {_FACTOR_PHRASES[worst[0]]}."
+        )
+    else:
+        result["headline"] = "No problems worth flagging today."
     return result
 
 

@@ -246,6 +246,24 @@ svg.spark-lg { height: 300px; }
 .q-stats small { color: var(--muted); font-size: 13px; }
 .load-test-results { margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .load-test-results span { min-width: 112px; }
+.score-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.score-grade-wrap { display: flex; align-items: baseline; gap: 10px; }
+.score-grade { font-size: 42px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; }
+.score-grade.s-good { color: var(--ok-text); }
+.score-grade.s-fair { color: var(--warn-text); }
+.score-grade.s-poor { color: var(--bad-text); }
+.score-grade.s-none { color: var(--muted); }
+.score-value { font-size: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.score-trend { text-align: right; }
+.score-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+.score-pill.s-steady { background: var(--ok-bg); color: var(--ok-text); }
+.score-pill.s-below { background: var(--warn-bg); color: var(--warn-text); }
+.score-pill.s-above { background: var(--ok-bg); color: var(--ok-text); }
+.score-baseline { display: block; margin-top: 6px; font-size: 13px; color: var(--muted); }
+svg.score-spark { height: 56px; }
+.score-factors { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.score-factors span { min-width: 96px; }
+.score-factors b.s-hit { color: var(--warn-text); }
 .row { display: flex; align-items: center; gap: 14px; padding: 12px 0; }
 /* One divider per check, above each check block (not between a check and its
    own evidence, and never trailing after the last check). */
@@ -732,6 +750,26 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <p class="spark-detail" id="spark-gw-detail" aria-live="polite">Hover or focus the chart to inspect a sample.</p>
       </div>
       <div class="spark-label"><span>Router ping</span><span id="gw-now"></span></div>
+    </section>
+
+    <section id="score-card" class="card">
+      <h3>Connection health<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">A daily grade from checks already recorded – latency, jitter, loss, any bufferbloat test, and outage time. Latency is judged against this connection's own recent normal, not a fixed target, and days without enough samples stay ungraded.</span></span></h3>
+      <div class="score-head">
+        <div class="score-grade-wrap">
+          <span id="score-grade" class="score-grade">–</span>
+          <span id="score-value" class="score-value"></span>
+        </div>
+        <div class="score-trend">
+          <span id="score-trend-pill" class="score-pill hidden"></span>
+          <span id="score-baseline" class="score-baseline"></span>
+        </div>
+      </div>
+      <div class="spark-wrap">
+        <svg class="spark score-spark" id="spark-score" viewBox="0 0 600 64" preserveAspectRatio="none" tabindex="0"></svg>
+        <div class="spark-label"><span id="score-span-label"></span><span>Today</span></div>
+      </div>
+      <p id="score-headline" class="hint">Measuring…</p>
+      <div id="score-factors" class="q-stats score-factors hidden"></div>
     </section>
 
     <section id="quality-card" class="card">
@@ -2418,6 +2456,87 @@ function renderLoadTestInfo(q) {
     : "Downloads a bounded test file from a public server to measure your line under real load.";
 }
 
+const SCORE_FACTOR_LABELS = {
+  latency: "latency", jitter: "jitter", loss: "loss",
+  bufferbloat: "bufferbloat", downtime: "downtime",
+};
+
+function scoreSpark(history) {
+  const svg = $("spark-score");
+  const points = history.filter((d) => d.score !== null);
+  if (points.length < 2) { svg.innerHTML = ""; return; }
+  const W = 600, H = 64, pad = 6;
+  const lo = Math.min(...points.map((p) => p.score));
+  const hi = Math.max(...points.map((p) => p.score));
+  const range = Math.max(8, hi - lo);
+  const step = W / Math.max(1, history.length - 1);
+  const coords = [];
+  history.forEach((d, i) => {
+    if (d.score === null) return;
+    const x = i * step;
+    const y = pad + (1 - (d.score - lo) / range) * (H - pad * 2);
+    coords.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  });
+  const last = coords[coords.length - 1].split(",");
+  svg.innerHTML =
+    `<polyline points="${coords.join(" ")}" fill="none" stroke="var(--line)"`
+    + ` stroke-width="2" stroke-linejoin="round" stroke-linecap="round"`
+    + ` vector-effect="non-scaling-stroke"/>`
+    + `<circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="var(--line)"/>`;
+}
+
+function renderScore(s) {
+  const grade = $("score-grade"), value = $("score-value");
+  const pill = $("score-trend-pill"), baseline = $("score-baseline");
+  const factors = $("score-factors");
+  if (!s) {
+    grade.className = "score-grade s-none";
+    grade.textContent = "–";
+    value.textContent = "";
+    pill.classList.add("hidden");
+    baseline.textContent = "";
+    factors.classList.add("hidden");
+    $("score-headline").textContent = "Score unavailable.";
+    return;
+  }
+  scoreSpark(s.history || []);
+  const graded = (s.history || []).filter((d) => d.score !== null).length;
+  $("score-span-label").textContent = graded
+    ? `${graded} graded day${graded === 1 ? "" : "s"}`
+    : "";
+  $("score-headline").textContent = s.headline || "";
+  if (!s.graded) {
+    grade.className = "score-grade s-none";
+    grade.textContent = "–";
+    value.textContent = `${s.sample_count || 0} samples today`;
+    pill.classList.add("hidden");
+    baseline.textContent = "";
+    factors.classList.add("hidden");
+    return;
+  }
+  const tier = s.score >= 90 ? "s-good" : s.score >= 75 ? "s-fair" : "s-poor";
+  grade.className = "score-grade " + tier;
+  grade.textContent = s.grade;
+  value.textContent = s.score;
+  if (s.trend) {
+    pill.classList.remove("hidden");
+    pill.className = "score-pill s-" + s.trend;
+    pill.textContent = s.trend === "steady" ? "Steady"
+      : s.trend === "above" ? "Above baseline" : "Below baseline";
+  } else {
+    pill.classList.add("hidden");
+  }
+  baseline.textContent = s.baseline_grade
+    ? `Baseline ${s.baseline_grade}` : "Building baseline";
+  const entries = Object.entries(s.factors || {});
+  if (!entries.length) { factors.classList.add("hidden"); return; }
+  factors.classList.remove("hidden");
+  factors.innerHTML = entries.map(([key, points]) =>
+    `<span><b class="${points <= -3 ? "s-hit" : ""}">${points}</b>`
+    + `<small>${esc(SCORE_FACTOR_LABELS[key] || key)}</small></span>`
+  ).join("");
+}
+
 function renderQuality(q) {
   const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
   const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
@@ -2572,6 +2691,7 @@ async function refresh() {
   renderHostHealth(s.host);
   if (s.local_dns) localDnsRuntime = s.local_dns;
   renderQuality(s.quality);
+  renderScore(s.score);
   $("q-wifi").textContent = s.wifi_note || "";
   const localDrillState = localFireDrillState();
   const serverDrill = s.fire_drill || {};
