@@ -48,7 +48,8 @@ from linkmoth_engine import _set_meta, fire_drill_status, prometheus_metrics
 from linkmoth_probes import (
     _LOAD_TEST_LOCK, _count_phrase, _validate_load_url, bind_exposure_risk,
     classify_network_interfaces, default_route, isp_report_csv,
-    connection_score, quality_config, quality_summary, run_load_test,
+    config_efficiency_notes, connection_score, quality_config,
+    quality_summary, run_load_test,
     wifi_wired_differential,
 )
 
@@ -1059,6 +1060,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = linkmoth.ENGINE.status()
             payload["auth"] = auth.public_status(session)
             payload["quality"] = quality_summary(limit=120)
+            payload["config_notes"] = config_efficiency_notes()
             # The score is a presentational extra; /api/status is what the
             # whole dashboard depends on. Never let a failure computing it
             # take the rest of the payload down with it.

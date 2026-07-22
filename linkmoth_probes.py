@@ -417,6 +417,82 @@ def quality_config():
     return merged
 
 
+def _format_data(megabytes):
+    if megabytes >= 1024:
+        return f"{megabytes / 1024:.1f} GB".replace(".0 GB", " GB")
+    return f"{round(megabytes)} MB"
+
+
+def config_efficiency_notes(cfg=None):
+    """Advisory notes for a configured cadence that costs noticeably more
+    than it returns -- monthly data for scheduled load tests, and check
+    frequencies that mostly add host load without improving detection.
+
+    Pure arithmetic over the configuration: no probing, no database, and
+    nothing is enforced. The settings remain valid; this only surfaces what
+    they imply so the choice is an informed one.
+    """
+    cfg = CFG if cfg is None else cfg
+    quality = quality_config()
+    notes = []
+
+    hours = int(quality.get("load_test_hours") or 0)
+    max_mb = int(quality.get("load_test_max_mb") or 25)
+    if hours > 0 and max_mb > 0:
+        monthly_mb = (24.0 / hours) * 30 * max_mb
+        if monthly_mb >= 2048:
+            notes.append({
+                "level": "warn",
+                "setting": "quality.load_test_hours",
+                "message": (
+                    f"Scheduled bufferbloat tests every {hours} h download roughly "
+                    f"{_format_data(monthly_mb)} per month. On a metered or capped "
+                    f"connection, a longer interval – or running the test from the "
+                    f"dashboard when you actually need it – costs far less."
+                ),
+            })
+
+    sample_minutes = int(cfg.get("history_sample_minutes") or 0)
+    sample_count = int(quality.get("sample_count") or 10)
+    if 0 < sample_minutes <= 1:
+        per_day = int(1440 / sample_minutes)
+        notes.append({
+            "level": "info",
+            "setting": "history_sample_minutes",
+            "message": (
+                f"Sampling every {sample_minutes} min runs about {per_day:,} checks a "
+                f"day, each sending {sample_count} pings per target. Latency history "
+                f"rarely reads differently below about 5 min, so the extra runs mostly "
+                f"add load to the host."
+            ),
+        })
+
+    baseline_minutes = int(cfg.get("baseline_minutes") or 0)
+    if 0 < baseline_minutes < 5:
+        notes.append({
+            "level": "info",
+            "setting": "baseline_minutes",
+            "message": (
+                f"A {baseline_minutes} min baseline lets Linkmoth open a new incident "
+                f"that often. Brief blips that would have cleared on their own tend to "
+                f"become incidents and alerts at this setting."
+            ),
+        })
+
+    refresh = int(cfg.get("ui_refresh_seconds") or 5)
+    if refresh <= 2:
+        notes.append({
+            "level": "info",
+            "setting": "ui_refresh_seconds",
+            "message": (
+                f"Every open dashboard requests a full status update every {refresh} s. "
+                f"This changes what the browser shows, not how often the network is "
+                f"checked."
+            ),
+        })
+    return notes
+
+
 def _dns_query_a(server, domain, timeout=2.0):
     """Stdlib UDP DNS A-record query. Returns True if the server answered.
 

@@ -452,6 +452,15 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 .secret-reveal { flex: none; padding: 9px 14px; font-size: 15px; }
+.config-note {
+  border-left: 3px solid var(--border); padding: 10px 14px; margin: 0 0 10px;
+  background: var(--bg); border-radius: 0 9px 9px 0; font-size: 15px; line-height: 1.5;
+}
+.config-note.warn { border-left-color: var(--warn-text); }
+.config-note .k {
+  display: block; font-size: 13px; color: var(--muted); margin-bottom: 2px;
+  font-family: ui-monospace, monospace;
+}
 .set-row input[type="checkbox"] {
   flex: none; width: 22px; height: 22px; min-width: 22px; cursor: pointer;
 }
@@ -993,6 +1002,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       </div>
 
       <div class="subtab-panel hidden" id="subtab-network">
+        <div id="config-notes" class="hidden"></div>
         <div class="set-section">
           <h4>Check intervals</h4>
           <div class="set-row"><label for="s-baseline">Baseline check (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">How often Linkmoth may auto-open an incident when a background check finds a fault. 0 turns it off.</span></span></label><input id="s-baseline" type="number" min="0" max="1440" step="1"></div>
@@ -2538,6 +2548,16 @@ function renderScore(s) {
   ).join("");
 }
 
+function renderConfigNotes(notes) {
+  const el = $("config-notes");
+  if (!notes || !notes.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  el.classList.remove("hidden");
+  el.innerHTML = notes.map((n) =>
+    `<p class="config-note ${n.level === "warn" ? "warn" : ""}">`
+    + `<span class="k">${esc(n.setting)}</span>${esc(n.message)}</p>`
+  ).join("");
+}
+
 function renderQuality(q) {
   const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
   const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
@@ -2693,6 +2713,7 @@ async function refresh() {
   if (s.local_dns) localDnsRuntime = s.local_dns;
   renderQuality(s.quality);
   renderScore(s.score);
+  renderConfigNotes(s.config_notes);
   $("q-wifi").textContent = s.wifi_note || "";
   const localDrillState = localFireDrillState();
   const serverDrill = s.fire_drill || {};
