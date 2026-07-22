@@ -78,9 +78,8 @@ compatibility report).
 
 ## Quick start
 
-You need: a supported Pi/Debian/Ubuntu host that stays powered on,
-[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/), and
-about five minutes.
+You need: a supported Pi/Debian/Ubuntu host that stays powered on and about
+five minutes. The normal installation does not require Cosign.
 
 **1. SSH into the host** (skip this if it has its own screen and keyboard):
 
@@ -91,22 +90,28 @@ ssh user@<host-ip>
 **2. Install the latest release:**
 
 ```bash
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh.bundle
-cosign verify-blob \
-  --bundle "linkmoth-v0.4.7-bootstrap.sh.bundle" \
-  --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/v0.4.7" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  "linkmoth-v0.4.7-bootstrap.sh"
-sudo bash "linkmoth-v0.4.7-bootstrap.sh"
+VERSION=v0.4.7
+NAME="linkmoth-$VERSION-bootstrap.sh"
+SOURCE="https://github.com/benukas/Linkmoth/releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh"
+REDIRECT="$(curl --fail --silent --show-error --head --proto '=https' \
+  --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$SOURCE")" &&
+case "$REDIRECT" in
+  https://release-assets.githubusercontent.com/github-production-release-asset/*)
+    curl --fail --show-error --proto '=https' --noproxy '*' --output "$NAME" "$REDIRECT" ;;
+  *) echo "Unexpected release asset redirect" >&2; false ;;
+esac &&
+sudo bash "$NAME"
 ```
 
-This verifies the bootstrap's pinned release-workflow identity; the bootstrap
-then verifies the archive, checksum, and manifest before it installs a hardened
-systemd service. It prints the dashboard address and a one-time setup token
-when it's done. No Git checkout or package manager is needed. See
-[ADVANCED.md](ADVANCED.md#sigstore-verified-installation) for provenance details
-and the explicitly unverified recovery path.
+The versioned bootstrap downloads the exact `v0.4.7` archive and its published
+SHA-256 file from the official GitHub Release, validates the checksum before
+extracting the archive or running its installer, and records the result as a
+**Checksum-verified release**. It also validates the complete archive against
+the release manifest before it installs a hardened systemd service. It prints
+the dashboard address and a one-time setup token when it's done. No Git checkout,
+package manager, or Cosign binary is needed. See
+[ADVANCED.md](ADVANCED.md#checksum-verified-installation) for the security model
+and the optional Sigstore-verified mode.
 
 **3. Open the dashboard** at the address the installer printed
 (`https://<host-ip>:8686`). Your browser will warn about the certificate;

@@ -1672,6 +1672,15 @@ def doctor(json_output=False):
             print(f"[--] {name}" + (f" – {detail}" if detail else ""))
 
     report("python >= 3.9", sys.version_info >= (3, 9), sys.version.split()[0])
+    provenance = linkmoth.installation_provenance()
+    provenance_label = {
+        "checksum-verified": "Checksum-verified release",
+        "sigstore-verified": "Sigstore-verified release",
+        "unverified-manual": "Unverified/manual installation",
+        "legacy-unavailable": "Legacy installation – provenance unavailable",
+        "invalid": "Installation record invalid",
+    }.get(provenance.get("state"), "Installation record invalid")
+    info("installation provenance", provenance_label)
     # DNS is resolved with a stdlib socket now – no `dig` binary required.
     for tool in ("ping", "ip", "systemctl"):
         path = shutil.which(tool)
@@ -1770,5 +1779,4 @@ def doctor(json_output=False):
     else:
         print("all good" if problems == 0 else f"{_count_phrase(problems, 'problem')} found")
     return 0 if problems == 0 else 1
-
 

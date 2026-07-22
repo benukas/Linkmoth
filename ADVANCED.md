@@ -8,53 +8,89 @@ authentication internals, TLS certificate trust, verified releases,
 branding, security posture, on-disk layout, updating, uninstalling, and
 troubleshooting.
 
-## Sigstore-verified installation
+## Checksum-verified installation
 
-The normal quick-start path is Sigstore-verified by default. Install
-[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/),
-download the bootstrap and its bundle, verify the pinned release-workflow
-identity before using `sudo`, and run the bootstrap. It then verifies the
-archive, checksum, and manifest against that same identity:
+The normal quick-start path needs no Cosign. It downloads a pinned, versioned
+bootstrap from the official Linkmoth GitHub Release:
 
 ```bash
 VERSION=v0.4.7
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
-curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
-curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
+download_linkmoth_asset() {
+  local name="$1" source="$BASE/$1" target
+  target="$(curl --fail --silent --show-error --head --proto '=https' \
+    --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$source")" || return 1
+  case "$target" in
+    https://release-assets.githubusercontent.com/github-production-release-asset/*) ;;
+    *) echo "Unexpected release asset redirect" >&2; return 1 ;;
+  esac
+  curl --fail --show-error --proto '=https' --noproxy '*' --output "$name" "$target"
+}
+download_linkmoth_asset "linkmoth-$VERSION-bootstrap.sh" &&
+sudo bash "linkmoth-$VERSION-bootstrap.sh"
+```
+
+The bootstrap downloads only the exact archive, checksum, and manifest for
+`$VERSION` from `benukas/Linkmoth`. It ignores environment proxy settings and
+does not automatically follow release-asset redirects: it permits only an
+explicit HTTPS redirect to GitHub's `release-assets.githubusercontent.com`
+release-asset path. The checksum file must contain one well-formed SHA-256
+entry naming the exact archive. A missing file, wrong filename or version,
+malformed digest, mismatch, or unexpected download location stops before
+extraction and before the archive's installer runs.
+
+This writes a root-owned installation record and the dashboard and `--doctor`
+report **Checksum-verified release**. This proves the archive matches the
+checksum published beside that release over GitHub HTTPS; it does not provide
+an independent transparency-log proof of the publishing workflow identity.
+
+## Optional Sigstore-verified installation
+
+For the stronger publisher-identity check, install
+[`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/),
+download the same pinned bootstrap and its bundle, verify the bootstrap before
+using `sudo`, and explicitly select `--sigstore-verified`:
+
+```bash
+VERSION=v0.4.7
+BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
+download_linkmoth_asset() {
+  local name="$1" source="$BASE/$1" target
+  target="$(curl --fail --silent --show-error --head --proto '=https' \
+    --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$source")" || return 1
+  case "$target" in
+    https://release-assets.githubusercontent.com/github-production-release-asset/*) ;;
+    *) echo "Unexpected release asset redirect" >&2; return 1 ;;
+  esac
+  curl --fail --show-error --proto '=https' --noproxy '*' --output "$name" "$target"
+}
+download_linkmoth_asset "linkmoth-$VERSION-bootstrap.sh" &&
+download_linkmoth_asset "linkmoth-$VERSION-bootstrap.sh.bundle" &&
 cosign verify-blob \
   --bundle "linkmoth-$VERSION-bootstrap.sh.bundle" \
   --certificate-identity "https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  "linkmoth-$VERSION-bootstrap.sh"
-sudo bash "linkmoth-$VERSION-bootstrap.sh"
+  "linkmoth-$VERSION-bootstrap.sh" && \
+sudo bash "linkmoth-$VERSION-bootstrap.sh" --sigstore-verified
 ```
 
-This writes a root-owned installation record and the dashboard will report
-**Sigstore-verified release**. No Git checkout or package manager is needed –
-see [Quick start](README.md#quick-start).
-
-Only when verification is impossible, the explicitly insecure recovery path
-can bypass Sigstore while retaining the archive checksum check:
-
-```bash
-sudo bash "linkmoth-$VERSION-bootstrap.sh" --insecure-skip-verify
-```
-
-The bootstrap prints a warning to stderr and records the result as
-**Unverified/manual installation**. Do not use this as the normal install path.
+This mode requires Cosign and verifies the archive, checksum, and manifest
+against the exact `benukas/Linkmoth` release workflow identity and tag. Every
+step fails closed. Only after all checks and installation succeed does it
+record **Sigstore-verified release**. There is no flag that disables checksum
+verification or permits another repository.
 
 ## Installation provenance and manual updates
 
-Release builds carry immutable metadata for the exact source commit. By
-default, the bootstrap verifies the signed archive, checksum, and manifest
-against the pinned release-workflow identity, then writes a root-owned
-installation record containing the release version, commit, archive digest,
-verification state, and installation time. Only
-`--insecure-skip-verify` produces an unverified/manual installation. The
-dashboard reports exactly one state:
-**Sigstore-verified release**, **Unverified/manual installation**, **Legacy
-installation - provenance unavailable**, or **Installation record invalid**.
-It never guesses verified provenance from GitHub, a tag, or version matching.
+Release builds carry immutable metadata for the exact source commit. The
+bootstrap writes a root-owned installation record containing the release
+version, commit, archive digest, verification state, and installation time.
+The dashboard and `--doctor` report exactly one state: **Checksum-verified
+release**, **Sigstore-verified release**, **Unverified/manual installation**,
+**Legacy installation – provenance unavailable**, or **Installation record
+invalid**. They never guess verified provenance from GitHub, a tag, or version
+matching. Running `install.sh` directly clears any older release-provenance
+record; a successful bootstrap writes the new record afterwards.
 
 **Check for update** in Settings is an authenticated, CSRF-protected manual
 action; Linkmoth never checks, downloads, installs, restarts, or polls for
@@ -269,7 +305,18 @@ re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
 VERSION=v0.4.7   # use your installed version (shown in the dashboard footer)
-curl -fLO https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh
+BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
+download_linkmoth_asset() {
+  local name="$1" source="$BASE/$1" target
+  target="$(curl --fail --silent --show-error --head --proto '=https' \
+    --noproxy '*' --output /dev/null --write-out '%{redirect_url}' "$source")" || return 1
+  case "$target" in
+    https://release-assets.githubusercontent.com/github-production-release-asset/*) ;;
+    *) echo "Unexpected release asset redirect" >&2; return 1 ;;
+  esac
+  curl --fail --show-error --proto '=https' --noproxy '*' --output "$name" "$target"
+}
+download_linkmoth_asset "linkmoth-$VERSION-bootstrap.sh" &&
 sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
 ```
 
@@ -833,11 +880,12 @@ public internet exposure.
 
 Do not pipe an unversioned script from a branch into `sudo`. Every release
 publishes a versioned bootstrap script, archive, checksum, and Sigstore bundles.
-Install `cosign` from its official distribution, download the assets from the
-chosen GitHub Release, verify the bootstrap bundle with the pinned GitHub
-workflow identity, then run the verified local file with `sudo bash`. The
-bootstrap repeats Sigstore verification for the archive and checksum before it
-extracts or installs anything. Verification failure is a hard stop.
+The normal bootstrap verifies the exact release archive against its published
+SHA-256 checksum before extraction, then validates every archive member against
+the release manifest. The optional `--sigstore-verified` mode additionally
+requires Cosign and verifies the bootstrap, archive, checksum, and manifest
+against the exact GitHub workflow identity. Either mode stops on any download,
+location, version, filename, checksum, manifest, or requested signature failure.
 
 ## Branding
 
@@ -951,11 +999,11 @@ way you would any other credential, and delete copies you no longer need.
 ## Updating
 
 If you installed with the quick-start bootstrap (the normal path), update by
-downloading and verifying the new release's bootstrap exactly as in
-[Sigstore-verified installation](#sigstore-verified-installation) with the
-new version number – the installer is safe to run repeatedly and never
-touches your config or data. **Check for update** in the dashboard's
-Settings prints the version-pinned command for you.
+downloading and running the new release's versioned bootstrap exactly as in
+[Checksum-verified installation](#checksum-verified-installation) with the new
+version number. The installer is safe to run repeatedly and never touches your
+config or data. **Check for update** in the dashboard's Settings prints both
+the normal version-pinned command and the optional Sigstore-verified command.
 
 From a source checkout instead, get the new code (`git pull` in the cloned
 folder, or re-copy it), then re-run the installer:

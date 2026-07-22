@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- The normal pinned-release installation no longer requires Cosign. It now
+  downloads the exact archive and published SHA-256 checksum from the official
+  release, verifies the checksum before extraction or installer execution, and
+  reports **Checksum-verified release** provenance. The explicit
+  `--sigstore-verified` mode remains available for the stronger GitHub workflow
+  identity and transparency-log check, and fails closed if Cosign or any
+  signature verification is unavailable.
+
 ## 0.4.7
 
 ### Added

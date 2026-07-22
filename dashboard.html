@@ -583,6 +583,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .sec-qr svg { width: 200px; height: 200px; background: #fff; padding: 10px; border-radius: 9px; display: block; }
 .sec-codes { font-family: ui-monospace, monospace; font-size: 15px; line-height: 1.7; background: var(--surface-1); padding: 12px 14px; border-radius: 9px; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
 .update-command { display: block; box-sizing: border-box; width: 100%; margin: 10px 0 8px; font: 14px ui-monospace, monospace; line-height: 1.6; white-space: pre-wrap; background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; resize: vertical; }
+.update-sigstore { margin-top: 12px; }
+.update-sigstore > summary { cursor: pointer; font-weight: 600; }
 .update-release-link { display: block; margin-top: 4px; }
 #sec-pw-msg, #sec-totp-msg { display: block; margin-top: 8px; font-size: 16px; }
 #sec-pw-msg.bad, #sec-totp-msg.bad { color: var(--bad-text); }
@@ -2710,6 +2712,7 @@ async function refresh() {
     $("site-meta").classList.remove("hidden");
     const provenance = s.app.provenance || {};
     const provenanceText = {
+      "checksum-verified": "Checksum-verified release",
       "sigstore-verified": "Sigstore-verified release",
       "unverified-manual": "Unverified/manual installation",
       "legacy-unavailable": "Legacy installation – provenance unavailable",
@@ -4550,6 +4553,36 @@ $("update-check").addEventListener("click", async () => {
       setTimeout(() => { copyBtn.textContent = "Copy command"; }, 1800);
     });
     result.appendChild(copyBtn);
+    const sigstoreCommand = data.sigstore_update_command || data.verified_update_command;
+    if (typeof sigstoreCommand === "string" && sigstoreCommand) {
+      const stronger = document.createElement("details");
+      stronger.className = "update-sigstore";
+      const summary = document.createElement("summary");
+      summary.textContent = "Optional Sigstore-verified command";
+      stronger.appendChild(summary);
+      const verifiedCommand = document.createElement("textarea");
+      verifiedCommand.readOnly = true;
+      verifiedCommand.rows = 5;
+      verifiedCommand.className = "update-command";
+      verifiedCommand.value = sigstoreCommand;
+      verifiedCommand.setAttribute("aria-label", "Optional Sigstore-verified update command");
+      stronger.appendChild(verifiedCommand);
+      const verifiedCopy = document.createElement("button");
+      verifiedCopy.type = "button";
+      verifiedCopy.className = "action-btn";
+      verifiedCopy.textContent = "Copy Sigstore command";
+      verifiedCopy.addEventListener("click", async () => {
+        try {
+          await copyPlainText(sigstoreCommand);
+          verifiedCopy.textContent = "Copied";
+        } catch (e) {
+          verifiedCopy.textContent = "Copy failed";
+        }
+        setTimeout(() => { verifiedCopy.textContent = "Copy Sigstore command"; }, 1800);
+      });
+      stronger.appendChild(verifiedCopy);
+      result.appendChild(stronger);
+    }
     if (/^https:\/\//i.test(data.release_url || "")) {
       const link = document.createElement("a");
       link.className = "update-release-link";

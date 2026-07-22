@@ -623,6 +623,7 @@ class AuthenticatedTests(LinkmothTestBase):
             "update_available": True, "published_at": "2026-07-13T00:00:00Z",
             "release_url": "https://github.com/benukas/Linkmoth/releases/tag/v0.2.1",
             "update_command": "VERSION=v0.2.1",
+            "sigstore_update_command": "VERSION=v0.2.1 --sigstore-verified",
             "verified_update_command": "VERSION=v0.2.1",
         }
         with patch.object(linkmoth_handler, "manual_update_check", return_value=result):

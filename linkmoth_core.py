@@ -99,8 +99,9 @@ def installation_provenance():
             raise ValueError
         record = json.loads(INSTALLATION_RECORD.read_text(encoding="utf-8"))
         metadata = json.loads((BASE / "linkmoth-build.json").read_text(encoding="utf-8"))
+        verification = record.get("verification")
         if (record.get("schema") != 1
-                or record.get("verification") != "sigstore-verified"
+                or verification not in {"checksum-verified", "sigstore-verified"}
                 or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(record.get("version", "")))
                 or not re.fullmatch(r"[0-9a-f]{40}", str(record.get("release_commit", "")))
                 or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("archive_sha256", "")))
@@ -109,7 +110,7 @@ def installation_provenance():
                 or metadata.get("version") != record.get("version")
                 or metadata.get("release_commit") != record.get("release_commit")):
             raise ValueError
-        return {"state": "sigstore-verified", "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
+        return {"state": verification, "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
     except FileNotFoundError:
         build_metadata = BASE / "linkmoth-build.json"
         try:
@@ -219,25 +220,42 @@ def manual_update_check():
             raise ValueError
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
         raise ValueError("official release response was invalid")
+    release_base = f"{GITHUB_REPO}/releases/download/$VERSION"
+    bootstrap_name = "linkmoth-$VERSION-bootstrap.sh"
+    safe_download = (
+        "download_linkmoth_asset() { name=\"$1\"; source=\"$BASE/$name\"; "
+        "target=\"$(curl --fail --silent --show-error --head --proto '=https' "
+        "--noproxy '*' --connect-timeout 10 --max-time 60 --output /dev/null "
+        "--write-out '%{redirect_url}' \"$source\")\" || return 1; "
+        "case \"$target\" in https://release-assets.githubusercontent.com/"
+        "github-production-release-asset/*) ;; *) echo 'Unexpected release asset redirect' >&2; "
+        "return 1 ;; esac; curl --fail --silent --show-error --proto '=https' "
+        "--noproxy '*' --connect-timeout 10 --max-time 300 --output \"$name\" \"$target\"; };"
+    )
+    normal_command = (
+        f"VERSION=v{latest}; BASE={release_base}; {safe_download} "
+        f"download_linkmoth_asset {bootstrap_name} && sudo bash {bootstrap_name}"
+    )
+    sigstore_command = (
+        f"VERSION=v{latest}; BASE={release_base}; {safe_download} "
+        f"download_linkmoth_asset {bootstrap_name} "
+        f"&& download_linkmoth_asset {bootstrap_name}.bundle "
+        f"&& cosign verify-blob --bundle {bootstrap_name}.bundle --certificate-identity "
+        f"https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION "
+        f"--certificate-oidc-issuer https://token.actions.githubusercontent.com "
+        f"{bootstrap_name} && sudo bash {bootstrap_name} --sigstore-verified"
+    )
     return {
         "installed_version": installed,
         "latest_version": latest,
         "update_available": _version_tuple(latest) > _version_tuple(installed),
         "published_at": published_at,
         "release_url": expected_url,
-        "update_command": (
-            f"VERSION=v{latest}; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
-            f"linkmoth-$VERSION-bootstrap.sh && sudo bash linkmoth-$VERSION-bootstrap.sh"
-        ),
-        "verified_update_command": (
-            f"VERSION=v{latest}; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
-            f"linkmoth-$VERSION-bootstrap.sh; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
-            f"linkmoth-$VERSION-bootstrap.sh.bundle; cosign verify-blob --bundle "
-            f"linkmoth-$VERSION-bootstrap.sh.bundle --certificate-identity "
-            f"https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION "
-            f"--certificate-oidc-issuer https://token.actions.githubusercontent.com "
-            f"linkmoth-$VERSION-bootstrap.sh && sudo bash linkmoth-$VERSION-bootstrap.sh --sigstore-verified"
-        ),
+        "update_command": normal_command,
+        "sigstore_update_command": sigstore_command,
+        # Retained for API compatibility with clients released before the
+        # optional mode was named explicitly.
+        "verified_update_command": sigstore_command,
     }
 
 
@@ -1588,5 +1606,3 @@ class _SupportPseudonyms:
         if isinstance(value, list):
             return [self.scrub(item) for item in value]
         return self.replace(value)
-
-

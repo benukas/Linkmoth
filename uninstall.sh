@@ -34,6 +34,13 @@ rmdir /usr/local/lib/linkmoth 2>/dev/null || true
 remove_ca_trust
 systemctl daemon-reload
 rm -rf /opt/linkmoth
+# Provenance describes the installed application, not retained configuration
+# or runtime history. Do not leave it behind after the application is removed.
+if [ -d /etc/linkmoth/installation.json ] && [ ! -L /etc/linkmoth/installation.json ]; then
+  echo "warning: kept unexpected /etc/linkmoth/installation.json directory" >&2
+else
+  rm -f -- /etc/linkmoth/installation.json
+fi
 
 if [ "${1:-}" = "--purge" ]; then
   rm -rf /etc/linkmoth /var/lib/linkmoth /etc/systemd/system/linkmoth.service.d

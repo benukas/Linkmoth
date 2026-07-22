@@ -60,11 +60,17 @@ cd "$OUT"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@0" \
     -czf "$NAME.tar.gz" "$NAME"
 
-if command -v sha256sum >/dev/null; then
-  sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
-else
-  shasum -a 256 "$NAME.tar.gz" > "$NAME.tar.gz.sha256"
-fi
+python3 - "$NAME.tar.gz" "$NAME.tar.gz.sha256" <<'PY'
+import hashlib, os, sys
+
+archive, output = sys.argv[1:]
+digest = hashlib.sha256()
+with open(archive, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+with open(output, "w", encoding="ascii", newline="\n") as handle:
+    handle.write(f"{digest.hexdigest()}  {os.path.basename(archive)}\n")
+PY
 
 echo "built $OUT/$NAME.tar.gz"
 cat "$OUT/$NAME.tar.gz.sha256"

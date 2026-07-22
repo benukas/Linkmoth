@@ -40,6 +40,8 @@ class ReleasePipelineTests(unittest.TestCase):
             'grep -qF "releases/download/$tag/linkmoth-$tag-bootstrap.sh" README.md',
             checks,
         )
+        self.assertIn('grep -qF "Checksum-verified release" README.md', checks)
+        self.assertIn('grep -qF -- "--sigstore-verified" ADVANCED.md', checks)
 
 
 if __name__ == "__main__":

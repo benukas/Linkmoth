@@ -301,36 +301,37 @@ class InstallationProvenanceTests(unittest.TestCase):
                 result = self.linkmoth.installation_provenance()
         self.assertEqual(result["state"], "invalid")
 
-    def test_verified_record_must_match_installed_build(self):
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            commit = "b" * 40
-            metadata = {"schema": 1, "version": "v0.2.0", "release_commit": commit}
-            record_data = {
-                **metadata,
-                "archive_sha256": "c" * 64,
-                "verification": "sigstore-verified",
-                "installed_at": "2026-07-13T12:00:00Z",
-            }
-            import json
-            (base / "linkmoth-build.json").write_text(json.dumps(metadata), encoding="utf-8")
-            record = base / "installation.json"
-            record.write_text(json.dumps(record_data), encoding="utf-8")
-            safe_stat = mock.Mock(
-                st_mode=self.linkmoth.stat.S_IFREG | 0o644, st_uid=0, st_gid=0,
-            )
-            patches = (
-                mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True),
-                mock.patch.object(linkmoth_core, "BASE", base),
-                mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", record),
-                mock.patch.object(self.linkmoth.os, "lstat", return_value=safe_stat),
-            )
-            with patches[0], patches[1], patches[2], patches[3]:
-                self.assertEqual(self.linkmoth.installation_provenance()["state"], "sigstore-verified")
-            metadata["release_commit"] = "d" * 40
-            (base / "linkmoth-build.json").write_text(json.dumps(metadata), encoding="utf-8")
-            with patches[0], patches[1], patches[2], patches[3]:
-                self.assertEqual(self.linkmoth.installation_provenance()["state"], "invalid")
+    def test_verified_records_must_match_installed_build(self):
+        for verification in ("checksum-verified", "sigstore-verified"):
+            with self.subTest(verification=verification), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                commit = "b" * 40
+                metadata = {"schema": 1, "version": "v0.2.0", "release_commit": commit}
+                record_data = {
+                    **metadata,
+                    "archive_sha256": "c" * 64,
+                    "verification": verification,
+                    "installed_at": "2026-07-13T12:00:00Z",
+                }
+                import json
+                (base / "linkmoth-build.json").write_text(json.dumps(metadata), encoding="utf-8")
+                record = base / "installation.json"
+                record.write_text(json.dumps(record_data), encoding="utf-8")
+                safe_stat = mock.Mock(
+                    st_mode=self.linkmoth.stat.S_IFREG | 0o644, st_uid=0, st_gid=0,
+                )
+                patches = (
+                    mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True),
+                    mock.patch.object(linkmoth_core, "BASE", base),
+                    mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", record),
+                    mock.patch.object(self.linkmoth.os, "lstat", return_value=safe_stat),
+                )
+                with patches[0], patches[1], patches[2], patches[3]:
+                    self.assertEqual(self.linkmoth.installation_provenance()["state"], verification)
+                metadata["release_commit"] = "d" * 40
+                (base / "linkmoth-build.json").write_text(json.dumps(metadata), encoding="utf-8")
+                with patches[0], patches[1], patches[2], patches[3]:
+                    self.assertEqual(self.linkmoth.installation_provenance()["state"], "invalid")
 
 
 class ManualUpdateCheckTests(unittest.TestCase):
@@ -368,6 +369,11 @@ class ManualUpdateCheckTests(unittest.TestCase):
         self.assertIn("VERSION=v0.2.1", result["verified_update_command"])
         self.assertIn("cosign verify-blob", result["verified_update_command"])
         self.assertIn("--sigstore-verified", result["verified_update_command"])
+        self.assertEqual(result["sigstore_update_command"], result["verified_update_command"])
+        self.assertIn("--noproxy '*'", result["update_command"])
+        self.assertIn("release-assets.githubusercontent.com", result["update_command"])
+        self.assertNotIn("--location", result["update_command"])
+        self.assertNotIn("cosign", result["update_command"])
 
     def test_update_check_rejects_wrong_release_url(self):
         payload = b'{"tag_name":"v0.2.1","published_at":"2026-07-13T00:00:00Z","html_url":"https://example.test/release"}'
@@ -1223,6 +1229,14 @@ class DoctorJsonTests(unittest.TestCase):
         self.assertEqual(payload["schema"], 1)
         self.assertIsInstance(payload["checks"], list)
         self.assertGreater(len(payload["checks"]), 5)
+        provenance = next(c for c in payload["checks"] if c["name"] == "installation provenance")
+        self.assertEqual(provenance["status"], "info")
+        self.assertIn(provenance["detail"], {
+            "Checksum-verified release", "Sigstore-verified release",
+            "Unverified/manual installation",
+            "Legacy installation – provenance unavailable",
+            "Installation record invalid",
+        })
         self.assertIn(rc, (0, 1))
         statuses = {c["status"] for c in payload["checks"]}
         self.assertTrue(statuses <= {"ok", "fail", "info"})

@@ -88,8 +88,8 @@ from the final merged commit on `main`.
 
    - public quick-start commands in `README.md`, including every release URL
      and bootstrap filename;
-   - versioned commands in `ADVANCED.md`, including the Sigstore-verified
-     default install path and the `--insecure-skip-verify` recovery path;
+   - versioned commands in `ADVANCED.md`, including the checksum-verified
+     default install path and optional `--sigstore-verified` path;
    - the top-level `CHANGELOG.md` entry for the new version (do not rewrite
      historical entries);
    - release-version assertions in `test/test_release.py` and any other
@@ -135,11 +135,12 @@ from the final merged commit on `main`.
 - The public quick start must install a versioned GitHub Release, not clone
   `main` or pipe an unversioned remote script into `sudo`.
 - The normal bootstrap must be downloaded locally and only then run with
-  `sudo bash`. By default it verifies Sigstore against the pinned release
-  workflow identity before installing, then checks the release archive's
-  SHA-256, and writes a verified installation record. Skipping Sigstore
-  requires the explicit, loudly-warned `--insecure-skip-verify` flag; only
-  that path may write an unverified/manual installation record.
+  `sudo bash`. By default it downloads the exact pinned release archive and
+  published SHA-256 file from the official repository, verifies the checksum
+  before extraction or installation, and writes a checksum-verified
+  installation record. Optional `--sigstore-verified` mode requires Cosign and
+  verifies the pinned release-workflow identity before writing a
+  Sigstore-verified record. There is no checksum-verification bypass.
 - Update the quick-start version when publishing a newer stable release.
   This is part of the mandatory version sweep above, together with Advanced
   commands, changelog, release tests, and matching `dist/` files.
