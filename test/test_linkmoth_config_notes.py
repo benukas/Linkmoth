@@ -97,7 +97,7 @@ class ConfigEfficiencyNoteTests(unittest.TestCase):
         db_mock.assert_not_called()
         measure.assert_not_called()
 
-    def test_every_note_carries_a_level_setting_and_message(self):
+    def test_every_note_carries_a_level_label_setting_and_message(self):
         notes = self.probes.config_efficiency_notes({
             "history_sample_minutes": 1, "baseline_minutes": 1,
             "ui_refresh_seconds": 2,
@@ -106,7 +106,22 @@ class ConfigEfficiencyNoteTests(unittest.TestCase):
         for note in notes:
             self.assertIn(note["level"], ("info", "warn"))
             self.assertTrue(note["setting"])
+            self.assertTrue(note["label"])
             self.assertTrue(note["message"].endswith("."))
+
+    def test_message_reads_as_a_continuation_of_its_label(self):
+        """The dashboard renders '<label>: <message>', so a message that
+        repeats its own label reads as a stutter."""
+        notes = self.probes.config_efficiency_notes({
+            "history_sample_minutes": 1, "baseline_minutes": 1,
+            "ui_refresh_seconds": 2,
+        })
+        for note in notes:
+            first_word = note["label"].split()[0].lower()
+            self.assertFalse(
+                note["message"].lower().startswith(first_word),
+                f"{note['setting']} message restates its label",
+            )
 
     def test_data_formatting_switches_between_mb_and_gb(self):
         self.assertEqual(self.probes._format_data(512), "512 MB")

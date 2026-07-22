@@ -452,15 +452,15 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 .secret-reveal { flex: none; padding: 9px 14px; font-size: 15px; }
+#config-notes { margin: 0 0 18px; }
 .config-note {
-  border-left: 3px solid var(--border); padding: 10px 14px; margin: 0 0 10px;
-  background: var(--bg); border-radius: 0 9px 9px 0; font-size: 15px; line-height: 1.5;
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--warn-bg); color: var(--warn-text);
+  padding: 13px 16px; margin: 0 0 10px; border-radius: 10px;
+  font-size: 15px; line-height: 1.5;
 }
-.config-note.warn { border-left-color: var(--warn-text); }
-.config-note .k {
-  display: block; font-size: 13px; color: var(--muted); margin-bottom: 2px;
-  font-family: ui-monospace, monospace;
-}
+.config-note .ico { flex: none; font-size: 17px; line-height: 1.35; }
+.config-note b { font-weight: 700; }
 .set-row input[type="checkbox"] {
   flex: none; width: 22px; height: 22px; min-width: 22px; cursor: pointer;
 }
@@ -2553,8 +2553,8 @@ function renderConfigNotes(notes) {
   if (!notes || !notes.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
   el.classList.remove("hidden");
   el.innerHTML = notes.map((n) =>
-    `<p class="config-note ${n.level === "warn" ? "warn" : ""}">`
-    + `<span class="k">${esc(n.setting)}</span>${esc(n.message)}</p>`
+    `<div class="config-note"><span class="ico" aria-hidden="true">&#9888;</span>`
+    + `<span><b>${esc(n.label || n.setting)}:</b> ${esc(n.message)}</span></div>`
   ).join("");
 }
 
