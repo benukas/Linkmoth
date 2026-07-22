@@ -648,6 +648,18 @@ class Engine:
         from linkmoth_outage import OUTAGE_TRACKER
         from linkmoth_push import list_subscriptions, push_available
         from linkmoth_notify import quiet_hours_status
+        # Everything that does not touch the database happens first, so the
+        # connection below is never held open across it. local_dns_runtime_
+        # info() in particular shells out to `systemctl is-active` whenever
+        # its 30s detection cache expires.
+        host = host_stats()
+        local_dns = local_dns_runtime_info()
+        settings = public_settings()
+        provenance = installation_provenance()
+        try:
+            kuma_url = _kuma_url(CFG.get("kuma_url", "auto"))
+        except ValueError:
+            kuma_url = ""
         # One connection for the whole payload. db() is re-entrant, so every
         # helper below (stats, history, meta, push, quiet hours, ...) reuses
         # this one instead of opening its own -- this endpoint is polled
@@ -676,11 +688,6 @@ class Engine:
                 last_d["checks"] = normalize_stored_checks(json.loads(last_d["checks"]))
                 if last_d.get("severity") != "ok" and last_d.get("code"):
                     patterns = self.patterns(code=last_d["code"])
-            try:
-                kuma_url = _kuma_url(CFG.get("kuma_url", "auto"))
-            except ValueError:
-                kuma_url = ""
-            host = host_stats()
             database = db_maintenance_info()
             return {
                 "now": time.time(),
@@ -702,8 +709,8 @@ class Engine:
                 "history_meta": self.history_meta(),
                 "fire_drill": fire_drill_status(),
                 "kuma_url": kuma_url,
-                "settings": public_settings(),
-                "local_dns": local_dns_runtime_info(),
+                "settings": settings,
+                "local_dns": local_dns,
                 "database": database,
                 "host": host,
                 "observer_health": {
@@ -720,7 +727,7 @@ class Engine:
                     "version": VERSION,
                     "github": GITHUB_REPO,
                     "changelog": CHANGELOG_URL,
-                    "provenance": installation_provenance(),
+                    "provenance": provenance,
                 },
             }
 
