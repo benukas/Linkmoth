@@ -2,14 +2,14 @@
 device/webhook configuration, for moving to new hardware.
 
 Deliberately excludes everything in auth.json (the password hash is fine at
-rest -- scrypt -- but the TOTP seed and webhook bearer token are stored
+rest – scrypt – but the TOTP seed and webhook bearer token are stored
 plaintext, since the server must be able to read them back) and the VAPID
 push key, plus the TLS CA (its private key is just as sensitive as those
 excluded secrets: anyone holding it can mint certificates any already-
 trusting browser will accept, and a fresh install already generates its own
 CA). Restoring onto a new device means redoing the existing one-time setup
 (--auth-onboarding-token -> --auth-set-password, re-enroll TOTP if used, note
-the freshly generated webhook secret) -- a one-time inconvenience in exchange
+the freshly generated webhook secret) – a one-time inconvenience in exchange
 for a backup file that never carries an active credential.
 
 The database snapshot itself is also sanitized before it's embedded (see
@@ -54,7 +54,7 @@ MEMBER_MAX_BYTES = {
 }
 
 # Settings flags whose paired credential (a webhook URL) is stripped from
-# every backup -- so the flag must be forced off, or a restore onto a fresh
+# every backup – so the flag must be forced off, or a restore onto a fresh
 # device fails validation ("enabled but no URL") for a backup that was
 # perfectly valid on the source.
 _BACKUP_DISABLED_SETTING_FLAGS = (
@@ -65,7 +65,7 @@ _BACKUP_DISABLED_SETTING_FLAGS = (
 # Statements that strip secrets and device-specific state from a DB snapshot
 # before it's embedded in a backup archive. Table names are hardcoded, not
 # user input, so the string formatting here isn't building SQL from
-# untrusted data -- but each statement is still guarded individually so a
+# untrusted data – but each statement is still guarded individually so a
 # schema that predates one of these tables (a very old backup) doesn't fail
 # the whole snapshot. Outbound webhooks are also disabled (enabled=0) and
 # their last-delivery bookkeeping cleared: their destination URL/headers are
@@ -118,7 +118,7 @@ class BackupInProgress(RuntimeError):
 
 def _snapshot_db_to_path(conn, dest_path):
     """Write a consistent, sanitized point-in-time copy of a live SQLite
-    connection's data to `dest_path`, via the stdlib backup API -- safe
+    connection's data to `dest_path`, via the stdlib backup API – safe
     even while the source is being written to under WAL, unlike a raw file
     copy which could grab a torn file."""
     snapshot = sqlite3.connect(dest_path)
@@ -139,7 +139,7 @@ BACKUP_LOCK = threading.Lock()
 def build_backup_archive_to_path(archive_path, db_connect, export_settings, version):
     """Write a backup archive (manifest + sanitized DB snapshot + redacted
     settings) directly to a 0600 file at `archive_path`, without ever
-    holding more than one copy of the database in memory -- so a caller
+    holding more than one copy of the database in memory – so a caller
     (the HTTP endpoint) can stream the result back to a client afterward
     instead of returning several database-sizes of bytes in one response."""
     manifest = {
@@ -168,7 +168,7 @@ def build_backup_archive_to_path(archive_path, db_connect, export_settings, vers
 
 
 def build_backup_archive(db_connect, export_settings, version):
-    """Return a backup archive as zip bytes (CLI/test convenience -- the
+    """Return a backup archive as zip bytes (CLI/test convenience – the
     HTTP endpoint uses build_backup_archive_to_path to stream instead of
     holding the whole archive in memory)."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -178,7 +178,7 @@ def build_backup_archive(db_connect, export_settings, version):
 
 
 def read_backup_manifest(archive_path):
-    """Read just the manifest, without restoring anything -- lets a caller
+    """Read just the manifest, without restoring anything – lets a caller
     validate/display a backup before committing to the restore."""
     with zipfile.ZipFile(archive_path) as zf:
         return json.loads(zf.read(MANIFEST_NAME))
@@ -186,7 +186,7 @@ def read_backup_manifest(archive_path):
 
 def _ensure_db_not_in_use(db_path):
     """Best-effort check that nothing else holds the live database open,
-    beyond whatever process-manager check the caller already did -- catches
+    beyond whatever process-manager check the caller already did – catches
     a Linkmoth run manually (not via systemd) that a service-status check
     would miss entirely."""
     db_path = Path(db_path)
@@ -289,8 +289,8 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
     """Restore history and settings from a backup archive.
 
     Everything is validated and migrated against a scratch copy in a
-    temporary directory -- on the same filesystem as `db_path`, so the final
-    swap is an atomic rename -- before the live database is touched at all.
+    temporary directory – on the same filesystem as `db_path`, so the final
+    swap is an atomic rename – before the live database is touched at all.
     `init_db` runs schema creation/migration against that scratch copy first
     (it accepts an optional path, same as linkmoth_core.init_db). The
     archived settings are validated up front too, via `validate_settings`
@@ -333,7 +333,7 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
 
         # Re-force credential-dependent flags off even for an older backup
         # made before the builder did this, then validate the result up
-        # front -- so a settings payload that can't be applied refuses the
+        # front – so a settings payload that can't be applied refuses the
         # restore now, before the database is swapped, instead of leaving a
         # restored database with settings that silently never took.
         settings = _sanitize_backup_settings(settings)
@@ -373,7 +373,7 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
                     f"{row[0] if row else 'no result'}"
                 )
 
-            # Migrate the scratch copy first -- a failure here never
+            # Migrate the scratch copy first – a failure here never
             # touches the live database at all.
             try:
                 init_db(scratch_path)
@@ -407,9 +407,11 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
             f"{settings_result}"
         )
 
+    # Reaching here means the settings applied cleanly: both a raised
+    # exception and a (False, errors) return above roll back and raise, so
+    # there is no partially-restored outcome left to report.
     return {
         "manifest": manifest,
         "preserved_previous_db": str(preserved) if preserved else None,
-        "settings_applied": settings_ok,
-        "settings_errors": None if settings_ok else settings_result,
+        "settings_applied": True,
     }

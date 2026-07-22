@@ -603,8 +603,13 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   background: var(--card); border: 1px solid var(--border); border-radius: 14px;
   padding: 28px 32px; max-width: 420px; width: 100%;
 }
-.auth-box h2 { margin: 0 0 8px; font-size: 24px; text-align: center; }
-.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 6px 0 18px; }
+/* The wordmark above is the hero; the mode label reads as a quiet caption
+   beneath it rather than a second competing title. */
+.auth-box h2 {
+  margin: 0 0 22px; font-size: 13px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted); text-align: center;
+}
+.auth-brand { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 8px 0 6px; }
 .auth-brand img { width: 128px; height: auto; filter: invert(var(--logo-invert, 0)); }
 .auth-brand span { font-size: 24px; font-weight: 600; letter-spacing: 0.3px; }
 .auth-note { color: var(--muted); line-height: 1.45; margin: 0 0 16px; }
@@ -644,7 +649,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       <span>Linkmoth</span>
     </div>
     <h2 id="auth-title">Sign in</h2>
-    <p class="auth-trust-banner"><b>Certificate safety:</b> before trusting the
+    <p id="auth-trust-banner" class="auth-trust-banner hidden"><b>Certificate safety:</b> before trusting the
       <a href="/ca.crt">Linkmoth certificate</a>, compare its SHA-256 fingerprint
       with the value printed by the installer or obtained over SSH. Never enroll
       a CA on a guest, shared, or untrusted network.</p>
@@ -2259,6 +2264,11 @@ async function authStatus() {
 
 function showAuthGate(mode) {
   $("auth-gate").classList.remove("hidden");
+  // The certificate-safety guidance only matters at the one moment you decide
+  // to trust the CA: first-run onboarding, before it is enrolled. On every
+  // later sign-in you already reached this page over the trusted cert, so
+  // showing it again is noise.
+  $("auth-trust-banner").classList.toggle("hidden", mode !== "onboarding");
   $("auth-onboarding-step").classList.toggle("hidden", mode !== "onboarding");
   $("auth-role-step").classList.toggle("hidden", mode !== "role");
   $("auth-password-step").classList.toggle("hidden", mode !== "password");
@@ -4915,15 +4925,30 @@ document.addEventListener("click", async (ev) => {
   setTimeout(() => { btn.textContent = "Copy story"; }, 1800);
 });
 
+// The server clamps retention_days to [1, 3650] before deciding whether a
+// save reduces it. Clamp identically here so the two never disagree: a
+// cleared field (Number("") === 0) would otherwise skip the client confirm
+// yet still read as a reduction to 1 server-side, which 409s with no way for
+// the UI to confirm it.
+function clampRetentionDays(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.min(3650, Math.max(1, Math.round(value)));
+}
+
+function retentionIsReduced(nextDays) {
+  const clamped = clampRetentionDays(nextDays);
+  return clamped !== null && Number.isFinite(savedRetentionDays) &&
+    clamped < savedRetentionDays;
+}
+
 function confirmRetentionReduction(nextDays) {
-  if (!Number.isInteger(nextDays) || nextDays < 1 || nextDays > 3650 ||
-      !Number.isFinite(savedRetentionDays) ||
-      nextDays >= savedRetentionDays) return true;
+  if (!retentionIsReduced(nextDays)) return true;
+  const clamped = clampRetentionDays(nextDays);
   const oldUnit = savedRetentionDays === 1 ? "day" : "days";
-  const nextUnit = nextDays === 1 ? "day" : "days";
+  const nextUnit = clamped === 1 ? "day" : "days";
   return confirm(
     `Are you sure you want to reduce history from ${savedRetentionDays} ${oldUnit} ` +
-    `to ${nextDays} ${nextUnit}? The next cleanup will permanently delete ` +
+    `to ${clamped} ${nextUnit}? The next cleanup will permanently delete ` +
     `older history. Increasing retention later cannot recover it.`
   );
 }
@@ -4961,9 +4986,7 @@ $("save-settings").addEventListener("click", async () => {
     setTimeout(() => { msg.textContent = ""; }, 5000);
     return;
   }
-  if (Number.isInteger(nextRetentionDays) && nextRetentionDays >= 1 &&
-      nextRetentionDays <= 3650 && Number.isFinite(savedRetentionDays) &&
-      nextRetentionDays < savedRetentionDays) {
+  if (retentionIsReduced(nextRetentionDays)) {
     payload._confirm_retention_reduction = true;
   }
   try {

@@ -423,9 +423,26 @@ def _format_data(megabytes):
     return f"{round(megabytes)} MB"
 
 
+def _int_setting(value, default=0):
+    """Best-effort int for a config value that may have been hand-edited to a
+    non-numeric type, preserving the `int(value or default)` fallback the
+    callers below relied on: a falsy value (0, None, "") means "use the
+    default". _coerce_config_types checks the top-level number keys and that
+    `quality` is a dict, but not the individual quality sub-keys, so a stray
+    "load_test_hours": "soon" reaches here intact. This runs inside
+    /api/status; a raise would take the whole dashboard down over one bad
+    key, so fall back to the default instead."""
+    if not value:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def config_efficiency_notes(cfg=None):
     """Advisory notes for a configured cadence that costs noticeably more
-    than it returns -- monthly data for scheduled load tests, and check
+    than it returns – monthly data for scheduled load tests, and check
     frequencies that mostly add host load without improving detection.
 
     Pure arithmetic over the configuration: no probing, no database, and
@@ -436,8 +453,8 @@ def config_efficiency_notes(cfg=None):
     quality = quality_config()
     notes = []
 
-    hours = int(quality.get("load_test_hours") or 0)
-    max_mb = int(quality.get("load_test_max_mb") or 25)
+    hours = _int_setting(quality.get("load_test_hours"), 0)
+    max_mb = _int_setting(quality.get("load_test_max_mb"), 25)
     if hours > 0 and max_mb > 0:
         monthly_mb = (24.0 / hours) * 30 * max_mb
         if monthly_mb >= 2048:
@@ -453,8 +470,8 @@ def config_efficiency_notes(cfg=None):
                 ),
             })
 
-    sample_minutes = int(cfg.get("history_sample_minutes") or 0)
-    sample_count = int(quality.get("sample_count") or 10)
+    sample_minutes = _int_setting(cfg.get("history_sample_minutes"), 0)
+    sample_count = _int_setting(quality.get("sample_count"), 10)
     if 0 < sample_minutes <= 1:
         per_day = int(1440 / sample_minutes)
         notes.append({
@@ -469,7 +486,7 @@ def config_efficiency_notes(cfg=None):
             ),
         })
 
-    baseline_minutes = int(cfg.get("baseline_minutes") or 0)
+    baseline_minutes = _int_setting(cfg.get("baseline_minutes"), 0)
     if 0 < baseline_minutes < 5:
         notes.append({
             "level": "warn",
@@ -482,7 +499,7 @@ def config_efficiency_notes(cfg=None):
             ),
         })
 
-    refresh = int(cfg.get("ui_refresh_seconds") or 5)
+    refresh = _int_setting(cfg.get("ui_refresh_seconds"), 5)
     if refresh <= 2:
         notes.append({
             "level": "warn",
@@ -1946,7 +1963,7 @@ def _day_start(ts):
     A host without an RTC (every Raspberry Pi) can record samples before NTP
     corrects its clock, leaving rows dated before the Unix epoch or far in the
     future.  Some platforms normalize pre-epoch values instead of raising, so
-    reject those explicitly.  This runs inside /api/status -- an unguarded
+    reject those explicitly.  This runs inside /api/status – an unguarded
     raise here would take the whole dashboard down over one bad row, so such
     rows are reported unusable and skipped by callers."""
     try:
@@ -1959,7 +1976,14 @@ def _day_start(ts):
 
 
 def _shift_day_start(day_start, days):
-    """Move a local midnight by calendar days, preserving DST boundaries."""
+    """Move a local midnight by calendar days, preserving DST boundaries.
+
+    Returns None for an unusable input. _day_start can return None for a bad
+    timestamp and the two compose, so this must propagate that rather than
+    fabricate a date: time.localtime(None) silently means "now", which would
+    turn a missing day into today without anyone noticing."""
+    if day_start is None:
+        return None
     try:
         lt = time.localtime(day_start)
         return time.mktime((
@@ -1983,7 +2007,7 @@ SCORE_CACHE_SECONDS = 60
 
 def connection_score(days=30, use_cache=True):
     """A daily connection-health grade built only from evidence already
-    stored -- quality samples, any bufferbloat tests that were run, and
+    stored – quality samples, any bufferbloat tests that were run, and
     recorded outage segments. Read-only: it never probes the network, so
     calling it costs nothing but a few SQLite reads.
 

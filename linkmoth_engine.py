@@ -1,5 +1,5 @@
 """Linkmoth engine: the Engine class (the stateful diagnosis/incident
-orchestrator) and the singletons/background jobs that operate on it -- the
+orchestrator) and the singletons/background jobs that operate on it – the
 monthly digest, Prometheus metrics, and the nightly janitor sweep.
 
 Owns the ENGINE/DEVICES/AUTH runtime singletons (rather than linkmoth.py's
@@ -654,7 +654,7 @@ class Engine:
             kuma_url = ""
         # One connection for the whole payload. db() is re-entrant, so every
         # helper below (stats, history, meta, push, quiet hours, ...) reuses
-        # this one instead of opening its own -- this endpoint is polled
+        # this one instead of opening its own – this endpoint is polled
         # every few seconds by every open dashboard, and the connect/close
         # round trips dominated it. It also means the whole payload is read
         # from a single consistent snapshot.

@@ -55,7 +55,7 @@ class WebhookRouteTests(LinkmothTestBase):
         super().setUp()
         # These tests deliver to a real loopback catcher to exercise the CRUD,
         # masking, queue, and lifecycle machinery. The product rejects loopback
-        # webhook targets (SSRF hardening -- covered by the dedicated unit tests
+        # webhook targets (SSRF hardening – covered by the dedicated unit tests
         # in test_linkmoth_webhooks); here we permit only loopback literals at
         # creation and mock the delivery-time guard, keeping all other URL
         # validation intact.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for linkmoth_backup: the portable backup/restore archive (history,
-settings, device/webhook configuration -- no auth.json secrets, no VAPID
+settings, device/webhook configuration – no auth.json secrets, no VAPID
 key, no TLS CA, and the DB snapshot itself is sanitized of webhook
 URLs/headers, push subscriptions, queues, and auth session/attempt/TOTP
 state before it's ever embedded)."""
@@ -26,7 +26,7 @@ import linkmoth_backup as backup
 
 def _reimport_core(state_dir):
     """Fresh linkmoth_core bound to a new state directory, matching the
-    module-cache-reset pattern used throughout this test suite -- linkmoth_
+    module-cache-reset pattern used throughout this test suite – linkmoth_
     core's DB_PATH/CFG/SETTINGS_PATH are computed once at import time from
     the LINKMOTH_STATE_DIR env var, so a different "device" needs a fresh
     reimport, not just a different argument."""
@@ -135,7 +135,7 @@ class BackupRestoreRoundTripTests(unittest.TestCase):
 
     def test_backup_forces_credential_dependent_flags_off(self):
         """Discord/notify-webhook enable flags are forced off in the backup,
-        since their URLs aren't carried -- otherwise a restore onto a fresh
+        since their URLs aren't carried – otherwise a restore onto a fresh
         device fails 'enabled but no URL' validation."""
         core = self._seed_source()
         core.CFG["discord_notifications_enabled"] = True
@@ -521,7 +521,7 @@ class BackupRestoreRoundTripTests(unittest.TestCase):
 class CliRestoreForceFlagTests(unittest.TestCase):
     """The P1/P2 finding: --force let a restore proceed against an active
     service, racing WAL connections it doesn't know about. --force no
-    longer exists at all -- restore always checks service status."""
+    longer exists at all – restore always checks service status."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="linkmoth_restore_force_"))
@@ -552,7 +552,7 @@ class CliRestoreForceFlagTests(unittest.TestCase):
         finally:
             sys.argv = old_argv
         # Gets past the service-status gate and fails later, on the archive
-        # path not existing -- proving the gate itself isn't what stopped it.
+        # path not existing – proving the gate itself isn't what stopped it.
         self.assertEqual(rc, 1)
 
 

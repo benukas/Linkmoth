@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import tempfile
 import time
+import traceback
 import unittest
 from pathlib import Path
 
@@ -108,10 +109,15 @@ class ReentrantDbTests(unittest.TestCase):
     def setUpClass(cls):
         cls.state = Path(tempfile.mkdtemp(prefix="linkmoth_reentrant_"))
         os.environ["LINKMOTH_STATE_DIR"] = str(cls.state)
-        for _mod in ("linkmoth", "linkmoth_core", "linkmoth_probes",
-                     "linkmoth_engine", "linkmoth_handler"):
-            if _mod in sys.modules:
-                del sys.modules[_mod]
+        # Purge every linkmoth module, not just the handful this test names
+        # directly. status() fans out through linkmoth_outage, _push and
+        # _notify too; if those are left bound to an earlier test's now-stale
+        # linkmoth_core, their db() sees a different thread-local than the one
+        # status() populated and opens a second connection. Reloading the
+        # whole graph together reproduces production, where nothing reloads
+        # and every module shares one core.
+        for _mod in [m for m in list(sys.modules) if m.startswith("linkmoth")]:
+            del sys.modules[_mod]
         cls.linkmoth = importlib.import_module("linkmoth")
         cls.core = importlib.import_module("linkmoth_core")
         cls.linkmoth.init_db()
@@ -185,7 +191,10 @@ class ReentrantDbTests(unittest.TestCase):
         real_connect = sqlite3.connect
 
         def counting(*args, **kwargs):
-            opened.append(1)
+            # Record where each connection came from. A bare count tells you
+            # the fan-out regressed but not which helper stopped reusing the
+            # open connection, which is the only thing worth knowing here.
+            opened.append(traceback.extract_stack()[:-1])
             return real_connect(*args, **kwargs)
 
         sqlite3.connect = counting
@@ -193,7 +202,19 @@ class ReentrantDbTests(unittest.TestCase):
             engine.status()
         finally:
             sqlite3.connect = real_connect
-        self.assertEqual(len(opened), 1)
+        self.assertEqual(len(opened), 1, self._describe_connections(opened))
+
+    @staticmethod
+    def _describe_connections(opened):
+        lines = []
+        for index, stack in enumerate(opened, 1):
+            caller = next(
+                (f for f in reversed(stack) if "linkmoth" in f.filename), None)
+            lines.append(
+                f"connection {index} opened from "
+                + (f"{Path(caller.filename).name}:{caller.lineno} "
+                   f"in {caller.name}()" if caller else "unknown"))
+        return "status() opened more than one connection:\n" + "\n".join(lines)
 
 
 if __name__ == "__main__":

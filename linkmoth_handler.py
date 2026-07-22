@@ -4,7 +4,7 @@ asset serving, session/CSRF/CSP enforcement) and the --doctor CLI dump.
 Looks up linkmoth's own module object as `linkmoth.ENGINE`/`linkmoth.DEVICES`/
 `linkmoth.get_auth()` etc. (created in linkmoth_engine.py and imported by
 linkmoth.py's bootstrap) rather than `from linkmoth import ...`, since
-linkmoth.py imports names back from this module -- a module-level
+linkmoth.py imports names back from this module – a module-level
 `import linkmoth` here would be circular for any caller that imports this
 module before linkmoth.py has run (linkmoth.py's own bootstrap works around
 that for itself by aliasing `sys.modules["linkmoth"]` to `__main__` before
@@ -12,7 +12,7 @@ its own imports run, but that trick is specific to being __main__, so it
 doesn't help a caller that imports linkmoth_handler directly or first). The
 `linkmoth` global below is a lazy proxy (_LazyLinkmothModule) that only
 performs the real `import linkmoth` the first time something reads an
-attribute off it -- always at request time, well after linkmoth.py has
+attribute off it – always at request time, well after linkmoth.py has
 actually finished loading, regardless of who constructed the server.
 """
 import ipaddress
@@ -55,7 +55,7 @@ from linkmoth_probes import (
 
 class _LazyLinkmothModule:
     """Defers `import linkmoth` until the first actual attribute access
-    (e.g. `linkmoth.ENGINE`) instead of this module's own import time -- see
+    (e.g. `linkmoth.ENGINE`) instead of this module's own import time – see
     the module docstring for why an eager import here is circular for a
     caller that imports linkmoth_handler before linkmoth.py has run. Every
     Handler method reads through this at request time, always well after
@@ -534,7 +534,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send_file(self, code, file_path, ctype, extra_headers=None, chunk_size=262144):
         """Like _send, but streams `file_path`'s contents in chunks instead
-        of holding the whole body in memory -- used for the backup archive,
+        of holding the whole body in memory – used for the backup archive,
         which can be multiple megabytes on a long-lived install."""
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -1074,10 +1074,14 @@ class Handler(BaseHTTPRequestHandler):
             payload = linkmoth.ENGINE.status()
             payload["auth"] = auth.public_status(session)
             payload["quality"] = quality_summary(limit=120)
-            payload["config_notes"] = config_efficiency_notes()
-            # The score is a presentational extra; /api/status is what the
-            # whole dashboard depends on. Never let a failure computing it
-            # take the rest of the payload down with it.
+            # The config notes and the score are presentational extras;
+            # /api/status is what the whole dashboard depends on. Never let a
+            # failure computing either take the rest of the payload down.
+            try:
+                payload["config_notes"] = config_efficiency_notes()
+            except Exception as exc:
+                print(f"config notes failed: {exc}", file=sys.stderr, flush=True)
+                payload["config_notes"] = []
             try:
                 payload["score"] = connection_score()
             except Exception as exc:

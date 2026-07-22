@@ -2,7 +2,7 @@
 """Tests for config_efficiency_notes: advisory notes about a configured
 cadence that costs more than it returns.
 
-Nothing here is enforced -- the settings stay valid. The notes only have to
+Nothing here is enforced – the settings stay valid. The notes only have to
 be accurate, silent for sensible configurations, and free of any probing.
 """
 import importlib
@@ -127,6 +127,20 @@ class ConfigEfficiencyNoteTests(unittest.TestCase):
         self.assertEqual(self.probes._format_data(512), "512 MB")
         self.assertEqual(self.probes._format_data(2048), "2 GB")
         self.assertEqual(self.probes._format_data(18000), "17.6 GB")
+
+    def test_hand_edited_non_numeric_config_does_not_raise(self):
+        """config_efficiency_notes runs inside /api/status. _coerce_config_types
+        does not validate the quality sub-keys, so a hand-edited config can put
+        a string where a number is expected; the notes must degrade to silence
+        rather than take the whole dashboard down."""
+        notes = self._notes_for(
+            ui_refresh_seconds="soon",
+            history_sample_minutes="often",
+            baseline_minutes={},
+            quality={"load_test_hours": "hourly", "load_test_max_mb": None,
+                     "sample_count": "lots"},
+        )
+        self.assertEqual(notes, {})
 
 
 if __name__ == "__main__":

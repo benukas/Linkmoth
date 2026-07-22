@@ -388,7 +388,7 @@ class EngineDiscordIntegrationTests(unittest.TestCase):
     def test_incident_loop_survives_transient_diagnose_error(self):
         """A transient failure during a recheck (e.g. a DB lock that exhausts
         its retry budget) must not kill the recheck thread and leave the
-        incident stuck open forever -- the loop logs it and keeps going."""
+        incident stuck open forever – the loop logs it and keeps going."""
         inc_id = self._open_incident()
         ok = {"severity": "ok", "code": "all_clear", "title": "All clear",
               "explain": "fine", "hint": ""}

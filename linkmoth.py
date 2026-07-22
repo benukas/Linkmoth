@@ -26,7 +26,7 @@ from urllib import request as urlrequest
 from urllib.parse import urlparse
 
 # When run directly (`python linkmoth.py`), this module executes as
-# "__main__", not "linkmoth" -- so linkmoth_handler.py's `import linkmoth`
+# "__main__", not "linkmoth" – so linkmoth_handler.py's `import linkmoth`
 # (used for its own lazy, circular-import-safe access to ENGINE/DEVICES/
 # get_auth) would otherwise trigger a second, fresh top-to-bottom execution
 # of this whole file under the separate name "linkmoth". Register this
@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
 # Re-exports the full public surface of the four split-out modules so
 # `import linkmoth; linkmoth.X` keeps working for every name the codebase
-# (tests, docs, external tooling) referenced before the split -- this file
+# (tests, docs, external tooling) referenced before the split – this file
 # is a thin bootstrap, but it's still the one importable entry point.
 from linkmoth_core import (
     AUTO_VACUUM_MODE, AUTO_VACUUM_NAMES, BASE, BoundedTLSServer, CFG,
@@ -136,7 +136,7 @@ def auth_set_password():
         return 1
     secret = auth.ensure_webhook_secret()
     # Intentional one-time CLI reveal to the operator running this flag by
-    # hand -- not a persisted log.
+    # hand – not a persisted log.
     # codeql[py/clear-text-logging-sensitive-data]
     print(f"admin password set; webhook secret: {secret}")
     return 0
@@ -151,7 +151,7 @@ def auth_setup_totp():
     secret, codes = auth.setup_totp()
     uri = auth.totp_provisioning_uri()
     # Intentional one-time CLI reveal to the operator running this flag by
-    # hand -- not a persisted log.
+    # hand – not a persisted log.
     # codeql[py/clear-text-logging-sensitive-data]
     print("TOTP secret (base32):", secret)
     # codeql[py/clear-text-logging-sensitive-data]
@@ -166,7 +166,7 @@ def auth_show_webhook():
     init_db()
     auth = get_auth()
     # Intentional one-time CLI reveal to the operator running this flag by
-    # hand -- not a persisted log; this flag's entire purpose is to print it.
+    # hand – not a persisted log; this flag's entire purpose is to print it.
     # codeql[py/clear-text-logging-sensitive-data]
     print(auth.ensure_webhook_secret())
     return 0
@@ -184,7 +184,7 @@ def auth_rotate_webhook():
     init_db()
     auth = get_auth()
     # Intentional one-time CLI reveal to the operator running this flag by
-    # hand -- not a persisted log; this flag's entire purpose is to print it.
+    # hand – not a persisted log; this flag's entire purpose is to print it.
     # codeql[py/clear-text-logging-sensitive-data]
     print(auth.rotate_webhook_secret())
     print("webhook secret rotated; update every /trigger client now", file=sys.stderr)
@@ -216,7 +216,7 @@ def backup_create():
     if not path:
         path = f"linkmoth-backup-{time.strftime('%Y%m%d-%H%M%S')}.zip"
     # Stream straight to the destination (0600) instead of building the whole
-    # archive in RAM first -- the same path the dashboard endpoint uses.
+    # archive in RAM first – the same path the dashboard endpoint uses.
     dest = Path(path)
     build_backup_archive_to_path(dest, db, _export_settings, VERSION)
     print(f"backup written to {path} ({dest.stat().st_size} bytes)")
@@ -251,11 +251,6 @@ def backup_restore():
     print(f"restored from a backup created {created}")
     if summary["preserved_previous_db"]:
         print(f"previous database preserved at {summary['preserved_previous_db']}")
-    if not summary["settings_applied"]:
-        print(
-            f"some settings could not be restored: {summary['settings_errors']}",
-            file=sys.stderr,
-        )
     print(
         "\nFinish setup on this device:\n"
         "  1. python3 linkmoth.py --auth-onboarding-token   # then --auth-set-password\n"
@@ -325,7 +320,7 @@ def main():
             # sample() open the database (which raises if a lock can't be
             # acquired within its retry budget) and run live probes, any of
             # which can raise. An unhandled error here must not kill this
-            # thread -- that would silently stop incident auto-detection and
+            # thread – that would silently stop incident auto-detection and
             # latency-history recording while the dashboard still looked
             # healthy. The pacing sleep stays outside the guard.
             try:

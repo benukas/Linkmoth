@@ -2,7 +2,7 @@
 """Tests for connection_score: the daily connection-health grade.
 
 It is deliberately a pure read-only aggregation over evidence already
-stored (quality_samples, load_tests, incident outage segments) -- it must
+stored (quality_samples, load_tests, incident outage segments) – it must
 never probe the network, and it must refuse to invent a grade for a day
 that does not have enough samples behind it.
 """
@@ -37,6 +37,15 @@ class ConnectionScoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="linkmoth_score_"))
         self.core, self.probes = _fresh(self.tmp)
+
+    def _pinned_noon(self):
+        """A clock pinned to local noon today, so tests that place an outage
+        "an hour ago" stay inside the current local day. With a live clock the
+        suite fails whenever it happens to run within an hour of midnight: the
+        outage then lands in yesterday's bucket and today's grade never sees
+        it. Seeding and scoring must share this same pinned now."""
+        noon = self.probes._day_start(time.time()) + 12 * 3600
+        return mock.patch.object(self.probes.time, "time", return_value=noon)
 
     def _seed(self, days=30, latency=18.0, jitter=2.0, loss=0.0,
               per_day=24, override=None):
@@ -135,41 +144,43 @@ class ConnectionScoreTests(unittest.TestCase):
         self.assertLessEqual(bloated["factors"]["bufferbloat"], -15)
 
     def test_outage_time_is_penalised(self):
-        self._seed()
-        clean = self.probes.connection_score(use_cache=False)["score"]
-        now = time.time()
-        with self.core.db() as conn:
-            cur = conn.execute(
-                "INSERT INTO incidents(started, source, detail, resolved)"
-                " VALUES(?,?,?,?)",
-                (now - 3600, "baseline", "wan_down", now - 1800),
-            )
-            conn.execute(
-                "INSERT INTO incident_outage_segments(incident_id, started, ended)"
-                " VALUES(?,?,?)",
-                (cur.lastrowid, now - 3600, now - 1800),
-            )
-        degraded = self.probes.connection_score(use_cache=False)
+        with self._pinned_noon():
+            self._seed()
+            clean = self.probes.connection_score(use_cache=False)["score"]
+            now = time.time()
+            with self.core.db() as conn:
+                cur = conn.execute(
+                    "INSERT INTO incidents(started, source, detail, resolved)"
+                    " VALUES(?,?,?,?)",
+                    (now - 3600, "baseline", "wan_down", now - 1800),
+                )
+                conn.execute(
+                    "INSERT INTO incident_outage_segments(incident_id, started, ended)"
+                    " VALUES(?,?,?)",
+                    (cur.lastrowid, now - 3600, now - 1800),
+                )
+            degraded = self.probes.connection_score(use_cache=False)
         self.assertLess(degraded["score"], clean)
         self.assertLessEqual(degraded["factors"]["downtime"], -20)
 
     def test_false_alarm_incident_does_not_count_as_downtime(self):
-        self._seed()
-        clean = self.probes.connection_score(use_cache=False)["score"]
-        now = time.time()
-        with self.core.db() as conn:
-            cur = conn.execute(
-                "INSERT INTO incidents(started, source, detail, resolved,"
-                " false_alarm) VALUES(?,?,?,?,?)",
-                (now - 3600, "baseline", "wan_down", now - 1800, 1),
-            )
-            conn.execute(
-                "INSERT INTO incident_outage_segments(incident_id, started, ended)"
-                " VALUES(?,?,?)",
-                (cur.lastrowid, now - 3600, now - 1800),
-            )
-        self.assertEqual(
-            self.probes.connection_score(use_cache=False)["score"], clean)
+        with self._pinned_noon():
+            self._seed()
+            clean = self.probes.connection_score(use_cache=False)["score"]
+            now = time.time()
+            with self.core.db() as conn:
+                cur = conn.execute(
+                    "INSERT INTO incidents(started, source, detail, resolved,"
+                    " false_alarm) VALUES(?,?,?,?,?)",
+                    (now - 3600, "baseline", "wan_down", now - 1800, 1),
+                )
+                conn.execute(
+                    "INSERT INTO incident_outage_segments(incident_id, started, ended)"
+                    " VALUES(?,?,?)",
+                    (cur.lastrowid, now - 3600, now - 1800),
+                )
+            degraded = self.probes.connection_score(use_cache=False)["score"]
+        self.assertEqual(degraded, clean)
 
     def test_result_is_cached_between_status_polls(self):
         """/api/status is polled every few seconds by every open dashboard,
@@ -200,7 +211,7 @@ class ConnectionScoreTests(unittest.TestCase):
     def test_out_of_range_timestamp_does_not_break_the_score(self):
         """A host without an RTC can record samples before NTP fixes its
         clock. localtime/mktime raise on those rows, and this runs inside
-        /api/status -- one bad row must not take the dashboard down."""
+        /api/status – one bad row must not take the dashboard down."""
         self._seed()
         with self.core.db() as conn:
             for bad in (10**18, -8640000, 10**12):
