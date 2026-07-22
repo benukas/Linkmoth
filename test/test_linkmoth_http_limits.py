@@ -94,6 +94,29 @@ class BoundedTLSServerTests(unittest.TestCase):
             time.sleep(0.05)
             server.server_close()
 
+    def test_rejected_worker_submission_closes_socket_and_releases_slot(self):
+        server = self.linkmoth.BoundedTLSServer(
+            ("127.0.0.1", 0), self.linkmoth.Handler, _PassthroughTLSContext(),
+        )
+        request, peer = socket.socketpair()
+        try:
+            with mock.patch.object(
+                server._workers, "submit", side_effect=RuntimeError("shutting down"),
+            ):
+                server.process_request(request, ("127.0.0.1", 1))
+            peer.settimeout(1)
+            self.assertEqual(peer.recv(1), b"")
+
+            acquired = 0
+            while server._slots.acquire(blocking=False):
+                acquired += 1
+            self.assertEqual(acquired, self.linkmoth.MAX_HTTP_CONNECTIONS)
+            for _ in range(acquired):
+                server._slots.release()
+        finally:
+            peer.close()
+            server.server_close()
+
     def test_partial_headers_release_all_workers_after_total_deadline(self):
         context = _PassthroughTLSContext()
 

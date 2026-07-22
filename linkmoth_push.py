@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 from urllib.parse import urlparse
 
 VAPID_SUBJECT = "mailto:linkmoth@localhost"
@@ -185,7 +185,7 @@ def _send_one(
     subscription: dict,
     payload: dict,
     priv_path: Path,
-) -> Optional[str]:
+) -> Tuple[bool, Optional[str]]:
     from pywebpush import WebPushException, webpush
 
     info = {
@@ -200,20 +200,20 @@ def _send_one(
             vapid_claims={"sub": VAPID_SUBJECT},
             timeout=PUSH_TIMEOUT,
         )
-        return None
+        return True, None
     except WebPushException as e:
         status = getattr(getattr(e, "response", None), "status_code", None)
         if status in (404, 410):
-            return subscription["endpoint"]
+            return False, subscription["endpoint"]
         print(
             f"web push failed: HTTP {status}" if status else "web push failed",
             file=sys.stderr,
             flush=True,
         )
-        return None
+        return False, None
     except Exception as e:
         print(f"web push error: {e.__class__.__name__}", file=sys.stderr, flush=True)
-        return None
+        return False, None
 
 
 def broadcast_push(
@@ -240,10 +240,10 @@ def broadcast_push(
     stale = []
     sent = 0
     for sub in subs:
-        dead = _send_one(sub, payload, priv)
+        delivered, dead = _send_one(sub, payload, priv)
         if dead:
             stale.append(dead)
-        else:
+        if delivered:
             sent += 1
     for endpoint in stale:
         delete_subscription(db_connect, endpoint)

@@ -752,6 +752,13 @@ curl -fs --cacert "$TLS/ca.crt" "https://$HEALTH_HOST:$PORT/health" >/dev/null |
   die "service started but /health does not answer - see log above"
 }
 ok "service is up and answering /health"
+# A direct/source install has not verified release provenance. Clear any record
+# inherited from an older bootstrap only after the new service is healthy; the
+# bootstrap writes a fresh checksum- or Sigstore-verified record afterwards.
+if [ -d "$ETC/installation.json" ] && [ ! -L "$ETC/installation.json" ]; then
+  die "installation provenance path is an unexpected directory"
+fi
+rm -f -- "$ETC/installation.json"
 # New version is live and healthy; past this point failures no longer roll back.
 ROLLBACK_STATE=done
 

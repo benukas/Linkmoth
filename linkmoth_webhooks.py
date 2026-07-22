@@ -286,7 +286,14 @@ def _resolve_pinned_target(url):
         parsed_addresses = {ipaddress.ip_address(a) for a in addresses}
         if not parsed_addresses or any(not a.is_global for a in parsed_addresses):
             raise ValueError("webhook hostname resolved to a non-public address")
-        return scheme, host, port, path, sorted(addresses)[0]
+        # Many Raspberry Pi installations have IPv6 DNS answers but no usable
+        # IPv6 route. Prefer a validated IPv4 answer so dual-stack webhook
+        # services remain reachable; retain IPv6 when it is the only family.
+        address = min(
+            parsed_addresses,
+            key=lambda item: (item.version != 4, item.compressed),
+        )
+        return scheme, host, port, path, address.compressed
     is_local = (
         isinstance(address, ipaddress.IPv4Address)
         and any(address in network for network in RFC1918_NETWORKS)
@@ -860,15 +867,16 @@ def _post(url, body, headers, timeout=HTTP_TIMEOUT):
         conn.request("POST", path, body=body, headers=headers)
         response = conn.getresponse()
         try:
-            response.read()
+            status = int(response.status)
+            reason = response.reason
+            response_headers = dict(response.getheaders())
         finally:
             response.close()
-        if not (200 <= response.status < 300):
+        if not (200 <= status < 300):
             raise urlerror.HTTPError(
-                url, response.status, response.reason,
-                dict(response.getheaders()), None,
+                url, status, reason, response_headers, None,
             )
-        return int(response.status)
+        return status
     finally:
         conn.close()
 

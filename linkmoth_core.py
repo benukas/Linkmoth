@@ -91,26 +91,8 @@ def installation_provenance():
     """Read local provenance without inferring trust from a version or remote."""
     if not SYSTEM_INSTALL:
         return {"state": "unverified-manual", "detail": "source checkout or manual installation"}
-    try:
-        st = os.lstat(INSTALLATION_RECORD)
-        if (stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode)
-                or st.st_uid != 0 or st.st_gid != 0
-                or stat.S_IMODE(st.st_mode) & 0o022):
-            raise ValueError
-        record = json.loads(INSTALLATION_RECORD.read_text(encoding="utf-8"))
-        metadata = json.loads((BASE / "linkmoth-build.json").read_text(encoding="utf-8"))
-        if (record.get("schema") != 1
-                or record.get("verification") != "sigstore-verified"
-                or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(record.get("version", "")))
-                or not re.fullmatch(r"[0-9a-f]{40}", str(record.get("release_commit", "")))
-                or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("archive_sha256", "")))
-                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", str(record.get("installed_at", "")))
-                or metadata.get("schema") != 1
-                or metadata.get("version") != record.get("version")
-                or metadata.get("release_commit") != record.get("release_commit")):
-            raise ValueError
-        return {"state": "sigstore-verified", "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
-    except FileNotFoundError:
+
+    def without_record():
         build_metadata = BASE / "linkmoth-build.json"
         try:
             metadata = json.loads(build_metadata.read_text(encoding="utf-8"))
@@ -123,6 +105,30 @@ def installation_provenance():
             return {"state": "legacy-unavailable"}
         except (OSError, ValueError, json.JSONDecodeError):
             return {"state": "unverified-manual", "detail": "manual installation with unavailable build metadata"}
+
+    try:
+        st = os.lstat(INSTALLATION_RECORD)
+    except FileNotFoundError:
+        return without_record()
+    try:
+        if (stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode)
+                or st.st_uid != 0 or st.st_gid != 0
+                or stat.S_IMODE(st.st_mode) & 0o022):
+            raise ValueError
+        record = json.loads(INSTALLATION_RECORD.read_text(encoding="utf-8"))
+        metadata = json.loads((BASE / "linkmoth-build.json").read_text(encoding="utf-8"))
+        verification = record.get("verification")
+        if (record.get("schema") != 1
+                or verification not in {"checksum-verified", "sigstore-verified"}
+                or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(record.get("version", "")))
+                or not re.fullmatch(r"[0-9a-f]{40}", str(record.get("release_commit", "")))
+                or not re.fullmatch(r"[0-9a-f]{64}", str(record.get("archive_sha256", "")))
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", str(record.get("installed_at", "")))
+                or metadata.get("schema") != 1
+                or metadata.get("version") != record.get("version")
+                or metadata.get("release_commit") != record.get("release_commit")):
+            raise ValueError
+        return {"state": verification, "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
     except (OSError, ValueError, json.JSONDecodeError):
         return {"state": "invalid"}
 
@@ -219,25 +225,44 @@ def manual_update_check():
             raise ValueError
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
         raise ValueError("official release response was invalid")
+    release_base = f"{GITHUB_REPO}/releases/download/$VERSION"
+    bootstrap_name = "linkmoth-$VERSION-bootstrap.sh"
+    safe_download = (
+        "download_linkmoth_asset() { name=\"$1\"; source=\"$BASE/$name\"; "
+        "target=\"$(curl --fail --silent --show-error --head --proto '=https' "
+        "--noproxy '*' --connect-timeout 10 --max-time 60 --output /dev/null "
+        "--write-out '%{redirect_url}' \"$source\")\" || return 1; "
+        "case \"$target\" in https://release-assets.githubusercontent.com/"
+        "github-production-release-asset/*) ;; *) echo 'Unexpected release asset redirect' >&2; "
+        "return 1 ;; esac; curl --fail --silent --show-error --proto '=https' "
+        "--noproxy '*' --connect-timeout 10 --max-time 300 --output \"$name\" \"$target\"; };"
+    )
+    normal_command = (
+        f"VERSION=v{latest}; NAME=linkmoth-$VERSION-bootstrap.sh; "
+        f"curl -fsSLo \"$NAME\" --proto '=https' --noproxy '*' --max-redirs 0 "
+        f"https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh "
+        f"&& sudo bash \"$NAME\""
+    )
+    sigstore_command = (
+        f"VERSION=v{latest}; BASE={release_base}; {safe_download} "
+        f"download_linkmoth_asset {bootstrap_name} "
+        f"&& download_linkmoth_asset {bootstrap_name}.bundle "
+        f"&& cosign verify-blob --bundle {bootstrap_name}.bundle --certificate-identity "
+        f"https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION "
+        f"--certificate-oidc-issuer https://token.actions.githubusercontent.com "
+        f"{bootstrap_name} && sudo bash {bootstrap_name} --sigstore-verified"
+    )
     return {
         "installed_version": installed,
         "latest_version": latest,
         "update_available": _version_tuple(latest) > _version_tuple(installed),
         "published_at": published_at,
         "release_url": expected_url,
-        "update_command": (
-            f"VERSION=v{latest}; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
-            f"linkmoth-$VERSION-bootstrap.sh && sudo bash linkmoth-$VERSION-bootstrap.sh"
-        ),
-        "verified_update_command": (
-            f"VERSION=v{latest}; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
-            f"linkmoth-$VERSION-bootstrap.sh; curl -fsSLO {GITHUB_REPO}/releases/download/$VERSION/"
-            f"linkmoth-$VERSION-bootstrap.sh.bundle; cosign verify-blob --bundle "
-            f"linkmoth-$VERSION-bootstrap.sh.bundle --certificate-identity "
-            f"https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION "
-            f"--certificate-oidc-issuer https://token.actions.githubusercontent.com "
-            f"linkmoth-$VERSION-bootstrap.sh && sudo bash linkmoth-$VERSION-bootstrap.sh --sigstore-verified"
-        ),
+        "update_command": normal_command,
+        "sigstore_update_command": sigstore_command,
+        # Retained for API compatibility with clients released before the
+        # optional mode was named explicitly.
+        "verified_update_command": sigstore_command,
     }
 
 
@@ -245,8 +270,18 @@ def manual_update_check():
 def _version_tuple(value):
     parsed = _strict_version(value)
     core, _, prerelease = parsed.partition("-")
-    # Stable releases sort after prereleases with the same numeric version.
-    return tuple(int(piece) for piece in core.split(".")) + (1 if not prerelease else 0, prerelease)
+    core_parts = tuple(int(piece) for piece in core.split("."))
+    # SemVer compares dot-separated prerelease identifiers individually:
+    # numeric identifiers compare numerically and sort before non-numeric
+    # identifiers. A stable release sorts after every prerelease of the same
+    # core version.
+    if not prerelease:
+        return core_parts + (1, ())
+    prerelease_parts = tuple(
+        (0, int(piece)) if piece.isdigit() else (1, piece)
+        for piece in prerelease.split(".")
+    )
+    return core_parts + (0, prerelease_parts)
 
 
 def _allowed_local_dns_address(value):
@@ -889,9 +924,21 @@ class BoundedTLSServer(HTTPServer):
             except OSError:
                 pass
             return
-        self._workers.submit(
-            self._handle_tls_request, request, client_address, accepted_at,
-        )
+        try:
+            self._workers.submit(
+                self._handle_tls_request, request, client_address, accepted_at,
+            )
+        except RuntimeError:
+            # The executor rejects submissions once shutdown starts. A request
+            # accepted in that narrow race still owns both a socket and one of
+            # our bounded capacity slots, so release both here rather than
+            # permanently shrinking the live server's capacity.
+            try:
+                self.shutdown_request(request)
+            except OSError:
+                pass
+            finally:
+                self._slots.release()
 
     def _handle_tls_request(self, request, client_address, accepted_at):
         tls_request = None
@@ -1588,5 +1635,3 @@ class _SupportPseudonyms:
         if isinstance(value, list):
             return [self.scrub(item) for item in value]
         return self.replace(value)
-
-

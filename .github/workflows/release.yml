@@ -67,8 +67,16 @@ jobs:
             echo "::error::README.md quick start download link is not updated for $tag" >&2
             exit 1
           }
+          grep -qF "Checksum-verified release" README.md || {
+            echo "::error::README.md quick start must document checksum-verified provenance" >&2
+            exit 1
+          }
           grep -qF "VERSION=$tag" ADVANCED.md || {
-            echo "::error::ADVANCED.md Sigstore path is not updated for $tag (expected VERSION=$tag)" >&2
+            echo "::error::ADVANCED.md install paths are not updated for $tag (expected VERSION=$tag)" >&2
+            exit 1
+          }
+          grep -qF -- "--sigstore-verified" ADVANCED.md || {
+            echo "::error::ADVANCED.md must retain the optional Sigstore install path" >&2
             exit 1
           }
       - name: Build release candidate

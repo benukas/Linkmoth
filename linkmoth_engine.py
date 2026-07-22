@@ -29,6 +29,16 @@ from linkmoth_probes import (
     ping, run_ladder, verdict,
 )
 
+
+def _decode_stored_checks(raw):
+    """Decode one persisted ladder safely; a bad row must stay row-local."""
+    try:
+        decoded = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+        return []
+    return normalize_stored_checks(decoded)
+
+
 class Engine:
     def __init__(self):
         self.state_dir = STATE_DIR
@@ -135,19 +145,13 @@ class Engine:
 
         now = time.time()
         if row and (now - row["ts"]) <= max_age:
-            try:
-                checks = normalize_stored_checks(json.loads(row["checks"]))
-            except (json.JSONDecodeError, TypeError):
-                checks = []
+            checks = _decode_stored_checks(row["checks"])
             return _verdict_from_row(row), checks, True
 
         out = self.run_ladder_cached(force=False)
         if out is None:
             if row:
-                try:
-                    checks = normalize_stored_checks(json.loads(row["checks"]))
-                except (json.JSONDecodeError, TypeError):
-                    checks = []
+                checks = _decode_stored_checks(row["checks"])
                 return _verdict_from_row(row), checks, True
             return {
                 "severity": "ok",
@@ -184,10 +188,7 @@ class Engine:
             ).fetchone()
         if not row:
             return False
-        try:
-            checks = normalize_stored_checks(json.loads(row["checks"]))
-        except (json.JSONDecodeError, TypeError):
-            checks = []
+        checks = _decode_stored_checks(row["checks"])
         return is_effective_global_outage(
             normalize_stored_verdict({"code": row["code"]}), checks
         )
@@ -283,10 +284,7 @@ class Engine:
             ).fetchone()
         if not row:
             return []
-        try:
-            return normalize_stored_checks(json.loads(row["checks"]))
-        except (json.JSONDecodeError, TypeError):
-            return []
+        return _decode_stored_checks(row["checks"])
 
     def close_open_incident(self):
         inc = self.open_incident()
@@ -401,10 +399,7 @@ class Engine:
             ).fetchone()
         if not row:
             return []
-        try:
-            return normalize_stored_checks(json.loads(row["checks"]))
-        except (json.JSONDecodeError, TypeError):
-            return []
+        return _decode_stored_checks(row["checks"])
 
     def _first_bad_run_checks(self, inc_id):
         """The fault ladder from this incident's first non-ok run – what was
@@ -418,10 +413,7 @@ class Engine:
             ).fetchone()
         if not row:
             return []
-        try:
-            return normalize_stored_checks(json.loads(row["checks"]))
-        except (json.JSONDecodeError, TypeError):
-            return []
+        return _decode_stored_checks(row["checks"])
 
     def _emit_webhook(self, inc_id, event, verdict, checks=None, duration_s=None):
         """Queue an outbound webhook event; never raises, never suppressed
@@ -685,7 +677,7 @@ class Engine:
             patterns = None
             if last:
                 last_d = normalize_stored_verdict(dict(last))
-                last_d["checks"] = normalize_stored_checks(json.loads(last_d["checks"]))
+                last_d["checks"] = _decode_stored_checks(last_d["checks"])
                 if last_d.get("severity") != "ok" and last_d.get("code"):
                     patterns = self.patterns(code=last_d["code"])
             database = db_maintenance_info()
@@ -1052,7 +1044,7 @@ class Engine:
         for r in runs:
             translated = normalize_stored_verdict(r)
             r.update(translated)
-            r["checks"] = normalize_stored_checks(json.loads(r["checks"]))
+            r["checks"] = _decode_stored_checks(r["checks"])
             assessment = confidence_assessment(r["checks"])
             r["confidence"] = assessment["level"]
             r["confidence_reason"] = assessment["reason"]
@@ -1060,9 +1052,7 @@ class Engine:
         if base:
             baseline = dict(base)
             baseline = normalize_stored_verdict(baseline)
-            baseline["checks"] = normalize_stored_checks(
-                json.loads(baseline["checks"])
-            )
+            baseline["checks"] = _decode_stored_checks(baseline["checks"])
         first_bad = next((r for r in runs if r["severity"] != "ok"), None)
         ref = first_bad or (runs[-1] if runs else None)
         sim_code = inc.get("verdict_code") or (first_bad["code"] if first_bad else None)
@@ -1205,7 +1195,7 @@ class Engine:
         out = []
         for r in reversed(rows):
             ms = {}
-            for ch in normalize_stored_checks(json.loads(r["checks"])):
+            for ch in _decode_stored_checks(r["checks"]):
                 if ch.get("ms") is not None:
                     ms[ch["id"]] = ch["ms"]
             out.append({"ts": r["ts"], "severity": r["severity"],
@@ -1231,7 +1221,7 @@ class Engine:
         samples = []
         for r in rows:
             ms = {}
-            for ch in normalize_stored_checks(json.loads(r["checks"])):
+            for ch in _decode_stored_checks(r["checks"]):
                 if ch.get("ms") is not None:
                     ms[ch["id"]] = ch["ms"]
             samples.append({"ts": r["ts"], "severity": r["severity"],
@@ -1627,5 +1617,4 @@ def janitor_loop():
     while True:
         janitor_sweep()
         time.sleep(86400)
-
 

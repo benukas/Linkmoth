@@ -583,6 +583,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .sec-qr svg { width: 200px; height: 200px; background: #fff; padding: 10px; border-radius: 9px; display: block; }
 .sec-codes { font-family: ui-monospace, monospace; font-size: 15px; line-height: 1.7; background: var(--surface-1); padding: 12px 14px; border-radius: 9px; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
 .update-command { display: block; box-sizing: border-box; width: 100%; margin: 10px 0 8px; font: 14px ui-monospace, monospace; line-height: 1.6; white-space: pre-wrap; background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; resize: vertical; }
+.update-sigstore { margin-top: 12px; }
+.update-sigstore > summary { cursor: pointer; font-weight: 600; }
 .update-release-link { display: block; margin-top: 4px; }
 #sec-pw-msg, #sec-totp-msg { display: block; margin-top: 8px; font-size: 16px; }
 #sec-pw-msg.bad, #sec-totp-msg.bad { color: var(--bad-text); }
@@ -1014,6 +1016,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <div class="set-row"><label for="s-baseline">Baseline check (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">How often Linkmoth may auto-open an incident when a background check finds a fault. 0 turns it off.</span></span></label><input id="s-baseline" type="number" min="0" max="1440" step="1"></div>
           <div class="set-row"><label for="s-history">Latency history (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Background diagnosis interval that feeds the sparkline graphs. 0 = use baseline interval only.</span></span></label><input id="s-history" type="number" min="0" max="1440" step="1"></div>
           <div class="set-row"><label for="s-retention">Keep history (days)</label><input id="s-retention" type="number" min="1" max="3650" step="1"></div>
+          <p class="set-hint">Lowering this permanently deletes older history during the next cleanup. Increasing it later cannot recover deleted data.</p>
         </div>
         <div class="set-section">
           <h4>Targets</h4>
@@ -1295,6 +1298,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 let refreshSec = 5;
 let settingsLoaded = false;
+let savedRetentionDays = null;
 let lastStats = null;
 let csrfToken = null;
 let fireDrillSyncRank = 0;
@@ -2710,6 +2714,7 @@ async function refresh() {
     $("site-meta").classList.remove("hidden");
     const provenance = s.app.provenance || {};
     const provenanceText = {
+      "checksum-verified": "Checksum-verified release",
       "sigstore-verified": "Sigstore-verified release",
       "unverified-manual": "Unverified/manual installation",
       "legacy-unavailable": "Legacy installation – provenance unavailable",
@@ -2737,6 +2742,7 @@ async function refresh() {
   }
   if (s.settings) {
     refreshSec = s.settings.ui_refresh_seconds || 5;
+    savedRetentionDays = Number(s.settings.retention_days);
     if (!settingsLoaded) {
       $("s-kuma").value = s.settings.kuma_url;
       $("s-refresh").value = s.settings.ui_refresh_seconds;
@@ -4550,6 +4556,36 @@ $("update-check").addEventListener("click", async () => {
       setTimeout(() => { copyBtn.textContent = "Copy command"; }, 1800);
     });
     result.appendChild(copyBtn);
+    const sigstoreCommand = data.sigstore_update_command || data.verified_update_command;
+    if (typeof sigstoreCommand === "string" && sigstoreCommand) {
+      const stronger = document.createElement("details");
+      stronger.className = "update-sigstore";
+      const summary = document.createElement("summary");
+      summary.textContent = "Optional Sigstore-verified command";
+      stronger.appendChild(summary);
+      const verifiedCommand = document.createElement("textarea");
+      verifiedCommand.readOnly = true;
+      verifiedCommand.rows = 5;
+      verifiedCommand.className = "update-command";
+      verifiedCommand.value = sigstoreCommand;
+      verifiedCommand.setAttribute("aria-label", "Optional Sigstore-verified update command");
+      stronger.appendChild(verifiedCommand);
+      const verifiedCopy = document.createElement("button");
+      verifiedCopy.type = "button";
+      verifiedCopy.className = "action-btn";
+      verifiedCopy.textContent = "Copy Sigstore command";
+      verifiedCopy.addEventListener("click", async () => {
+        try {
+          await copyPlainText(sigstoreCommand);
+          verifiedCopy.textContent = "Copied";
+        } catch (e) {
+          verifiedCopy.textContent = "Copy failed";
+        }
+        setTimeout(() => { verifiedCopy.textContent = "Copy Sigstore command"; }, 1800);
+      });
+      stronger.appendChild(verifiedCopy);
+      result.appendChild(stronger);
+    }
     if (/^https:\/\//i.test(data.release_url || "")) {
       const link = document.createElement("a");
       link.className = "update-release-link";
@@ -4879,6 +4915,19 @@ document.addEventListener("click", async (ev) => {
   setTimeout(() => { btn.textContent = "Copy story"; }, 1800);
 });
 
+function confirmRetentionReduction(nextDays) {
+  if (!Number.isInteger(nextDays) || nextDays < 1 || nextDays > 3650 ||
+      !Number.isFinite(savedRetentionDays) ||
+      nextDays >= savedRetentionDays) return true;
+  const oldUnit = savedRetentionDays === 1 ? "day" : "days";
+  const nextUnit = nextDays === 1 ? "day" : "days";
+  return confirm(
+    `Are you sure you want to reduce history from ${savedRetentionDays} ${oldUnit} ` +
+    `to ${nextDays} ${nextUnit}? The next cleanup will permanently delete ` +
+    `older history. Increasing retention later cannot recover it.`
+  );
+}
+
 $("save-settings").addEventListener("click", async () => {
   const msg = $("settings-msg");
   const payload = {
@@ -4905,6 +4954,18 @@ $("save-settings").addEventListener("click", async () => {
     quiet_hours_start: $("s-quiet-start").value,
     quiet_hours_end: $("s-quiet-end").value,
   };
+  const nextRetentionDays = Number(payload.retention_days);
+  if (!confirmRetentionReduction(nextRetentionDays)) {
+    msg.textContent = "Not saved – history retention was left unchanged";
+    msg.className = "bad";
+    setTimeout(() => { msg.textContent = ""; }, 5000);
+    return;
+  }
+  if (Number.isInteger(nextRetentionDays) && nextRetentionDays >= 1 &&
+      nextRetentionDays <= 3650 && Number.isFinite(savedRetentionDays) &&
+      nextRetentionDays < savedRetentionDays) {
+    payload._confirm_retention_reduction = true;
+  }
   try {
     const r = await fetch("/api/settings", {
       method: "POST",
@@ -4915,6 +4976,7 @@ $("save-settings").addEventListener("click", async () => {
     if (out.saved) {
       msg.textContent = "Saved – applied immediately";
       msg.className = "ok";
+      savedRetentionDays = Number(out.settings?.retention_days ?? nextRetentionDays);
       settingsLoaded = false;
       refresh();
     } else {

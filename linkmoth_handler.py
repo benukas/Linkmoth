@@ -78,6 +78,19 @@ class _LazyLinkmothModule:
 linkmoth = _LazyLinkmothModule()
 
 
+def _run_manual_diagnosis(release_slot=False):
+    """Run one dashboard diagnosis and contain detached-worker failures."""
+    try:
+        v = linkmoth.ENGINE.diagnose_once()
+        if v and v["severity"] != "ok" and linkmoth.ENGINE.open_incident() is None:
+            linkmoth.ENGINE.trigger("dashboard", f"manual run found: {v['code']}")
+    except Exception as e:
+        print(f"manual diagnosis failed: {e}", file=sys.stderr, flush=True)
+    finally:
+        if release_slot:
+            MANUAL_DIAGNOSIS_SLOT.release()
+
+
 def create_server():
     return BoundedTLSServer(
         (CFG["bind"], CFG["port"]), Handler, build_tls_context(),
@@ -133,6 +146,7 @@ MAX_HTTP_HEADER_BYTES = 32 * 1024
 MAX_HTTP_HEADER_COUNT = 64
 
 AUTH_VERIFY_SLOTS = threading.BoundedSemaphore(2)
+MANUAL_DIAGNOSIS_SLOT = threading.BoundedSemaphore(1)
 
 
 
@@ -1365,11 +1379,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_device_exception(exc)
         elif path == "/api/diagnose":
-            def one_shot():
-                v = linkmoth.ENGINE.diagnose_once()
-                if v and v["severity"] != "ok" and linkmoth.ENGINE.open_incident() is None:
-                    linkmoth.ENGINE.trigger("dashboard", f"manual run found: {v['code']}")
-            threading.Thread(target=one_shot, daemon=True).start()
+            if not MANUAL_DIAGNOSIS_SLOT.acquire(blocking=False):
+                self._send(409, {"error": "a manual diagnosis is already running"})
+                return
+            try:
+                threading.Thread(
+                    target=_run_manual_diagnosis,
+                    kwargs={"release_slot": True},
+                    daemon=True,
+                    name="linkmoth-manual-diagnosis",
+                ).start()
+            except RuntimeError:
+                MANUAL_DIAGNOSIS_SLOT.release()
+                self._send(503, {"error": "could not start manual diagnosis"})
+                return
             self._send(200, {"started": True})
         elif path == "/api/quality/load-test":
             try:
@@ -1470,6 +1493,9 @@ class Handler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError):
                 self._send(400, {"errors": {"_body": "expected a JSON object"}})
                 return
+            retention_reduction_confirmed = (
+                data.pop("_confirm_retention_reduction", False) is True
+            )
             if data.get("action") == "vacuum":
                 ok, result = vacuum_database(linkmoth.ENGINE)
                 if ok:
@@ -1488,6 +1514,29 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._send(500, {"vacuum": False, **result})
                 return
+            if "retention_days" in data:
+                try:
+                    requested_retention = max(
+                        1, min(3650, int(data["retention_days"]))
+                    )
+                    current_retention = int(CFG.get("retention_days", 90))
+                except (TypeError, ValueError):
+                    pass
+                else:
+                    if (requested_retention < current_retention and
+                            not retention_reduction_confirmed):
+                        self._send(409, {
+                            "saved": False,
+                            "confirmation_required": "retention_days",
+                            "errors": {
+                                "retention_days": (
+                                    f"reducing retention from {current_retention}"
+                                    f" to {requested_retention} days permanently"
+                                    " deletes older history; confirm the reduction"
+                                ),
+                            },
+                        })
+                        return
             saved, result = apply_settings(data)
             if saved:
                 self._send(200, {"saved": True, "settings": result})
@@ -1672,6 +1721,15 @@ def doctor(json_output=False):
             print(f"[--] {name}" + (f" – {detail}" if detail else ""))
 
     report("python >= 3.9", sys.version_info >= (3, 9), sys.version.split()[0])
+    provenance = linkmoth.installation_provenance()
+    provenance_label = {
+        "checksum-verified": "Checksum-verified release",
+        "sigstore-verified": "Sigstore-verified release",
+        "unverified-manual": "Unverified/manual installation",
+        "legacy-unavailable": "Legacy installation – provenance unavailable",
+        "invalid": "Installation record invalid",
+    }.get(provenance.get("state"), "Installation record invalid")
+    info("installation provenance", provenance_label)
     # DNS is resolved with a stdlib socket now – no `dig` binary required.
     for tool in ("ping", "ip", "systemctl"):
         path = shutil.which(tool)
@@ -1770,5 +1828,3 @@ def doctor(json_output=False):
     else:
         print("all good" if problems == 0 else f"{_count_phrase(problems, 'problem')} found")
     return 0 if problems == 0 else 1
-
-

@@ -678,6 +678,18 @@ class TestSendTests(WebhookDbCase):
         self.assertEqual(getaddrinfo.call_count, 1)
         self.assertEqual(pinned.call_args.args, ("example.test", "93.184.216.34"))
         conn.request.assert_called_once_with("POST", "/hook", body=b"{}", headers={})
+        response.read.assert_not_called()
+        response.close.assert_called_once_with()
+        conn.close.assert_called_once_with()
+
+    def test_dual_stack_delivery_prefers_validated_ipv4(self):
+        fake_result = [
+            (None, None, None, None, ("2606:4700:4700::1111", 443, 0, 0)),
+            (None, None, None, None, ("93.184.216.34", 443)),
+        ]
+        with mock.patch.object(wh.socket, "getaddrinfo", return_value=fake_result):
+            target = wh._resolve_pinned_target("https://example.test/hook")
+        self.assertEqual(target[-1], "93.184.216.34")
 
     def test_delivery_never_follows_a_redirect(self):
         fake_result = [(None, None, None, None, ("93.184.216.34", 443))]
@@ -696,6 +708,9 @@ class TestSendTests(WebhookDbCase):
                 wh._post("https://example.test/hook", b"{}", {})
         self.assertEqual(cm.exception.code, 302)
         conn.request.assert_called_once()
+        response.read.assert_not_called()
+        response.close.assert_called_once_with()
+        conn.close.assert_called_once_with()
         # Mirrors _send_now's own defensive close(): a mocked HTTPError on
         # Python 3.9 can raise from an already-consumed temp file on close.
         try:
