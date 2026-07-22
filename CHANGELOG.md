@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+## 0.4.7
+
+### Added
+
+- The Today tab now shows a daily connection-health score and grade built from
+  stored latency, jitter, packet-loss, bufferbloat, and outage evidence. It
+  includes a recent trend, per-day history, and the factors that affected the
+  result, while days without enough evidence remain explicitly ungraded. The
+  same read-only result is available from `/api/score` and `/api/status`
+  without triggering any additional network traffic.
+- Settings now warns when an unusually aggressive check cadence is likely to
+  consume significant monthly data, create excessive sampling, or provide
+  little extra value. The guidance is advisory and disappears as soon as the
+  configuration no longer warrants it.
+
+### Changed
+
+- Dashboard explanations use more compact typography and consistent en-dash
+  punctuation, with a repository-wide style check preventing regressions.
+
+### Performance
+
+- Frequently polled status reads now reuse one per-thread database connection,
+  avoid holding it while doing non-database work, and use new indexes for run
+  and quality-history lookups. The daily health score is cached briefly so
+  every open dashboard no longer recomputes the same multi-day result every
+  few seconds.
+
+### Fixed
+
+- Invalid pre-epoch or out-of-range sample timestamps can no longer break the
+  connection score or the rest of `/api/status`; unusable rows are skipped
+  consistently across supported Python and operating-system versions.
+
+### Security
+
+- The inbound webhook bearer token is masked by default in Settings, with an
+  explicit reveal control that automatically re-masks when settings reload.
+
 ## 0.4.6
 
 ### Fixed

@@ -17,7 +17,7 @@ identity before using `sudo`, and run the bootstrap. It then verifies the
 archive, checksum, and manifest against that same identity:
 
 ```bash
-VERSION=v0.4.6
+VERSION=v0.4.7
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh"
 curl -fLO "$BASE/linkmoth-$VERSION-bootstrap.sh.bundle"
@@ -268,7 +268,7 @@ script (the quick-start path), the installer isn't left on the host, so
 re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
-VERSION=v0.4.6   # use your installed version (shown in the dashboard footer)
+VERSION=v0.4.7   # use your installed version (shown in the dashboard footer)
 curl -fLO https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh
 sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
 ```
