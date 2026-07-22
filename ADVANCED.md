@@ -10,23 +10,22 @@ troubleshooting.
 
 ## Checksum-verified installation
 
-The normal quick-start path needs no Cosign. It downloads a pinned, versioned
-bootstrap from the official Linkmoth GitHub Release:
+The normal quick-start path needs no Cosign. It downloads the bootstrap source
+directly from the exact protected Linkmoth version tag and refuses redirects:
 
 ```bash
-VERSION=v0.4.7
-curl -fsSLO --proto '=https' --proto-redir '=https' --noproxy '*' --max-redirs 1 "https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh" && sudo bash "linkmoth-$VERSION-bootstrap.sh"
+VERSION=v0.4.8; NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME"
 ```
 
-The entry command permits the single HTTPS redirect used by GitHub Release
-downloads. The bootstrap itself downloads only the exact archive, checksum,
-and manifest for `$VERSION` from `benukas/Linkmoth`. It ignores environment
-proxy settings and permits only an explicit HTTPS redirect to GitHub's
+The tagged bootstrap derives `$VERSION` only from the strict local filename.
+It downloads only the exact archive, checksum, and manifest for that version
+from `benukas/Linkmoth`. It ignores environment proxy settings and permits only
+an explicit HTTPS redirect to GitHub's
 `release-assets.githubusercontent.com` release-asset path. The checksum file
-must contain one well-formed SHA-256
-entry naming the exact archive. A missing file, wrong filename or version,
-malformed digest, mismatch, or unexpected download location stops before
-extraction and before the archive's installer runs.
+must contain one well-formed SHA-256 entry naming the exact archive. A missing
+file, wrong filename or version, malformed digest, mismatch, or unexpected
+download location stops before extraction and before the archive's installer
+runs.
 
 This writes a root-owned installation record and the dashboard and `--doctor`
 report **Checksum-verified release**. This proves the archive matches the
@@ -41,7 +40,7 @@ download the same pinned bootstrap and its bundle, verify the bootstrap before
 using `sudo`, and explicitly select `--sigstore-verified`:
 
 ```bash
-VERSION=v0.4.7
+VERSION=v0.4.8
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 download_linkmoth_asset() {
   local name="$1" source="$BASE/$1" target
@@ -293,8 +292,8 @@ script (the quick-start path), the installer isn't left on the host, so
 re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
-VERSION=v0.4.7   # use your installed version (shown in the dashboard footer)
-curl -fsSLO --proto '=https' --proto-redir '=https' --noproxy '*' --max-redirs 1 "https://github.com/benukas/Linkmoth/releases/download/$VERSION/linkmoth-$VERSION-bootstrap.sh" && sudo bash linkmoth-$VERSION-bootstrap.sh --with-push
+VERSION=v0.4.8   # use your installed version (shown in the dashboard footer)
+NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME" --with-push
 ```
 
 From a git checkout, run `sudo bash install.sh --with-push` in that folder

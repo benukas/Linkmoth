@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.8
+
 ### Changed
 
 - The normal pinned-release installation no longer requires Cosign. It now

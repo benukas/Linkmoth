@@ -90,16 +90,17 @@ ssh user@<host-ip>
 **2. Install the latest release:**
 
 ```bash
-curl -fsSLO --proto '=https' --proto-redir '=https' --noproxy '*' --max-redirs 1 https://github.com/benukas/Linkmoth/releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh && sudo bash linkmoth-v0.4.7-bootstrap.sh
+curl -fsSLo linkmoth-v0.4.8-bootstrap.sh --proto '=https' --noproxy '*' --max-redirs 0 https://raw.githubusercontent.com/benukas/Linkmoth/v0.4.8/bootstrap.sh && sudo bash linkmoth-v0.4.8-bootstrap.sh
 ```
 
-The versioned bootstrap downloads the exact `v0.4.7` archive and its published
+The bootstrap comes directly from the exact protected `v0.4.8` tag and refuses
+redirects. It downloads the exact `v0.4.8` archive and its published
 SHA-256 file from the official GitHub Release, validates the checksum before
 extracting the archive or running its installer, and records the result as a
 **Checksum-verified release**. It also validates the complete archive against
 the release manifest before it installs a hardened systemd service. It prints
 the dashboard address and a one-time setup token when it's done. No Git checkout,
-package manager, or Cosign binary is needed. See
+separate package-manager command, or Cosign binary is needed. See
 [ADVANCED.md](ADVANCED.md#checksum-verified-installation) for the security model
 and the optional Sigstore-verified mode.
 
