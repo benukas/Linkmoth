@@ -214,7 +214,7 @@ class Engine:
             source="outage-tracker",
             fault_checks=fault_checks,
         )
-        # WAN is back — deliver webhook events that queued during the outage.
+        # WAN is back – deliver webhook events that queued during the outage.
         from linkmoth_webhooks import wake_drain
         wake_drain()
 
@@ -253,7 +253,7 @@ class Engine:
 
     def verify_cooldown_remaining(self):
         """Seconds until the next verify is allowed; 0.0 means allowed.
-        Read-only — the cooldown is stamped by verify_fix() only when a
+        Read-only – the cooldown is stamped by verify_fix() only when a
         diagnosis actually starts, so a verify rejected because another
         diagnosis is already running does not burn the caller's window."""
         with self.lock:
@@ -296,7 +296,7 @@ class Engine:
         recovery_verdict = {
             "severity": "ok",
             "code": "all_clear",
-            "title": "Manually closed — all clear",
+            "title": "Manually closed – all clear",
             "explain": "Closed from the dashboard.",
             "hint": "",
         }
@@ -335,7 +335,7 @@ class Engine:
         inc_id = inc["id"]
         closed_at = time.time()
         with db() as conn:
-            # Rewrite the verdict unconditionally — an already-closed incident
+            # Rewrite the verdict unconditionally – an already-closed incident
             # marked as a false alarm must stop counting as a blamed fault in
             # stats, patterns, and filters. The historical diagnosis is
             # preserved separately in diagnosis_code/diagnosis_title.
@@ -407,7 +407,7 @@ class Engine:
             return []
 
     def _first_bad_run_checks(self, inc_id):
-        """The fault ladder from this incident's first non-ok run — what was
+        """The fault ladder from this incident's first non-ok run – what was
         actually broken, as opposed to _latest_run_checks() which by the time
         of a recovery notification is always the healthy closing run."""
         with db() as conn:
@@ -485,7 +485,7 @@ class Engine:
     def trigger(self, source, detail=""):
         # The whole check-then-create runs under self.lock: two concurrent
         # triggers (webhook + baseline loop) must not both see "no open
-        # incident" and create one each — the second would never get a
+        # incident" and create one each – the second would never get a
         # recheck loop and stay open forever. The INSERT is additionally
         # guarded in SQL so even a writer outside this process can't race a
         # second open incident into existence.
@@ -509,7 +509,7 @@ class Engine:
                 if not cur.rowcount:
                     # Lost the (out-of-process) race: someone else opened an
                     # incident between our check and insert. Attach to it. If
-                    # it already resolved again, fall back to a plain insert —
+                    # it already resolved again, fall back to a plain insert –
                     # there is no open incident left to duplicate.
                     inc = self.open_incident()
                     if inc is None:
@@ -645,6 +645,27 @@ class Engine:
             self._emit_webhook(inc_id, "fault_closed", final)
 
     def status(self):
+        from linkmoth_outage import OUTAGE_TRACKER
+        from linkmoth_push import list_subscriptions, push_available
+        from linkmoth_notify import quiet_hours_status
+        # Everything that does not touch the database happens first, so the
+        # connection below is never held open across it. local_dns_runtime_
+        # info() in particular shells out to `systemctl is-active` whenever
+        # its 30s detection cache expires.
+        host = host_stats()
+        local_dns = local_dns_runtime_info()
+        settings = public_settings()
+        provenance = installation_provenance()
+        try:
+            kuma_url = _kuma_url(CFG.get("kuma_url", "auto"))
+        except ValueError:
+            kuma_url = ""
+        # One connection for the whole payload. db() is re-entrant, so every
+        # helper below (stats, history, meta, push, quiet hours, ...) reuses
+        # this one instead of opening its own -- this endpoint is polled
+        # every few seconds by every open dashboard, and the connect/close
+        # round trips dominated it. It also means the whole payload is read
+        # from a single consistent snapshot.
         with db() as conn:
             last = conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
             incidents = conn.execute(
@@ -660,70 +681,62 @@ class Engine:
                         (open_inc["id"],),
                     )
                 ]
-        last_d = None
-        patterns = None
-        if last:
-            last_d = normalize_stored_verdict(dict(last))
-            last_d["checks"] = normalize_stored_checks(json.loads(last_d["checks"]))
-            if last_d.get("severity") != "ok" and last_d.get("code"):
-                patterns = self.patterns(code=last_d["code"])
-        try:
-            kuma_url = _kuma_url(CFG.get("kuma_url", "auto"))
-        except ValueError:
-            kuma_url = ""
-        from linkmoth_outage import OUTAGE_TRACKER
-        from linkmoth_push import list_subscriptions, push_available
-        from linkmoth_notify import quiet_hours_status
-        host = host_stats()
-        database = db_maintenance_info()
-        return {
-            "now": time.time(),
-            "diagnosing": self.run_in_progress or (
-                self.loop_thread is not None and self.loop_thread.is_alive()
-            ),
-            "open_incident": (
-                normalize_stored_verdict(open_inc) if open_inc else None
-            ),
-            "open_incident_meta": self.open_incident_meta(),
-            "open_incident_runs": runs_of_open,
-            "last_run": last_d,
-            "patterns": patterns,
-            "incidents": [
-                normalize_stored_verdict(dict(i)) for i in incidents
-            ],
-            "stats": self.stats(),
-            "history": self.history(),
-            "history_meta": self.history_meta(),
-            "fire_drill": fire_drill_status(),
-            "kuma_url": kuma_url,
-            "settings": public_settings(),
-            "local_dns": local_dns_runtime_info(),
-            "database": database,
-            "host": host,
-            "observer_health": {
-                "warnings": observer_health_warnings(last_d.get("ts") if last_d else None, host, database),
-            },
-            "outage_active": OUTAGE_TRACKER.summary(db),
-            "push": {
-                "available": push_available(STATE_DIR),
-                "enabled": bool(CFG.get("push_notifications_enabled", True)),
-                "subscribers": len(list_subscriptions(db)),
-            },
-            "quiet_hours": quiet_hours_status(CFG, db),
-            "app": {
-                "version": VERSION,
-                "github": GITHUB_REPO,
-                "changelog": CHANGELOG_URL,
-                "provenance": installation_provenance(),
-            },
-        }
+            last_d = None
+            patterns = None
+            if last:
+                last_d = normalize_stored_verdict(dict(last))
+                last_d["checks"] = normalize_stored_checks(json.loads(last_d["checks"]))
+                if last_d.get("severity") != "ok" and last_d.get("code"):
+                    patterns = self.patterns(code=last_d["code"])
+            database = db_maintenance_info()
+            return {
+                "now": time.time(),
+                "diagnosing": self.run_in_progress or (
+                    self.loop_thread is not None and self.loop_thread.is_alive()
+                ),
+                "open_incident": (
+                    normalize_stored_verdict(open_inc) if open_inc else None
+                ),
+                "open_incident_meta": self.open_incident_meta(),
+                "open_incident_runs": runs_of_open,
+                "last_run": last_d,
+                "patterns": patterns,
+                "incidents": [
+                    normalize_stored_verdict(dict(i)) for i in incidents
+                ],
+                "stats": self.stats(),
+                "history": self.history(),
+                "history_meta": self.history_meta(),
+                "fire_drill": fire_drill_status(),
+                "kuma_url": kuma_url,
+                "settings": settings,
+                "local_dns": local_dns,
+                "database": database,
+                "host": host,
+                "observer_health": {
+                    "warnings": observer_health_warnings(last_d.get("ts") if last_d else None, host, database),
+                },
+                "outage_active": OUTAGE_TRACKER.summary(db),
+                "push": {
+                    "available": push_available(STATE_DIR),
+                    "enabled": bool(CFG.get("push_notifications_enabled", True)),
+                    "subscribers": len(list_subscriptions(db)),
+                },
+                "quiet_hours": quiet_hours_status(CFG, db),
+                "app": {
+                    "version": VERSION,
+                    "github": GITHUB_REPO,
+                    "changelog": CHANGELOG_URL,
+                    "provenance": provenance,
+                },
+            }
 
     def stats(self):
         now = time.time()
         cutoff = now - 30 * 86400
         with db() as conn:
             first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
-            # Any incident overlapping the window counts — including ones
+            # Any incident overlapping the window counts – including ones
             # that started before it and are still open (or resolved inside
             # it). A week-long outage that began before the window must
             # still show up as downtime inside it.
@@ -855,7 +868,7 @@ class Engine:
                 if count > best_count:
                     best_start, best_count = hour, count
             # Only call it a cluster when the peak window holds at least
-            # half of the outages — 3 incidents spread across a day are
+            # half of the outages – 3 incidents spread across a day are
             # not a pattern.
             if best_count >= max(3, (len(wan) + 1) // 2):
                 peak = {
@@ -1346,7 +1359,7 @@ def monthly_digest_lines(year, month):
     end = min(end, time.time())
     monitoring_started = _monitoring_started()
     # If Linkmoth was installed partway through this month, the days before
-    # that are not "uptime" — they were never observed — so the window used
+    # that are not "uptime" – they were never observed – so the window used
     # for every downtime/uptime calculation below starts no earlier than
     # monitoring actually began.
     effective_start = max(start, monitoring_started) if monitoring_started else start
@@ -1398,7 +1411,7 @@ def monthly_digest_lines(year, month):
     ]
     if faults:
         lines.append(
-            f"Downtime {_human_duration(downtime)} — {uptime_pct}% uptime."
+            f"Downtime {_human_duration(downtime)} – {uptime_pct}% uptime."
         )
         if blame:
             top_code = max(blame, key=blame.get)
@@ -1411,7 +1424,7 @@ def monthly_digest_lines(year, month):
                 f"Longest outage: {_human_duration(longest[0])}{ref}."
             )
     else:
-        lines.append("No network faults were confirmed — a clean month.")
+        lines.append("No network faults were confirmed – a clean month.")
     med = _median(latencies)
     if med is not None:
         line = f"Median internet latency: {round(med)} ms"
@@ -1438,7 +1451,7 @@ def maybe_send_monthly_digest(now=None):
     if last == current_month:
         return False
     if last is None:
-        # First ever run: arm the marker without sending — there is no
+        # First ever run: arm the marker without sending – there is no
         # fully-observed previous month to summarize yet.
         _set_meta("monthly_digest_sent", current_month)
         return False
@@ -1449,7 +1462,7 @@ def maybe_send_monthly_digest(now=None):
     monitoring_started = _monitoring_started()
     if monitoring_started and monitoring_started > prev_start:
         # Monitoring began partway through the month that would be reported
-        # (e.g. installed on the 20th) — the "first ever run" branch above
+        # (e.g. installed on the 20th) – the "first ever run" branch above
         # only catches the install month itself, not this one, since a full
         # calendar month has now rolled over. A report where most of the
         # month predates Linkmoth even running would undermine the whole
@@ -1461,7 +1474,7 @@ def maybe_send_monthly_digest(now=None):
     month_label = time.strftime(
         "%B %Y", time.localtime(_month_bounds(prev_year, prev_month)[0])
     )
-    title = f"Monthly network report — {month_label}"
+    title = f"Monthly network report – {month_label}"
     from linkmoth_notify import defer_notification_if_quiet
     if defer_notification_if_quiet(
         CFG, db, title, "\n".join(lines), discord=True, push=True,
@@ -1482,7 +1495,7 @@ def maybe_send_monthly_digest(now=None):
 
 def prometheus_metrics():
     """Read-only Prometheus text exposition of current state. Served behind
-    the webhook bearer; label values are fixed enum-like strings — never
+    the webhook bearer; label values are fixed enum-like strings – never
     secrets, hostnames, or LAN addresses."""
     out = []
 

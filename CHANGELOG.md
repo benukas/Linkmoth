@@ -32,7 +32,7 @@
   restore up front instead of leaving a swapped-in database with settings
   that silently never took. Credential-dependent flags (Discord alerts, the
   outbound notify webhook) are also forced off in every backup, since their
-  URLs aren't carried — previously a backup taken while Discord alerts were
+  URLs aren't carried – previously a backup taken while Discord alerts were
   enabled would fail settings validation when restored onto a fresh device.
 - Restored outbound webhooks now come back **disabled** with their delivery
   bookkeeping cleared, in addition to the destination URL and headers being
@@ -41,7 +41,7 @@
 - The bufferbloat "under load" result no longer freezes permanently if the
   tab or installed PWA is backgrounded during a test. The refresh-suppression
   guard is now a wall-clock deadline that expires on its own, instead of a
-  flag that only a `setTimeout` could clear — a timer that never fires (as
+  flag that only a `setTimeout` could clear – a timer that never fires (as
   when a phone suspends the app mid-test) previously left the card stuck on a
   stale "tested N h ago" reading forever.
 
@@ -74,8 +74,8 @@
 ### Fixed
 
 - Restore now validates and migrates a scratch copy of the archived
-  database in a temporary directory — integrity-checked, schema-migrated,
-  settings validated — before ever touching the live database, and swaps
+  database in a temporary directory – integrity-checked, schema-migrated,
+  settings validated – before ever touching the live database, and swaps
   it into place with an atomic rename only once that succeeds. Previously,
   the live database was replaced and migrated in place before settings
   were applied; a malformed `settings.json` (or any other unexpected
@@ -83,7 +83,7 @@
   with no rollback.
 - Push notification setup on iOS now recognizes an untrusted-CA failure
   even when it surfaces as a generic network error rather than a
-  `SecurityError` — WebKit frequently reports a partially-trusted
+  `SecurityError` – WebKit frequently reports a partially-trusted
   certificate that way, and the dashboard was previously falling back to
   an unhelpful generic message instead of pointing at Certificate Trust
   Settings.
@@ -120,7 +120,7 @@
   "Download backup" button produce a portable snapshot of history, settings,
   and device/webhook configuration for moving to new hardware. The archive
   is deliberately secret-free (no password hash, TOTP seed, webhook secret,
-  push key, or TLS CA), so it never needs encrypting or special handling —
+  push key, or TLS CA), so it never needs encrypting or special handling –
   restoring on a new device means a short one-time re-setup instead.
 
 ### Fixed
@@ -202,7 +202,7 @@
   downloads a bounded test file from the configured public server (by
   default Cloudflare's speed-test endpoint) to measure the line under load,
   instead of that only being discoverable via a hover tooltip.
-- The "Testing under load — takes about 20 seconds…" status no longer
+- The "Testing under load – takes about 20 seconds…" status no longer
   disappears mid-test on a short dashboard auto-refresh interval; the
   periodic refresh now leaves that status alone until the test actually
   finishes, instead of overwriting it with the still-stale server result on
@@ -221,7 +221,7 @@
 ### Added
 
 - **Incident stories**: every incident's evidence packet now includes a
-  plain-language narrative paragraph with a copy button — the story you'd
+  plain-language narrative paragraph with a copy button – the story you'd
   paste into a chat to explain what happened.
 - **Accountability report** (History tab, `GET /api/report`, `/api/report.csv`):
   downtime, blame breakdown, longest outage, and time-of-day clustering over
@@ -251,7 +251,7 @@
 - **Notification escalation tiers**: per-webhook "escalate after N minutes"
   holds fault deliveries and cancels them when the incident resolves first,
   so a second channel only hears about real, sustained outages.
-- **Fire drill**: a guided one-minute exercise on the Today tab — unplug
+- **Fire drill**: a guided one-minute exercise on the Today tab – unplug
   the WAN cable, watch Linkmoth catch and diagnose it live, then verify
   recovery.
 - **`--doctor --json`**: machine-readable environment check output.
@@ -556,8 +556,8 @@
   is migrated automatically into one Generic JSON webhook on first start.
 - **Presets:** Generic JSON, ntfy, Gotify, Home Assistant, Discord, Slack
   (also fits Mattermost/Rocket.Chat), n8n / Node-RED, and Custom template.
-  Custom templates are strict `{{placeholder}}` substitution — no logic, no
-  expressions — with JSON-safe escaping.
+  Custom templates are strict `{{placeholder}}` substitution – no logic, no
+  expressions – with JSON-safe escaping.
 - **Richer event model:** `fault_opened`, `fault_updated` (verdict changed
   mid-incident), `fault_recovered`, `fault_closed`, `degradation_detected`
   (warn-severity faults), `diagnosis_run` (manual/verify runs),
@@ -599,7 +599,7 @@
   default to listening on every interface. Falls back to `0.0.0.0` (and
   says so) when detection is ambiguous.
 - `--doctor` (and therefore `install.sh`, which gates on it) now **fails**
-  if `bind` is `0.0.0.0` while a VPN/tunnel interface is present — this
+  if `bind` is `0.0.0.0` while a VPN/tunnel interface is present – this
   would otherwise make Linkmoth reachable over that tunnel with no router
   port-forward involved. Container bridges are informational only (lower
   risk, host-local). The check never runs as part of normal service
@@ -675,7 +675,7 @@
   boxed reminder and the sign-in page links to it.
 - **Guided troubleshooting**: `POST /api/verify` re-runs the ladder with cache
   bypass, diffs rungs (`fixed` / `still_bad`), and the dashboard adds an
-  **"I tried this — check again"** button (or **"Run a fresh diagnosis"** on
+  **"I tried this – check again"** button (or **"Run a fresh diagnosis"** on
   closed incidents).
 - **Outage correlation**: `Engine.patterns()` with an honest minimum-sample
   rule; Today footnotes, History filter stats, and **Similar incidents** in
@@ -683,7 +683,7 @@
 
 ### Fix playbooks and platform neutrality
 
-- Added per-verdict **"How to fix this — step by step" playbooks** under the
+- Added per-verdict **"How to fix this – step by step" playbooks** under the
   Today verdict card and inside every incident evidence packet: router down,
   ISP/WAN outage, Pi-hole broken, router Wi-Fi crash, degraded link, DNS
   failures, captive portals, and false alarms ("the network was innocent").
@@ -713,7 +713,7 @@
 
 - Replaced `script-src 'unsafe-inline'` with **per-request CSP nonces**; the
   dashboard script only runs with the nonce minted for that page load.
-- Added `worker-src`/`manifest-src 'self'` — the previous policy silently
+- Added `worker-src`/`manifest-src 'self'` – the previous policy silently
   blocked the service worker and PWA manifest, so browser push could never
   activate.
 - Logout now works for password-accepted-but-TOTP-pending sessions instead of
@@ -793,7 +793,7 @@
 - Added **micro-steps**: when a ladder step fails (Pi-hole first), Linkmoth runs
   sub-diagnostics only then (e.g. `pihole-FTL` service state and root disk
   usage) and enriches the verdict hint from the result.
-- Added Ethernet **link negotiation** checks via sysfs/`ethtool` — warns on
+- Added Ethernet **link negotiation** checks via sysfs/`ethtool` – warns on
   sub-gigabit or half-duplex without failing the rung (`link_degraded`).
 - Added optional **router Wi-Fi client** pings (`target_wifi_clients`) after
   the LAN gateway check (`router_wlan_down` when the router answers but every
@@ -853,7 +853,7 @@
 ### Global outage tracking and recovery alerts
 
 - Linkmoth detects WAN/router/host outages itself (baseline, manual, incident loop)
-  — not only via Uptime Kuma webhooks.
+  – not only via Uptime Kuma webhooks.
 - Outbound Discord/push/webhook alerts are **deferred during global outages**
   and sent on recovery with a suppressed-services digest.
 - **WAN verdict takes priority** over WLAN when upstream/ping are dead.
@@ -898,6 +898,6 @@
 ### Remaining operational note
 
 - Each **client device** (phone, laptop, tablet) must trust the Linkmoth local CA
-  before users enter credentials — open `https://<host>:8686/ca.crt` once per
+  before users enter credentials – open `https://<host>:8686/ca.crt` once per
   device, or import the CA file manually (see README TLS section). The CA
   private key and server private key must never be copied off the Linkmoth host.

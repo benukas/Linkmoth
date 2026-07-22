@@ -22,7 +22,8 @@ from urllib.parse import urlparse
 
 from linkmoth_core import (
     CFG, DEFAULT_CONFIG, _PinnedHTTPSConnection, _dns_domain,
-    _network_targets, db, normalize_local_dns_config, run_cmd,
+    _incident_outage_segments, _network_targets, _outage_seconds, db,
+    normalize_local_dns_config, run_cmd,
 )
 
 def default_route():
@@ -243,7 +244,7 @@ def check_router_wlan(gateway_ok, include_evidence=False):
         result = (None, "not configured")
         return (*result, {}) if include_evidence else result
     if not gateway_ok:
-        result = (None, "router LAN unreachable — skipped")
+        result = (None, "router LAN unreachable – skipped")
         return (*result, {}) if include_evidence else result
     ok, detail, _ms, evidence = probe_group([
         (client, ping(client, count=2, timeout=1)) for client in clients
@@ -264,7 +265,7 @@ def check_router_wlan(gateway_ok, include_evidence=False):
 
 def wifi_wired_differential(checks):
     """One plain-language sentence when Wi-Fi witnesses disagree with a
-    healthy wired path — "it's your Wi-Fi, not your provider" — or None
+    healthy wired path – "it's your Wi-Fi, not your provider" – or None
     when there is nothing defensible to say. Pure over one run's checks."""
     by_id = {ch["id"]: ch for ch in normalize_stored_checks(checks)}
     wlan = by_id.get("router_wlan")
@@ -277,7 +278,7 @@ def wifi_wired_differential(checks):
     if wlan.get("ok") is False:
         return (
             "The wired path and the internet look healthy while no Wi-Fi"
-            " witness replied — this points at Wi-Fi (radio, access point,"
+            " witness replied – this points at Wi-Fi (radio, access point,"
             " or sleeping witnesses), not your provider."
         )
     wlan_ms = wlan.get("ms")
@@ -287,7 +288,7 @@ def wifi_wired_differential(checks):
             and wlan_ms >= 100 and wlan_ms >= 10 * gateway_ms):
         return (
             f"Wi-Fi witnesses reply far slower than the wired router path"
-            f" ({round(wlan_ms)} ms vs {round(gateway_ms)} ms) — that gap"
+            f" ({round(wlan_ms)} ms vs {round(gateway_ms)} ms) – that gap"
             f" is on the radio side, not your provider."
         )
     return None
@@ -416,6 +417,86 @@ def quality_config():
     return merged
 
 
+def _format_data(megabytes):
+    if megabytes >= 1024:
+        return f"{megabytes / 1024:.1f} GB".replace(".0 GB", " GB")
+    return f"{round(megabytes)} MB"
+
+
+def config_efficiency_notes(cfg=None):
+    """Advisory notes for a configured cadence that costs noticeably more
+    than it returns -- monthly data for scheduled load tests, and check
+    frequencies that mostly add host load without improving detection.
+
+    Pure arithmetic over the configuration: no probing, no database, and
+    nothing is enforced. The settings remain valid; this only surfaces what
+    they imply so the choice is an informed one.
+    """
+    cfg = CFG if cfg is None else cfg
+    quality = quality_config()
+    notes = []
+
+    hours = int(quality.get("load_test_hours") or 0)
+    max_mb = int(quality.get("load_test_max_mb") or 25)
+    if hours > 0 and max_mb > 0:
+        monthly_mb = (24.0 / hours) * 30 * max_mb
+        if monthly_mb >= 2048:
+            notes.append({
+                "level": "warn",
+                "setting": "quality.load_test_hours",
+                "label": "Scheduled bufferbloat tests",
+                "message": (
+                    f"running every {hours} h downloads roughly "
+                    f"{_format_data(monthly_mb)} per month. On a metered or capped "
+                    f"connection, a longer interval – or running the test from the "
+                    f"dashboard when you need it – costs far less."
+                ),
+            })
+
+    sample_minutes = int(cfg.get("history_sample_minutes") or 0)
+    sample_count = int(quality.get("sample_count") or 10)
+    if 0 < sample_minutes <= 1:
+        per_day = int(1440 / sample_minutes)
+        notes.append({
+            "level": "warn",
+            "setting": "history_sample_minutes",
+            "label": "Latency history interval",
+            "message": (
+                f"every {sample_minutes} min is about {per_day:,} checks a day, each "
+                f"sending {sample_count} pings per target. The graph rarely reads "
+                f"differently below about 5 min, so the extra runs mostly add load to "
+                f"the host."
+            ),
+        })
+
+    baseline_minutes = int(cfg.get("baseline_minutes") or 0)
+    if 0 < baseline_minutes < 5:
+        notes.append({
+            "level": "warn",
+            "setting": "baseline_minutes",
+            "label": "Baseline check interval",
+            "message": (
+                f"at {baseline_minutes} min, Linkmoth can open a new incident that "
+                f"often. Brief blips that would have cleared on their own tend to "
+                f"become incidents, and alerts, at this setting."
+            ),
+        })
+
+    refresh = int(cfg.get("ui_refresh_seconds") or 5)
+    if refresh <= 2:
+        notes.append({
+            "level": "warn",
+            "setting": "ui_refresh_seconds",
+            "label": "Dashboard auto-refresh",
+            "message": (
+                f"every open dashboard requests a full status update every {refresh} s. "
+                f"This changes what the browser shows, not how often the network is "
+                f"checked."
+            ),
+        })
+    return notes
+
+
 def _dns_query_a(server, domain, timeout=2.0):
     """Stdlib UDP DNS A-record query. Returns True if the server answered.
 
@@ -450,12 +531,12 @@ def _dns_query_a(server, domain, timeout=2.0):
     if len(resp) < 12 or resp[0:2] != txn:
         return False
     flags_hi, flags_lo = resp[2], resp[3]
-    if not (flags_hi & 0x80):        # QR bit — must be a response, not an echo
+    if not (flags_hi & 0x80):        # QR bit – must be a response, not an echo
         return False
-    if (flags_lo & 0x0F) != 0:       # RCODE — must be no-error
+    if (flags_lo & 0x0F) != 0:       # RCODE – must be no-error
         return False
     ancount = struct.unpack(">H", resp[6:8])[0]
-    truncated = bool(flags_hi & 0x02)  # TC — server answered, just over UDP size
+    truncated = bool(flags_hi & 0x02)  # TC – server answered, just over UDP size
     return ancount >= 1 or truncated
 
 
@@ -618,7 +699,7 @@ def _local_ipv4_addresses():
     return addresses
 
 
-# Interface name prefixes for non-LAN network kinds. Checked in order — a
+# Interface name prefixes for non-LAN network kinds. Checked in order – a
 # tunnel/VPN interface is the higher-severity case (typically routable from a
 # remote network over the internet); a container bridge is host-local and
 # lower severity. Anything not matched is treated as a normal LAN interface.
@@ -648,7 +729,7 @@ def classify_network_interfaces(raw_output=None):
     """List (iface, address, kind) for every IPv4 address on the host.
 
     kind is one of "lan", "tunnel", "container", "loopback". Used to warn
-    when binding to 0.0.0.0 would expose Linkmoth beyond the LAN — e.g. over
+    when binding to 0.0.0.0 would expose Linkmoth beyond the LAN – e.g. over
     an active WireGuard/Tailscale/NordVPN interface, which is not something
     Linkmoth can otherwise see or rule out.
     """
@@ -747,7 +828,7 @@ def micro_local_dns(provider):
     if rc != 0 or load_state.strip() != "loaded":
         steps.append(_micro_step(
             f"{name} service", False,
-            "systemd service not found — it may run in a container",
+            "systemd service not found – it may run in a container",
         ))
     else:
         rc, svc = run_cmd(["systemctl", "is-active", service])
@@ -873,7 +954,7 @@ def run_ladder():
         ):
             add(
                 "local_dns", "Local DNS resolver", None,
-                "no same-host DNS resolver detected — skipped",
+                "no same-host DNS resolver detected – skipped",
                 address=address, provider="generic",
             )
         else:
@@ -940,11 +1021,11 @@ def normalize_stored_verdict(item):
     out = dict(item)
     if out.get("code") == "pihole_broken":
         out["code"] = "local_dns_broken"
-        out["title"] = "Local DNS resolver stopped answering — internet itself is fine"
+        out["title"] = "Local DNS resolver stopped answering – internet itself is fine"
     if out.get("verdict_code") == "pihole_broken":
         out["verdict_code"] = "local_dns_broken"
         out["verdict_title"] = (
-            "Local DNS resolver stopped answering — internet itself is fine"
+            "Local DNS resolver stopped answering – internet itself is fine"
         )
     if out.get("diagnosis_code") == "pihole_broken":
         out["diagnosis_code"] = "local_dns_broken"
@@ -959,7 +1040,7 @@ def normalize_stored_verdict(item):
     return out
 
 
-# Verdict codes whose failure point is beyond the router — the set a user
+# Verdict codes whose failure point is beyond the router – the set a user
 # can reasonably hold their internet provider accountable for.
 ISP_ATTRIBUTABLE_CODES = frozenset({
     "wan_down", "partial_routing", "restricted_connectivity",
@@ -971,7 +1052,7 @@ REPORT_WINDOWS = (7, 30, 90)
 
 HISTORY_RANGE_HOURS = (6, 24, 24 * 7, 24 * 30)
 # However long the requested window, never hand the frontend more raw points
-# than this — beyond it, samples are averaged into fixed-width time buckets
+# than this – beyond it, samples are averaged into fixed-width time buckets
 # so a 30-day chart stays as cheap to render as a 6-hour one.
 MAX_HISTORY_POINTS = 300
 
@@ -1006,7 +1087,7 @@ _STORY_SOURCES = {
 
 def incident_story(detail):
     """Render one incident's evidence packet as a short plain-language
-    narrative — the paragraph a person would paste into a chat to explain
+    narrative – the paragraph a person would paste into a chat to explain
     what happened. Pure rendering over data already in the packet; no
     credentials, no raw addresses beyond what rung details already show."""
     inc = detail.get("incident") or {}
@@ -1035,7 +1116,7 @@ def incident_story(detail):
             if label != first_failure.get("label")
         ]
         if healthy:
-            line += f" — while {', '.join(healthy[:3])} stayed healthy"
+            line += f" – while {', '.join(healthy[:3])} stayed healthy"
         sentences.append(line + ".")
     title = inc.get("diagnosis_title") or inc.get("verdict_title")
     if title:
@@ -1109,10 +1190,10 @@ def incident_story(detail):
 def isp_report_letter(report):
     """Plain-language, credential-free evidence text for an ISP support
     ticket. Contains incident references, local times, durations, and
-    verdict titles — never LAN addresses or secrets."""
+    verdict titles – never LAN addresses or secrets."""
     days = report["days"]
     isp = report["isp"]
-    lines = ["Internet reliability evidence — generated locally by Linkmoth"]
+    lines = ["Internet reliability evidence – generated locally by Linkmoth"]
     window = f"Window: last {days} days"
     if report.get("monitoring_since"):
         since = time.strftime(
@@ -1188,7 +1269,7 @@ def isp_report_letter(report):
                 f" incident closed {closed}"
             )
             lines.append(
-                f"- {item['ref'] or '(no ref)'} — {when}, {timing} — "
+                f"- {item['ref'] or '(no ref)'} – {when}, {timing} – "
                 + (item["title"] or item["code"] or "outage")
             )
     lines.extend([
@@ -1256,7 +1337,7 @@ def verdict(checks):
              "Check router power and cables, then give it a reboot.")
     elif not ok("upstream_dns") and not ok("raw_ping") and not ok("https"):
         v = ("bad", "wan_down",
-             "Internet is dead beyond the router — likely internet provider outage or router WAN cable fault",
+             "Internet is dead beyond the router – likely internet provider outage or router WAN cable fault",
              "LAN and router are fine, but direct DNS, ping, and HTTPS all fail beyond them.",
              "Check the router's WAN cable and WAN light, then your internet provider's status page.")
     elif not ok("upstream_dns") and not ok("raw_ping"):
@@ -1282,12 +1363,12 @@ def verdict(checks):
             explain += " Likely cause: " + "; ".join(failed) + "."
         v = (
             "bad", "local_dns_broken",
-            "Local DNS resolver stopped answering — internet itself is fine",
+            "Local DNS resolver stopped answering – internet itself is fine",
             explain, hint,
         )
     elif not ok("upstream_dns"):
         v = ("bad", "upstream_dns_down", "Routing works but public DNS resolvers don't answer",
-             "Ping to the outside works, yet 1.1.1.1/8.8.8.8 won't answer DNS. Unusual — possibly ISP DNS interference.",
+             "Ping to the outside works, yet 1.1.1.1/8.8.8.8 won't answer DNS. Unusual – possibly ISP DNS interference.",
              "Try again in a few minutes; if it persists, contact your internet provider.")
     elif not ok("raw_ping"):
         v = ("warn", "partial_routing", "DNS answers but ping to the internet fails",
@@ -1335,7 +1416,7 @@ def verdict(checks):
     sev, code, title, explain, hint = v
     if c["power"]["ok"] is False and code != "host_power":
         sev = "bad" if sev == "bad" else "warn"
-        explain += " Also: the host reports " + c["power"]["detail"] + " — a weak power supply causes ghost problems."
+        explain += " Also: the host reports " + c["power"]["detail"] + " – a weak power supply causes ghost problems."
     return {"severity": sev, "code": code, "title": title, "explain": explain, "hint": hint}
 
 
@@ -1477,7 +1558,7 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
         # A fast line can finish one bounded response before loaded latency is
         # sampled. Keep requesting separately bounded responses for the test
         # duration so the measurement cannot quietly become an idle ping test.
-        # max_bytes bounds the WHOLE test's transfer, not each response —
+        # max_bytes bounds the WHOLE test's transfer, not each response –
         # stats["bytes"] (shared across every request) is what still_going()
         # checks, so repeating requests can never inflate total data used
         # beyond the configured, documented cap.
@@ -1551,7 +1632,7 @@ def run_load_test(store=True):
     Ping the quality target at idle, then again while a bounded download
     saturates the link, and grade the latency inflation the way the
     dslreports scale does (A under +30 ms … F above +400 ms). The transfer
-    stops at load_test_seconds or load_test_max_mb — whichever comes first —
+    stops at load_test_seconds or load_test_max_mb – whichever comes first –
     and keeps requesting fresh responses in between so a fast connection that
     finishes one response early doesn't go idle for the rest of the window.
     Only pings that overlap increasing downloaded bytes contribute to the
@@ -1673,7 +1754,7 @@ QUALITY_DAYPARTS = (
 def quality_findings(days=7):
     """Plain-language recurring-pattern findings over recent quality
     samples: time-of-day comparisons, loss concentration, and trend. Pure
-    analytics over data already stored — the sentences a user can point at
+    analytics over data already stored – the sentences a user can point at
     when saying "the internet is always bad in the evening"."""
     qcfg = quality_config()
     cutoff = time.time() - days * 86400
@@ -1772,12 +1853,246 @@ def quality_findings(days=7):
         good_share = sum(1 for s in samples if s["state"] == "good") / len(samples)
         if overall is not None and good_share >= 0.9:
             findings.append(
-                f"No recurring quality problems in the last {days} days —"
-                f" median latency {round(overall)} ms,"
-                f" {round(good_share * 100)}% of samples good."
+                f"Median {round(overall)} ms, "
+                f"{round(good_share * 100)}% of samples good."
             )
     result["findings"] = findings
     return result
+
+
+# Score bands. Deliberately generous at the top: the grade answers "was the
+# line fine today", not "is this a datacentre link".
+SCORE_GRADES = (
+    (97, "A+"), (93, "A"), (90, "A-"), (87, "B+"), (83, "B"), (80, "B-"),
+    (77, "C+"), (73, "C"), (70, "C-"), (60, "D"), (0, "F"),
+)
+# Below this many samples in a day there is not enough evidence to grade it.
+MIN_SCORE_SAMPLES = 6
+# Days needing a grade before a personal baseline means anything.
+MIN_BASELINE_DAYS = 5
+
+
+def _score_grade(score):
+    for floor, letter in SCORE_GRADES:
+        if score >= floor:
+            return letter
+    return "F"
+
+
+def _bloat_penalty(bloat_ms):
+    if bloat_ms is None:
+        return 0.0
+    for limit, penalty in ((30, 0.0), (60, 3.0), (120, 7.0), (250, 12.0)):
+        if bloat_ms < limit:
+            return penalty
+    return 18.0
+
+
+def _score_one_day(samples, bloat_ms, downtime_s, baseline_latency):
+    """Score a single day from its own samples. Starts at 100 and subtracts;
+    latency is judged against `baseline_latency` (this line's own normal)
+    rather than an absolute target, so a stable slow link is not permanently
+    failed and a fast link that degrades is still caught."""
+    latencies = [s["latency_ms"] for s in samples if s["latency_ms"] is not None]
+    jitters = [s["jitter_ms"] for s in samples if s["jitter_ms"] is not None]
+    losses = [s["loss_pct"] or 0.0 for s in samples]
+    median_latency = _median(latencies)
+    median_jitter = _median(jitters)
+    median_loss = _median(losses) or 0.0
+
+    loss_penalty = min(40.0, median_loss * 8.0)
+    jitter_penalty = min(15.0, (median_jitter or 0.0) / 2.0)
+    latency_penalty = 0.0
+    if baseline_latency and median_latency is not None and baseline_latency > 0:
+        excess = max(0.0, median_latency - baseline_latency)
+        latency_penalty = min(25.0, excess / baseline_latency * 40.0)
+    bloat_penalty = _bloat_penalty(bloat_ms)
+    downtime_penalty = min(40.0, (downtime_s or 0.0) / 60.0 * 2.0)
+
+    factors = {
+        "latency": -round(latency_penalty),
+        "jitter": -round(jitter_penalty),
+        "loss": -round(loss_penalty),
+        "bufferbloat": -round(bloat_penalty),
+        "downtime": -round(downtime_penalty),
+    }
+    total = (loss_penalty + jitter_penalty + latency_penalty
+             + bloat_penalty + downtime_penalty)
+    score = int(round(max(0.0, 100.0 - total)))
+    return score, factors, median_latency
+
+
+_FACTOR_PHRASES = {
+    "latency": "latency ran above your normal",
+    "jitter": "jitter was unsettled",
+    "loss": "packets were dropping",
+    "bufferbloat": "the line bloated under load",
+    "downtime": "the connection dropped out",
+}
+
+
+_MAX_UNIX_TIMESTAMP = 253402300799  # 9999-12-31 23:59:59 UTC
+
+
+def _day_start(ts):
+    """Local midnight for `ts`, or None if the timestamp is not a real date.
+
+    A host without an RTC (every Raspberry Pi) can record samples before NTP
+    corrects its clock, leaving rows dated before the Unix epoch or far in the
+    future.  Some platforms normalize pre-epoch values instead of raising, so
+    reject those explicitly.  This runs inside /api/status -- an unguarded
+    raise here would take the whole dashboard down over one bad row, so such
+    rows are reported unusable and skipped by callers."""
+    try:
+        if ts < 0 or ts > _MAX_UNIX_TIMESTAMP:
+            return None
+        lt = time.localtime(ts)
+        return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+
+
+_SCORE_CACHE_LOCK = threading.Lock()
+_SCORE_CACHE = {}
+# The grade is a per-day figure, but /api/status is polled every
+# ui_refresh_seconds (as low as 2s) by every open dashboard. Recomputing a
+# 30-day aggregate over tens of thousands of rows on every poll would burn
+# real CPU on a Raspberry Pi to produce an answer that changes once a day,
+# so results are cached briefly. New samples only land every
+# history_sample_minutes anyway.
+SCORE_CACHE_SECONDS = 60
+
+
+def connection_score(days=30, use_cache=True):
+    """A daily connection-health grade built only from evidence already
+    stored -- quality samples, any bufferbloat tests that were run, and
+    recorded outage segments. Read-only: it never probes the network, so
+    calling it costs nothing but a few SQLite reads.
+
+    Today's grade is compared against this line's own recent baseline
+    rather than an absolute target, which is what lets a slow-but-steady
+    connection score well and a fast one that degrades still get flagged.
+    Days with too little evidence are reported ungraded instead of being
+    given a number that would not mean anything.
+    """
+    days = max(2, min(90, int(days or 30)))
+    now = time.time()
+    if use_cache:
+        with _SCORE_CACHE_LOCK:
+            hit = _SCORE_CACHE.get(days)
+            if hit and hit["expires"] > now:
+                return hit["value"]
+    today_start = _day_start(now)
+    if today_start is None:
+        return {"days": days, "history": [], "sample_count": 0, "graded": False,
+                "score": None, "grade": None, "factors": None,
+                "baseline_score": None, "baseline_grade": None, "trend": None,
+                "headline": "Host clock is not set, so days cannot be graded."}
+    window_start = today_start - (days - 1) * 86400
+    samples, segments_by_incident, load_rows = [], {}, []
+    try:
+        with db() as conn:
+            samples = [dict(r) for r in conn.execute(
+                "SELECT ts, latency_ms, jitter_ms, loss_pct FROM quality_samples"
+                " WHERE ts >= ? ORDER BY ts ASC", (window_start,),
+            )]
+            load_rows = [dict(r) for r in conn.execute(
+                "SELECT ts, bloat_ms FROM load_tests"
+                " WHERE ts >= ? AND bloat_ms IS NOT NULL ORDER BY ts ASC",
+                (window_start,),
+            )]
+            incidents = [dict(r) for r in conn.execute(
+                "SELECT * FROM incidents WHERE started >= ?"
+                " OR resolved IS NULL OR resolved >= ?",
+                (window_start, window_start),
+            )]
+            for incident in incidents:
+                if incident.get("false_alarm"):
+                    continue
+                segments_by_incident[incident["id"]] = _incident_outage_segments(
+                    conn, incident)
+    except sqlite3.Error as e:
+        print(f"connection score read failed: {e}", file=sys.stderr, flush=True)
+
+    by_day, bloat_by_day = {}, {}
+    for sample in samples:
+        key = _day_start(sample["ts"])
+        if key is not None:
+            by_day.setdefault(key, []).append(sample)
+    for row in load_rows:
+        key = _day_start(row["ts"])
+        if key is not None:
+            bloat_by_day[key] = row["bloat_ms"]
+    all_segments = [s for group in segments_by_incident.values() for s in group]
+
+    history, latency_by_day = [], {}
+    for index in range(days):
+        start = window_start + index * 86400
+        end = start + 86400
+        day_samples = by_day.get(start, [])
+        entry = {"day": time.strftime("%Y-%m-%d", time.localtime(start)),
+                 "samples": len(day_samples)}
+        if len(day_samples) < MIN_SCORE_SAMPLES:
+            entry.update({"score": None, "grade": None})
+            history.append(entry)
+            continue
+        downtime = _outage_seconds(
+            all_segments, window_start=start, window_end=min(end, now), now=now)
+        median = _median([s["latency_ms"] for s in day_samples
+                          if s["latency_ms"] is not None])
+        if median is not None:
+            latency_by_day[start] = median
+        # Baseline for a given day is the median of the graded days before
+        # it, so the series is not scored against its own future.
+        prior = [latency_by_day[key] for key in sorted(latency_by_day) if key < start]
+        baseline_latency = _median(prior) if len(prior) >= MIN_BASELINE_DAYS else median
+        score, factors, _ = _score_one_day(
+            day_samples, bloat_by_day.get(start), downtime, baseline_latency)
+        entry.update({"score": score, "grade": _score_grade(score),
+                      "factors": factors})
+        history.append(entry)
+
+    graded = [item for item in history if item["score"] is not None]
+    today = history[-1] if history else {"score": None, "samples": 0}
+    result = {
+        "days": days,
+        "history": [{"day": i["day"], "score": i["score"]} for i in history],
+        "sample_count": today.get("samples", 0),
+        "graded": today.get("score") is not None,
+        "score": today.get("score"),
+        "grade": today.get("grade"),
+        "factors": today.get("factors"),
+        "baseline_score": None,
+        "baseline_grade": None,
+        "trend": None,
+        "headline": "",
+    }
+    def _cache(value):
+        with _SCORE_CACHE_LOCK:
+            _SCORE_CACHE[days] = {"value": value,
+                                  "expires": now + SCORE_CACHE_SECONDS}
+        return value
+
+    if not result["graded"]:
+        result["headline"] = "Not enough data yet today."
+        return _cache(result)
+
+    earlier = [item["score"] for item in graded[:-1]]
+    if len(earlier) >= MIN_BASELINE_DAYS:
+        baseline = int(round(_median(earlier)))
+        result["baseline_score"] = baseline
+        result["baseline_grade"] = _score_grade(baseline)
+        delta = result["score"] - baseline
+        result["trend"] = ("steady" if abs(delta) <= 3
+                           else "above" if delta > 0 else "below")
+    worst = min(result["factors"].items(), key=lambda item: item[1])
+    if worst[1] <= -3:
+        result["headline"] = (
+            f"Today {_FACTOR_PHRASES[worst[0]]}."
+        )
+    else:
+        result["headline"] = "No problems worth flagging today."
+    return _cache(result)
 
 
 def quality_summary(limit=288):
@@ -1827,5 +2142,3 @@ def quality_summary(limit=288):
             "loss_bad_pct": qcfg["loss_bad_pct"],
         },
     }
-
-

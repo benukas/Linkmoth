@@ -18,8 +18,8 @@ DISCORD_HOSTS = frozenset({
     "ptb.discord.com",
 })
 
-FAULT_COLOR = 0xE74C3C      # #E74C3C — active faults
-RECOVERY_COLOR = 0x2ECC71    # #2ECC71 — recovery / all clear
+FAULT_COLOR = 0xE74C3C      # #E74C3C – active faults
+RECOVERY_COLOR = 0x2ECC71    # #2ECC71 – recovery / all clear
 
 def discord_notifications_enabled(cfg: Optional[dict] = None) -> bool:
     if cfg is None:
@@ -93,7 +93,7 @@ def incident_payload(
     """Build a plain dict passed to send_discord_alert.
 
     `fault_checks`, when given, is the fault ladder from when the problem was
-    actually confirmed — used in place of `checks` for a recovery message's
+    actually confirmed – used in place of `checks` for a recovery message's
     ladder display, since `checks` there is the healthy run that just closed
     the incident and can't show what was down.
     """
@@ -149,13 +149,13 @@ def format_ladder_lines(checks: List[dict]) -> str:
 def _truncate(text: str, limit: int = 1024) -> str:
     text = str(text or "").strip()
     if len(text) <= limit:
-        return text or "—"
+        return text or "–"
     return text[: limit - 1] + "…"
 
 
 def _embed_title(verdict: dict, status_type: str) -> str:
     if status_type == "recovery":
-        return "✅ All clear — network recovered"
+        return "✅ All clear – network recovered"
     raw = str(verdict.get("title") or "Network fault confirmed")
     severity = verdict.get("severity")
     if severity == "bad":
@@ -203,7 +203,7 @@ def build_embed(incident_data: dict, status_type: str) -> dict:
     description = _embed_description(verdict, status_type, prior)
 
     fields = []
-    # On recovery, `checks` is the just-confirmed *healthy* ladder — showing
+    # On recovery, `checks` is the just-confirmed *healthy* ladder – showing
     # it would mean every rung reads green right under "network recovered",
     # telling the reader nothing about what was actually wrong. Prefer the
     # ladder captured when the fault was last confirmed, if one was recorded.
@@ -238,7 +238,7 @@ def build_embed(incident_data: dict, status_type: str) -> dict:
             "inline": True,
         })
     else:
-        duration = "—"
+        duration = "–"
         if started:
             secs = max(0, int(time.time() - started))
             if secs < 90:
@@ -249,7 +249,7 @@ def build_embed(incident_data: dict, status_type: str) -> dict:
                 duration = f"{secs / 3600:.1f} h"
         # A network-wide outage recovery has no incidents-table row behind it
         # (it's tracked separately by OutageTracker), so there is nothing
-        # meaningful to put in an "Incident" field — showing a bare "—" is
+        # meaningful to put in an "Incident" field – showing a bare "–" is
         # noise, not information. Only include it when there's a real one.
         if inc_label:
             fields.append({
@@ -351,7 +351,7 @@ def _send_device_sync(url: str, device: dict, result: dict, recovery: bool) -> N
         )
         fields = [{
             "name": "Device",
-            "value": _truncate(str(device.get("address") or "—"), 256),
+            "value": _truncate(str(device.get("address") or "–"), 256),
             "inline": True,
         }, {
             "name": "Preset",
@@ -413,7 +413,7 @@ def build_kuma_service_embed(alert_data: dict) -> dict:
     detail = str(alert_data.get("detail") or "Service status change")
     is_up = kuma_status == 1
     title = f"{'✅' if is_up else '🔴'} Uptime Kuma: {detail}"
-    description = "Linkmoth verified the network path is healthy — this looks service-specific."
+    description = "Linkmoth verified the network path is healthy – this looks service-specific."
     if is_up:
         description = "Service recovered. Linkmoth confirmed the network path is still healthy."
     fields = []
@@ -568,7 +568,7 @@ def send_monthly_digest_alert(
     url = discord_webhook_url(cfg)
     payload = {
         "embeds": [{
-            "title": f"📊 Network report — {month_label}",
+            "title": f"📊 Network report – {month_label}",
             "description": _truncate("\n".join(lines), 4096),
             "color": RECOVERY_COLOR,
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
@@ -593,7 +593,7 @@ def send_outage_recovery_alert(
     duration_s: float,
     fault_checks: Optional[List[dict]] = None,
 ) -> bool:
-    """Recovery alert after a global outage — first message that can reach Discord."""
+    """Recovery alert after a global outage – first message that can reach Discord."""
     if not discord_alerts_active(cfg):
         return False
     synthetic = {

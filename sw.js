@@ -1,4 +1,4 @@
-/* Linkmoth dashboard — Web Push + offline app-shell service worker.
+/* Linkmoth dashboard – Web Push + offline app-shell service worker.
  *
  * Only the static shell (this page, the manifest, the icons) is cached, so
  * the app still opens instantly and works with no network. Nothing under
@@ -52,7 +52,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request).then((response) => {
       // Clone synchronously, before the caller starts reading the body we
-      // return below — cloning after that (e.g. inside the caches.open()
+      // return below – cloning after that (e.g. inside the caches.open()
       // callback) races the body stream and intermittently throws.
       const copy = response.ok ? response.clone() : null;
       if (copy) {

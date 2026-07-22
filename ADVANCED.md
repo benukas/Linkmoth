@@ -1,4 +1,4 @@
-# Linkmoth — advanced guide
+# Linkmoth – advanced guide
 
 Everything that didn't fit in the main [README](README.md): provenance and
 manual updates, evidence exports, how the fault ladder works, LAN devices,
@@ -30,7 +30,7 @@ sudo bash "linkmoth-$VERSION-bootstrap.sh"
 ```
 
 This writes a root-owned installation record and the dashboard will report
-**Sigstore-verified release**. No Git checkout or package manager is needed —
+**Sigstore-verified release**. No Git checkout or package manager is needed –
 see [Quick start](README.md#quick-start).
 
 Only when verification is impossible, the explicitly insecure recovery path
@@ -93,10 +93,10 @@ exposing topology. Remote witnesses remain deferred for this feature beta.
 ## How it works
 
 On a trigger (a background baseline run, the dashboard button, or an inbound
-webhook from a monitor you already run) Linkmoth runs the fault ladder — host power (including PoE/USB-PD telemetry
+webhook from a monitor you already run) Linkmoth runs the fault ladder – host power (including PoE/USB-PD telemetry
 when present) → own link (speed/duplex negotiation) → router → optional
 router Wi-Fi client pings → Local DNS resolver → upstream DNS by IP → raw
-ping → HTTPS — and maps the evidence pattern to one verdict. Redundant DNS,
+ping → HTTPS – and maps the evidence pattern to one verdict. Redundant DNS,
 ping, HTTPS, and Wi-Fi-witness probes keep every target result: an amber rung
 means a usable path exists but the targets disagree. A successful HTTPS probe
 also prevents filtered ping/direct-DNS traffic from being called a total WAN
@@ -132,18 +132,18 @@ hammering the network with duplicate pings.
 The dashboard has five tabs: **Today** (current verdict, open-incident
 reference, fault ladder, latency trends and plain-language quality findings,
 bufferbloat testing, the guided fire drill, blame board), **History**
-(filterable timeline — paste an incident reference to jump straight to its
+(filterable timeline – paste an incident reference to jump straight to its
 evidence packet: a plain-language story paragraph, verdict confidence **and
 why it is limited**, the first failed dependency, what Linkmoth ruled out, a
 plain-English diff vs the last healthy check, and repeat-fault evidence
 (typical duration and recurrence timing), and every diagnosis run with raw
-per-rung timings — plus the **accountability report** with its "evidence for
+per-rung timings – plus the **accountability report** with its "evidence for
 ISP support" letter and CSV export), **Devices** (independent LAN device
 status), **Settings** (including Discord webhooks, Wi-Fi client IPs, and
 SQLite maintenance), and **Security** (password, 2FA, read-only API tokens,
 audit log). The compact Internet/router latency sparklines on Today, and each
 device's latency sparkline on Devices, have an **Expand** button that opens a
-larger chart in a modal with a range picker — 6 hours to 30 days for the
+larger chart in a modal with a range picker – 6 hours to 30 days for the
 network history (auto-averaged into time buckets for longer ranges so it
 stays fast), or the last 50–200 checks for a device (device history is a
 fixed-size ring buffer, not a calendar window). Today and incident packets
@@ -159,10 +159,10 @@ results into network blame, incidents, network statistics, or network
 History. Device monitoring is deliberately smaller than the fixed network
 ladder:
 
-- **Generic** — ping.
-- **Printer** — ping plus TCP port 9100.
-- **Web UI** — ping plus an HTTP or HTTPS status and optional body check.
-- **TCP service** — ping plus one configured TCP port.
+- **Generic** – ping.
+- **Printer** – ping plus TCP port 9100.
+- **Web UI** – ping plus an HTTP or HTTPS status and optional body check.
+- **TCP service** – ping plus one configured TCP port.
 
 Targets must be literal RFC1918 IPv4 addresses in `10.0.0.0/8`,
 `172.16.0.0/12`, or `192.168.0.0/16`. Linkmoth rejects hostnames, IPv6,
@@ -187,12 +187,12 @@ identity; the dashboard displays this as an unsafe mode.
 
 ## Connecting a monitor: Uptime Kuma or anything else
 
-This whole section is **optional** — Linkmoth detects and diagnoses network
+This whole section is **optional** – Linkmoth detects and diagnoses network
 faults on its own schedule without any external monitor (see `baseline_minutes`
 in the configuration reference). Pairing adds one thing: when a monitor you
 already run notices one of *its* targets is down, Linkmoth diagnoses the
 network at that exact moment and answers "is it the network, or just that
-service?" — and suppresses the monitor's noisy per-service alerts during a
+service?" – and suppresses the monitor's noisy per-service alerts during a
 confirmed network-wide outage.
 
 Linkmoth isn't tied to one monitoring tool. Anything that can send an HTTP
@@ -237,7 +237,7 @@ different device. Two narrower cases:
   instead; every other device still needs the LAN address above.
 - **Linkmoth's `bind` is literally `127.0.0.1`** (the guided-setup fallback
   for an ambiguous network configuration): only Kuma running on that exact
-  host can reach Linkmoth at all — there is no LAN address that will work
+  host can reach Linkmoth at all – there is no LAN address that will work
   until `bind` is set to a real interface.
 
 ### Generic inbound webhook (any other tool)
@@ -265,7 +265,7 @@ global outage. **Global outages defer outbound alerts** until recovery.
 **Browser push** (Settings → Browser push) is opt-in and set up by re-running
 the installer with `--with-push` once. If you installed with the bootstrap
 script (the quick-start path), the installer isn't left on the host, so
-re-run the versioned bootstrap — it forwards the flag through:
+re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
 VERSION=v0.4.6   # use your installed version (shown in the dashboard footer)
@@ -278,7 +278,7 @@ instead. Either way it installs `pywebpush` into a private virtualenv,
 leaving system Python untouched.
 Works on desktop and Android in the browser. On iPhone/iPad you must install
 the dashboard to the Home Screen first (Share → Add to Home Screen), open it
-from the icon, then enable push — Safari tabs cannot subscribe. iOS also
+from the icon, then enable push – Safari tabs cannot subscribe. iOS also
 requires **both** steps of CA trust (profile install **and** Certificate Trust
 Settings); desktop browsers are often more forgiving, which is why push can
 work on a laptop but fail on a phone with the same hostname.
@@ -309,7 +309,7 @@ recovery**).
 second-stage channel: `fault_opened` and `degradation_detected` deliveries
 are held for that many minutes, and if the incident recovers, closes, or is
 marked a false alarm before the delay elapses, the held delivery is
-cancelled — the escalation channel only ever hears about sustained outages.
+cancelled – the escalation channel only ever hears about sustained outages.
 `0` (the default) delivers immediately.
 
 Presets: **Generic JSON**, **ntfy** (title/priority/tags headers), **Gotify**
@@ -355,7 +355,7 @@ text:
 the network being up: every event is queued in SQLite and a background sender
 delivers it. Failures back off (30 s → 2 m → 10 m → 30 m → 1 h, up to 10
 attempts, dropped after 24 h), and while a **global outage** is active nothing
-is attempted — the queue drains the moment the WAN recovers, with late
+is attempted – the queue drains the moment the WAN recovers, with late
 deliveries marked `"delayed": true` / a delayed-delivery note. Queue state
 ("3 queued · next retry in 2 min") is visible on each webhook in Settings.
 
@@ -369,11 +369,11 @@ from being forwarded to another destination.
 The old single "Generic webhook" setting is migrated automatically on upgrade
 into one **Generic JSON** webhook subscribed to the events it used to receive.
 
-## Configuration — /etc/linkmoth/config.json
+## Configuration – /etc/linkmoth/config.json
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `bind`, `port` | auto-detected LAN IP (otherwise loopback), `8686` | Where the dashboard/API listens — see below |
+| `bind`, `port` | auto-detected LAN IP (otherwise loopback), `8686` | Where the dashboard/API listens – see below |
 | `tls_cert`, `tls_key` | `/etc/linkmoth/tls/server.crt`, `server.key` | Required TLS certificate and private key |
 | `tls_ca` | `/etc/linkmoth/tls/ca.crt` | CA certificate served (unauthenticated) at `/ca.crt` for device trust |
 | `dns_test_domain` | `gstatic.com` | Domain used for DNS checks |
@@ -398,9 +398,9 @@ into one **Generic JSON** webhook subscribed to the events it used to receive.
 | `quiet_hours_start` | `22:00` | Quiet-hours start in 24-hour Linkmoth host local time |
 | `quiet_hours_end` | `07:00` | Quiet-hours end and morning-digest time in 24-hour Linkmoth host local time |
 | `quality.load_test_url` | Cloudflare speed endpoint | Public HTTPS URL downloaded during a bufferbloat test; must resolve to public addresses |
-| `quality.load_test_hours` | `0` | Scheduled bufferbloat test interval in hours (`0` = manual button only — scheduled runs consume real data) |
+| `quality.load_test_hours` | `0` | Scheduled bufferbloat test interval in hours (`0` = manual button only – scheduled runs consume real data) |
 | `quality.load_test_seconds`, `quality.load_test_max_mb` | `10`, `25` | Bounds on one bufferbloat test; the transfer stops at whichever is hit first |
-| `notify_webhook_url` | `""` | Legacy single-webhook URL — migrated once into Settings → Outbound webhooks, then unused |
+| `notify_webhook_url` | `""` | Legacy single-webhook URL – migrated once into Settings → Outbound webhooks, then unused |
 | `notify_webhook_enabled` | `false` | Legacy flag for the above (kept so old configs stay valid) |
 
 The bufferbloat result shows the grade, added latency, and an estimated
@@ -412,7 +412,7 @@ Restart after editing `/etc/linkmoth/config.json`: `sudo systemctl restart linkm
 
 ### Bind address: why not always `0.0.0.0`
 
-`0.0.0.0` listens on **every** network interface the host has — not just the
+`0.0.0.0` listens on **every** network interface the host has – not just the
 LAN one. On a host that also runs a VPN client (WireGuard, Tailscale,
 NordVPN's `nordlynx`), that means Linkmoth becomes reachable over that tunnel
 too, with no router port-forward involved and nothing for Linkmoth to detect
@@ -420,14 +420,14 @@ after the fact.
 
 `install.sh` handles this automatically on a fresh install: it inspects the
 host's interfaces, excludes loopback, VPN/tunnel, and container-bridge
-(Docker/Podman) interfaces, and — if exactly one LAN interface remains —
+(Docker/Podman) interfaces, and – if exactly one LAN interface remains –
 binds to that address instead of `0.0.0.0`. If detection is ambiguous (zero
 or multiple candidates, e.g. a genuinely multi-homed host), guided setup
 defaults to `127.0.0.1`; non-interactive setup stops and requires
 `--bind <LAN IPv4>`. Choosing `0.0.0.0` requires explicit confirmation.
 
 `--doctor` (and therefore `install.sh`, which runs it as a gate) **fails**
-if `bind` is `0.0.0.0` and a VPN/tunnel interface is present on the host —
+if `bind` is `0.0.0.0` and a VPN/tunnel interface is present on the host –
 this is treated as a real gap, not just a warning, so it has to be resolved
 before install completes. Container bridges are lower severity (host-local,
 not normally reachable from outside) and only produce an informational
@@ -435,7 +435,7 @@ note. The Security tab's posture panel shows the same check on every load,
 so a VPN added *after* install doesn't go unnoticed.
 
 Linkmoth also refuses, at the request level, any connection whose direct
-peer address is a public/global IP and not an explicitly trusted proxy — see
+peer address is a public/global IP and not an explicitly trusted proxy – see
 **Reverse proxies** below and **Security posture**.
 
 Local DNS uses this shape:
@@ -451,7 +451,7 @@ Local DNS uses this shape:
 `mode` is `auto`, `enabled`, or `disabled`. `provider` is `auto`, `generic`,
 `pihole`, `unbound`, or `dnsmasq`. Provider-specific behaviour is permitted
 only when `address` belongs to the Linkmoth host. A remote private resolver is
-always treated as generic—even if its configuration names a provider—because
+always treated as generic–even if its configuration names a provider–because
 Linkmoth can trust only its DNS response, not its remote service state. Linkmoth
 never fingerprints or probes a remote resolver beyond the configured DNS
 query. Legacy `"local_dns": "auto"` and `false` values remain accepted.
@@ -461,7 +461,7 @@ covers the Uptime Kuma link, auto-refresh vs history sampling, baseline
 interval, retention, Local DNS, upstream targets, Wi-Fi client IPs, Discord integration, and
 quiet hours, and **database maintenance** (file size, `AUTO_VACUUM` mode, manual **VACUUM**
 button). Changes save privately (`0600`) to `/var/lib/linkmoth/settings.json`, override the config
-file, and apply immediately — no restart. Network binding and authentication
+file, and apply immediately – no restart. Network binding and authentication
 options require editing `/etc/linkmoth/config.json` by hand and restarting
 Linkmoth.
 
@@ -477,7 +477,7 @@ Actually tested: **Raspberry Pi OS on a Raspberry Pi 5**, plus Docker
 containers used for automated/CI testing. Debian and Ubuntu are the same
 systemd/apt lineage as Raspberry Pi OS and are expected to work, but haven't
 been independently verified on non-Pi hardware. Fedora, Arch, and openSUSE
-have not been tried at all — they use a different package manager and are
+have not been tried at all – they use a different package manager and are
 unverified, not "best-effort supported." Requires **systemd**, **`ip`**
 (iproute2/iproute), and **root** for install.
 
@@ -488,17 +488,17 @@ extras (power telemetry) switch off when the hardware does not expose them.
 
 ## Network assumptions
 
-- The host has a working default route (wired strongly recommended — a
+- The host has a working default route (wired strongly recommended – a
   monitor on flaky WiFi blames the internet for its own hiccups).
 - The ladder always calls the rung **Local DNS resolver**. Same-host Pi-hole,
   Unbound, and dnsmasq may provide extra local service evidence. Remote and
   unknown resolvers always receive generic guidance.
 - Ethernet link speed and duplex are read from sysfs (with `ethtool` fallback);
   sub-gigabit or half-duplex links produce a warning without failing the rung.
-- The host does **not** need to be the network's DNS server — it's a witness,
+- The host does **not** need to be the network's DNS server – it's a witness,
   not a dependency.
 - `ping`, `ip`, and `systemctl` must exist (the installer handles most of this).
-  DNS checks use a built-in resolver — no `dig` binary required.
+  DNS checks use a built-in resolver – no `dig` binary required.
 
 ## CLI
 
@@ -519,7 +519,7 @@ python3 linkmoth.py --restore file.zip    # restore history/settings from one
 
 ## Ports and endpoints
 
-- HTTPS `:8686` — dashboard (`/`), `GET /api/status`, `GET /api/incidents`,
+- HTTPS `:8686` – dashboard (`/`), `GET /api/status`, `GET /api/incidents`,
   `GET /api/incident?id=N` or `?ref=INC-YYYYMMDD-NNNN` (full evidence packet,
   including the plain-language story paragraph), `GET /api/quality`,
   `GET /api/history?hours=6|24|168|720` (latency history for the expanded
@@ -543,7 +543,7 @@ python3 linkmoth.py --restore file.zip    # restore history/settings from one
 - Read-only API tokens (Security tab): `GET/POST /api/auth/tokens`,
   `DELETE /api/auth/tokens/{id}`. A token (`Authorization: Bearer lmro_…`)
   is accepted **only** on `GET /api/status`, `GET /api/quality`,
-  `GET /api/report`, and `GET /api/history` — for Homepage/Glance widgets
+  `GET /api/report`, and `GET /api/history` – for Homepage/Glance widgets
   and Home Assistant REST sensors. Stored hashed, shown once at creation,
   revocable, limit 10.
 - Security management (session + CSRF): `POST /api/auth/change-password`,
@@ -569,7 +569,7 @@ Sessions expire on two independent clocks, both enforced server-side: an
 **idle timeout** (`session_idle_seconds`, default 30 min) and an **absolute
 lifetime** (`session_ttl_seconds`, default 24 h). The session cookie is named
 `__Host-linkmoth_session` (Secure, host-only, `Path=/`). The legacy
-`auth.totp_enabled` flag is deprecated and ignored — 2FA state now lives in the
+`auth.totp_enabled` flag is deprecated and ignored – 2FA state now lives in the
 auth store and is toggled from the dashboard (below).
 
 The former `auth.enabled` setting is ignored for safe upgrades; remove it from
@@ -638,7 +638,7 @@ sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --auth-audit 100
 
 The audit contains timestamps, client addresses, and event names for login
 success/failure, TOTP/recovery use, CSRF rejection, logout, and credential
-changes—never passwords, TOTP values, recovery codes, cookies, or bearer
+changes–never passwords, TOTP values, recovery codes, cookies, or bearer
 secrets. It is capped at 1,000 events and 90 days in `state.db`.
 
 ## Backup and restore
@@ -654,7 +654,7 @@ or from the dashboard: **Settings → Data → Backup → Download backup**.
 
 The archive is deliberately **secret-free**. It never contains the admin
 password hash, the TOTP seed, this installation's own inbound-webhook bearer
-secret, the VAPID push key, or the TLS CA — those either can't be
+secret, the VAPID push key, or the TLS CA – those either can't be
 reconstructed from a hash (the password) or are directly usable credentials
 that a portable file shouldn't carry (the rest are stored plaintext, since
 the server has to read them back). The included database snapshot is also
@@ -669,7 +669,7 @@ too, since their URLs aren't carried. Webhook names, presets, event
 selections, templates, and escalation timing all survive the round trip;
 only the destination and any credentials need re-entering, and the webhook
 re-enabling, afterward. Because of all this, the archive needs no encryption
-or special handling — it's just data.
+or special handling – it's just data.
 
 On the new device, with the service stopped:
 
@@ -678,7 +678,7 @@ sudo systemctl stop linkmoth
 sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --restore /path/to/linkmoth-backup.zip
 ```
 
-`--restore` always refuses to run against an active service — there's no
+`--restore` always refuses to run against an active service – there's no
 override, since a running instance can still hold WAL connections open
 against the database being replaced. Restore validates and migrates a
 scratch copy of the archived database in a temporary directory first
@@ -691,7 +691,7 @@ any data still in its `-wal` sidecar back into the main file) and both
 stale WAL left by an earlier unclean shutdown can't be replayed on top of
 the restored data. If a database already exists at the target, its complete
 checkpointed copy is renamed aside as `state.db.pre-restore-<timestamp>`
-rather than overwritten — nothing is ever silently discarded. Restoring
+rather than overwritten – nothing is ever silently discarded. Restoring
 re-applies the archived settings through the same validation the dashboard's
 Save button uses, and re-runs the normal schema migrations, so a backup
 taken by an older Linkmoth version restores cleanly on a newer one.
@@ -711,7 +711,7 @@ re-enable it** in **Settings → Notifications → Outbound webhooks** (restored
 webhooks arrive disabled with their destinations cleared). Restoring also
 doesn't carry over the TLS CA, so browsers and monitors that already trust this
 installation's certificate will need to trust the new device's CA too
-(`GET /ca.crt`) — the same one-time step as a fresh install.
+(`GET /ca.crt`) – the same one-time step as a fresh install.
 
 ## TLS certificates
 
@@ -731,7 +731,7 @@ sudo systemctl start linkmoth-cert-renew.service
 ```
 
 Other devices must trust the Linkmoth CA **before** entering the password.
-**This is the one step where a LAN attacker could trick you** — if you install
+**This is the one step where a LAN attacker could trick you** – if you install
 the wrong CA, every later check (green padlock, HSTS) is meaningless.
 
 **Do not trust `/ca.crt` until you verify the fingerprint.** The installer
@@ -745,20 +745,20 @@ On each new phone, laptop, or tablet:
 
 1. On a **trusted path** (SSH session on the Linkmoth host, or the installer
    scrollback you saved), note that SHA-256 fingerprint.
-2. From the client device, download the CA only over the LAN — e.g. open
+2. From the client device, download the CA only over the LAN – e.g. open
    **`https://<host-ip>:8686/ca.crt`**. The browser will warn because the
    cert is not trusted yet; that warning is expected.
 3. **Before installing/trusting the downloaded file**, compute its SHA-256
    fingerprint on the client and confirm it **exactly matches** the installer
-   output (see per-OS steps below). If it does not match, stop — something on
+   output (see per-OS steps below). If it does not match, stop – something on
    the network may be intercepting you.
 4. Only after the fingerprint matches, install the CA as a trusted root on
    that device.
-5. Browse to **`https://<host-ip>:8686`** — the warning should not return on
+5. Browse to **`https://<host-ip>:8686`** – the warning should not return on
    that device. Then sign in.
 
 The installer repeats this at the end of every install. The sign-in page links
-to `/ca.crt` for convenience, but **convenience is not verification** — always
+to `/ca.crt` for convenience, but **convenience is not verification** – always
 check the fingerprint.
 
 **Alternative:** copy the CA file from the Linkmoth host over SSH (same trust
@@ -781,7 +781,7 @@ openssl x509 -in linkmoth-ca.crt -noout -fingerprint -sha256
 ```
 
 Compare character-for-character with the installer's `CA fingerprint:` line.
-Do not bypass a certificate warning and enter credentials — a warning on the
+Do not bypass a certificate warning and enter credentials – a warning on the
 dashboard (after you thought you trusted the CA) means the device still does
 not recognize your Linkmoth instance.
 
@@ -807,7 +807,7 @@ managed elsewhere.
 ### Reverse proxies (optional)
 
 Proxy-supplied client addresses are ignored by default, and Linkmoth refuses
-any request whose direct peer address is a public/global IP — see **Security
+any request whose direct peer address is a public/global IP – see **Security
 posture** below. If rate limiting must distinguish clients behind a reverse
 proxy, configure that proxy to use HTTPS to Linkmoth and trust the Linkmoth
 CA, then set the allowlist inside the `auth` object of `config.json`:
@@ -846,11 +846,11 @@ dashboard favicon and in the page header; `linkmoth-white.ico` and the PNG
 icons cover contexts that don't support SVG (legacy browsers, PWA installs,
 social previews). Linkmoth serves the following without authentication:
 
-- `/linkmoth.svg` — preferred SVG favicon (modern browsers)
-- `/favicon.ico` — legacy tab/bookmark icon, served from `linkmoth-white.ico`
-- `/linkmoth-mark-white.svg` — dashboard header logo
+- `/linkmoth.svg` – preferred SVG favicon (modern browsers)
+- `/favicon.ico` – legacy tab/bookmark icon, served from `linkmoth-white.ico`
+- `/linkmoth-mark-white.svg` – dashboard header logo
 - `/linkmoth-icon-192.png`, `/linkmoth-icon-512.png`,
-  `/linkmoth-maskable.svg` — PWA install icons from the web manifest
+  `/linkmoth-maskable.svg` – PWA install icons from the web manifest
 
 After the page loads, the browser tab and dashboard header show the Linkmoth logo. Re-run
 `install.sh` after upgrading if an icon file was added in a newer release.
@@ -859,7 +859,7 @@ After the page loads, the browser tab and dashboard header show the Linkmoth log
 
 Linkmoth is a local-first appliance: no cloud account, no telemetry, and it does
 not create cloud access, tunnels, or router port forwards on its own. It is
-intended for local-network access only — Linkmoth cannot know whether a router
+intended for local-network access only – Linkmoth cannot know whether a router
 forward, reverse proxy, or IPv6 exposure has been added elsewhere on your
 network, so don't rely on it to make internet exposure impossible.
 
@@ -867,9 +867,9 @@ Two cases Linkmoth *can* see and actively guards against:
 
 - **A VPN client on its own host.** `--doctor` refuses to pass, and the
   Security tab keeps warning, if `bind` is `0.0.0.0` while a
-  WireGuard/Tailscale/NordVPN-style interface is present — see **Bind
+  WireGuard/Tailscale/NordVPN-style interface is present – see **Bind
   address** above.
-- **A request that reaches it from the public internet at all** — for
+- **A request that reaches it from the public internet at all** – for
   example an accidental router port-forward. Every request is checked
   against its direct source address before anything else happens: unless it
   comes from the LAN, loopback, or an explicitly configured
@@ -899,7 +899,7 @@ seed must be available to the server in usable form.
 The remaining trust boundary is deliberate: this is one shared admin account,
 not multi-user authorization. The dashboard HTML/login shell is served before
 login, but all diagnosis, history, and settings data stays behind the API
-session check. `/health` remains public by design, but only from the LAN — see
+session check. `/health` remains public by design, but only from the LAN – see
 above. Do not port-forward Linkmoth directly.
 
 Device endpoints use the same authentication and CSRF protections. Device
@@ -909,12 +909,12 @@ timeouts, and store no device credentials, headers, or executable content.
 
 ## Layout
 
-- `/opt/linkmoth/` — code, dashboard, and `linkmoth.svg` (site icon)
-- `/etc/linkmoth/config.json` — settings (`0640`, owned by `root:linkmoth`)
-- `/etc/linkmoth/tls/` — local CA, server certificate, and private keys
-- `linkmoth-cert-renew.timer` — monthly server-certificate renewal
-- `/var/lib/linkmoth/state.db` — history and integration secrets (`0600`; protect backups)
-- `/var/lib/linkmoth/auth.json` — auth secrets (`0600`; protect its backups)
+- `/opt/linkmoth/` – code, dashboard, and `linkmoth.svg` (site icon)
+- `/etc/linkmoth/config.json` – settings (`0640`, owned by `root:linkmoth`)
+- `/etc/linkmoth/tls/` – local CA, server certificate, and private keys
+- `linkmoth-cert-renew.timer` – monthly server-certificate renewal
+- `/var/lib/linkmoth/state.db` – history and integration secrets (`0600`; protect backups)
+- `/var/lib/linkmoth/auth.json` – auth secrets (`0600`; protect its backups)
 - Runs as the dedicated no-login user `linkmoth` under systemd with
   `NoNewPrivileges` and filesystem protections; `CAP_NET_RAW` is granted so
   `ping` works despite the sandbox.
@@ -926,7 +926,7 @@ local `sudo systemctl` action.
 
 Back up before any major upgrade (a new minor/major release, not routine
 `sudo bash install.sh` re-runs on the same version). The archive contains
-both directories from **Layout** above — configuration and TLS material from
+both directories from **Layout** above – configuration and TLS material from
 `/etc/linkmoth`, and history/secrets from `/var/lib/linkmoth`:
 
 ```bash
@@ -953,7 +953,7 @@ way you would any other credential, and delete copies you no longer need.
 If you installed with the quick-start bootstrap (the normal path), update by
 downloading and verifying the new release's bootstrap exactly as in
 [Sigstore-verified installation](#sigstore-verified-installation) with the
-new version number — the installer is safe to run repeatedly and never
+new version number – the installer is safe to run repeatedly and never
 touches your config or data. **Check for update** in the dashboard's
 Settings prints the version-pinned command for you.
 
@@ -978,7 +978,7 @@ sudo bash uninstall.sh --purge  # removes everything
 ## Troubleshooting
 
 **Network problems**: every fault verdict on the dashboard has a
-**"What to do next — safest steps first"** playbook right under it (also
+**"What to do next – safest steps first"** playbook right under it (also
 inside each incident's evidence packet in History). It starts with
 non-disruptive checks, labels steps that interrupt users, states what success
 should look like, and puts escalation last. Dynamic Local DNS and missing-route
@@ -988,8 +988,8 @@ for Linkmoth itself.
 
 ### First moves, always
 
-- `journalctl -u linkmoth -f` — live logs
-- `python3 /opt/linkmoth/linkmoth.py --doctor` — full environment check
+- `journalctl -u linkmoth -f` – live logs
+- `python3 /opt/linkmoth/linkmoth.py --doctor` – full environment check
   (tools, config, TLS, clock sync, port)
 
 ### Dashboard unreachable
@@ -998,7 +998,7 @@ for Linkmoth itself.
 2. Right address? It's `https://` (not `http://`) on port 8686.
 3. Port taken by something else? `--doctor` tells you.
 4. Service crash-looping? `journalctl -u linkmoth -n 50` shows why; TLS is
-   fail-closed, so missing/broken certificates stop startup on purpose —
+   fail-closed, so missing/broken certificates stop startup on purpose –
    re-run `sudo bash install.sh` to regenerate them.
 
 ### Setup token expired or lost
@@ -1016,7 +1016,7 @@ sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py --auth-set-password
 ```
 
 Sets a new one at a hidden prompt. All sessions are logged out; requires
-SSH/physical access to the Linkmoth host — that's the design: whoever owns the box
+SSH/physical access to the Linkmoth host – that's the design: whoever owns the box
 owns the account.
 
 ### Lost your phone (TOTP)
@@ -1039,13 +1039,13 @@ you have not cleared by fingerprint-verified trust.
 
 ### iPhone push shows an HTTPS or certificate error
 
-Desktop push can work while iPhone still fails — iOS is stricter about TLS and
+Desktop push can work while iPhone still fails – iOS is stricter about TLS and
 where Web Push is allowed.
 
-1. **Trust the CA fully on iOS** — installing the profile alone is not enough.
+1. **Trust the CA fully on iOS** – installing the profile alone is not enough.
    After the fingerprint check, go to Settings → General → About → **Certificate
    Trust Settings** and enable full trust for the Linkmoth CA. Reopen the app.
-2. **Use the Home Screen app, not Safari** — in Safari, tap Share → **Add to
+2. **Use the Home Screen app, not Safari** – in Safari, tap Share → **Add to
    Home Screen**, then open Linkmoth from the new icon. Settings → Browser push
    only works from that standalone app (iOS 16.4+).
 3. Confirm the dashboard loads without a certificate warning in the Home Screen
@@ -1067,7 +1067,7 @@ sudo /usr/local/lib/linkmoth/renew-cert.sh
 
 ### Wrong verdicts
 
-Check the fault ladder's evidence lines — every verdict shows exactly which
+Check the fault ladder's evidence lines – every verdict shows exactly which
 rungs failed and why. Two classic causes of misleading verdicts: the Linkmoth host's
 own link being flaky (playbook: "Linkmoth host link"), and undervoltage from a
 weak power supply (the host power rung warns about this).

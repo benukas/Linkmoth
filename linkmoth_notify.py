@@ -253,7 +253,7 @@ def notify_recovery(
 ) -> bool:
     """Single recovery path for outage tracker, incident loop, and Kuma digest.
 
-    `checks` is the just-confirmed *healthy* ladder that triggered recovery —
+    `checks` is the just-confirmed *healthy* ladder that triggered recovery –
     by definition it can't show what broke. `fault_checks`, when available,
     is the ladder from when the fault was actually confirmed (or last
     reconfirmed), and is what the "what was actually wrong" fields in the

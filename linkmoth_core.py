@@ -757,16 +757,37 @@ def public_settings():
     return out
 
 
+_DB_REENTRANT = threading.local()
+
+
 @contextmanager
 def db(path=None):
     """`path` targets an arbitrary database file (e.g. a restore scratch
-    copy) instead of the live DB_PATH; every other caller omits it."""
+    copy) instead of the live DB_PATH; every other caller omits it.
+
+    Re-entrant per thread: a nested `with db()` inside an outer one reuses
+    the outer connection instead of opening its own. Composed read paths
+    (Engine.status() alone fanned out to 13 separate connections) were
+    paying a connect + open/fstat/fchmod + close round trip each time,
+    which dominated the cost of the endpoint the dashboard polls every few
+    seconds. The outermost block still owns commit, rollback and close, so
+    the nested work also lands in one transaction and one consistent
+    snapshot rather than several.
+
+    Thread-local because sqlite3 connections are not shareable across
+    threads; concurrent HTTP workers each get their own.
+    """
     global DB_LOCK_RETRIES
     target = Path(path) if path is not None else DB_PATH
+    active = getattr(_DB_REENTRANT, "active", None)
+    if active is not None and active["path"] == target:
+        yield active["conn"]
+        return
     _ensure_private_state_file(target)
     conn = sqlite3.connect(target, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
+    _DB_REENTRANT.active = {"path": target, "conn": conn}
     try:
         yield conn
         for delay in (0.0, 0.025, 0.05, 0.1, 0.2, 0.4):
@@ -785,6 +806,7 @@ def db(path=None):
         conn.rollback()
         raise
     finally:
+        _DB_REENTRANT.active = None
         conn.close()
 
 
@@ -820,7 +842,7 @@ def build_tls_context():
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.options |= ssl.OP_NO_COMPRESSION
     # AEAD ciphers only: excludes CBC-mode TLS 1.2 suites (Lucky13-class
-    # padding-oracle risk). TLS 1.3 is unaffected — it has no CBC suites.
+    # padding-oracle risk). TLS 1.3 is unaffected – it has no CBC suites.
     context.set_ciphers("ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20")
     try:
         context.load_cert_chain(certfile=cert, keyfile=key)
@@ -900,7 +922,7 @@ class BoundedTLSServer(HTTPServer):
 
 
 AUTO_VACUUM_NAMES = {0: "NONE", 1: "FULL", 2: "INCREMENTAL"}
-AUTO_VACUUM_MODE = 2  # INCREMENTAL — reclaims pages on delete; manual VACUUM still repacks fully
+AUTO_VACUUM_MODE = 2  # INCREMENTAL – reclaims pages on delete; manual VACUUM still repacks fully
 
 
 def init_db(path=None):
@@ -989,6 +1011,23 @@ def init_db(path=None):
                 ON incident_outage_segments(incident_id, started);
             CREATE UNIQUE INDEX IF NOT EXISTS incident_outage_segments_one_open
                 ON incident_outage_segments(incident_id) WHERE ended IS NULL;
+            -- The two big append-only tables grow to tens of thousands of
+            -- rows at the default retention, and both are read on every
+            -- /api/status poll (every ui_refresh_seconds, per open
+            -- dashboard). Without these, the status query counted runs per
+            -- incident by scanning the whole runs table once per incident,
+            -- and every "newest N samples" read scanned and sorted the
+            -- entire quality_samples table. Existing installs pick these up
+            -- on the next start, since init_db() self-migrates.
+            CREATE INDEX IF NOT EXISTS idx_runs_incident_id ON runs(incident_id);
+            CREATE INDEX IF NOT EXISTS idx_runs_ts ON runs(ts);
+            CREATE INDEX IF NOT EXISTS idx_quality_samples_ts
+                ON quality_samples(ts);
+            CREATE INDEX IF NOT EXISTS idx_load_tests_ts ON load_tests(ts);
+            CREATE INDEX IF NOT EXISTS idx_incidents_started
+                ON incidents(started);
+            CREATE INDEX IF NOT EXISTS idx_incidents_resolved
+                ON incidents(resolved);
             """
         )
         try:
@@ -1276,7 +1315,7 @@ def vacuum_database(engine):
         return False, {"error": "database file not found"}
     with engine.lock:
         if engine.run_in_progress:
-            return False, {"error": "diagnosis in progress — try again shortly"}
+            return False, {"error": "diagnosis in progress – try again shortly"}
         size_before = DB_PATH.stat().st_size
         conn = sqlite3.connect(str(DB_PATH), timeout=60)
         try:
@@ -1300,7 +1339,7 @@ def vacuum_database(engine):
 
 
 def auto_vacuum(engine):
-    """Background reclaim after janitor deletes — incremental when enabled, else occasional full VACUUM."""
+    """Background reclaim after janitor deletes – incremental when enabled, else occasional full VACUUM."""
     if not DB_PATH.is_file():
         return
     info = db_maintenance_info()
@@ -1527,7 +1566,7 @@ class _SupportPseudonyms:
                 self._private_networks[address] = f"PRIVATE-NET-{len(self._private_networks) + 1}"
             return self._private_networks[address]
         # The trailing guard rejects longer dotted continuations ("1.2.3.4.5",
-        # "10.0.0.1.example") but tolerates sentence punctuation — an address
+        # "10.0.0.1.example") but tolerates sentence punctuation – an address
         # at the end of a sentence ("replied from 10.0.0.1.") must still be
         # pseudonymized.
         return re.sub(

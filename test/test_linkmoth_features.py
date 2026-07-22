@@ -890,7 +890,7 @@ class FalseAlarmAccountingTests(unittest.TestCase):
 
     def test_marking_closed_incident_false_alarm_moves_the_stats(self):
         # The user's exact report: one CLOSED incident, marked false alarm
-        # from History, must show 0 incidents / 1 false alarm — not 1 / 0.
+        # from History, must show 0 incidents / 1 false alarm – not 1 / 0.
         self._add(code="wan_down", resolved=True, ref="INC-FA-1")
         engine = self.linkmoth.Engine()
         before = engine.stats()
@@ -912,7 +912,7 @@ class FalseAlarmAccountingTests(unittest.TestCase):
 
     def test_legacy_false_alarm_rows_count_correctly(self):
         # Rows flagged before the verdict rewrite existed keep their old
-        # code — the flag alone must move them to the false-alarm column.
+        # code – the flag alone must move them to the false-alarm column.
         self._add(code="wan_down", resolved=True, false_alarm=1)
         stats = self.linkmoth.Engine().stats()
         self.assertEqual(stats["incidents_30d"], 0)

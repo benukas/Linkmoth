@@ -3,7 +3,7 @@
 Webhooks are stored in SQLite (not settings.json) and always send through the
 queue: emit_event() enqueues one row per subscribed webhook and wakes the drain
 thread, which renders the payload at send time so late deliveries can be
-annotated. During a global outage nothing is attempted — rows wait for WAN
+annotated. During a global outage nothing is attempted – rows wait for WAN
 recovery.
 """
 import http.client
@@ -31,7 +31,7 @@ USER_AGENT = "linkmoth-notify/1.0"
 
 QUEUE_CAP = 500
 MAX_ATTEMPTS = 10
-GONE_MAX_ATTEMPTS = 3  # 404/410 — endpoint is gone, give up early
+GONE_MAX_ATTEMPTS = 3  # 404/410 – endpoint is gone, give up early
 MAX_AGE_SECONDS = 24 * 3600
 BACKOFF_SECONDS = [30, 120, 600, 1800, 3600]
 DRAIN_BATCH = 20
@@ -260,8 +260,8 @@ def _resolve_pinned_target(url):
 
     Hostnames are HTTPS-only and must currently resolve entirely to global IPs;
     local delivery is limited to an explicit RFC1918 private IPv4 literal
-    (loopback is not permitted — it would let a webhook reach same-host services).
-    Returns (scheme, host, port, path, address) — callers must connect to
+    (loopback is not permitted – it would let a webhook reach same-host services).
+    Returns (scheme, host, port, path, address) – callers must connect to
     `address` directly rather than re-resolving `host`, or a DNS answer that
     changes between this check and the actual delivery could redirect the
     request to a different address than the one just validated.
@@ -682,7 +682,7 @@ _TEMPLATE_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 
 def render_template(template, ctx):
-    """Dumb placeholder substitution only — no logic, loops, or expressions."""
+    """Dumb placeholder substitution only – no logic, loops, or expressions."""
     def repl(match):
         key = match.group(1)
         if key not in ctx:
@@ -699,7 +699,7 @@ def render_template(template, ctx):
 
 def _delayed_note(ctx):
     if ctx.get("delayed"):
-        return f"\n(delayed delivery — event occurred {ctx.get('queued_at')})"
+        return f"\n(delayed delivery – event occurred {ctx.get('queued_at')})"
     return ""
 
 
@@ -880,7 +880,7 @@ def _safe_network_error(exc):
 
 
 def _send_now(webhook, ctx):
-    """Render and POST one payload. Returns (status, error) — error None on success."""
+    """Render and POST one payload. Returns (status, error) – error None on success."""
     body, content_type, auto_headers = render_payload(webhook, ctx)
     headers = {"Content-Type": content_type, "User-Agent": USER_AGENT}
     headers.update(auto_headers)
@@ -954,7 +954,7 @@ def emit_event(db_connect, event, ctx):
                 ).rowcount
             if cancelled:
                 print(
-                    f"escalation cancelled — {cancelled} held fault"
+                    f"escalation cancelled – {cancelled} held fault"
                     f" delivery(ies) resolved before their delay",
                     file=sys.stderr, flush=True,
                 )
@@ -995,7 +995,7 @@ def emit_event(db_connect, event, ctx):
                 )
                 overflow -= cur.rowcount
                 print(
-                    f"webhook queue full — dropped {cur.rowcount} oldest"
+                    f"webhook queue full – dropped {cur.rowcount} oldest"
                     f" deliveries for webhook {noisiest['webhook_id']}",
                     file=sys.stderr, flush=True,
                 )
@@ -1035,7 +1035,7 @@ def drain_queue_once(db_connect, now=None):
                 conn.execute("DELETE FROM webhook_queue WHERE id=?", (row["id"],))
             continue
         # MAX_AGE_SECONDS is the retry budget *after* a delivery becomes due,
-        # not from the moment it's queued — an escalation-held row can
+        # not from the moment it's queued – an escalation-held row can
         # legitimately sit undelivered for up to escalation_seconds (24h max)
         # before its first attempt is even allowed. Without adding that hold
         # time back in, a maximally-escalated entry would become "expired"
@@ -1087,7 +1087,7 @@ def drain_loop(db_connect):
         DRAIN_WAKE.clear()
         try:
             if OUTAGE_TRACKER.is_active(db_connect):
-                continue  # WAN is down — let deliveries wait for recovery
+                continue  # WAN is down – let deliveries wait for recovery
             drain_queue_once(db_connect)
         except Exception as e:
             print(f"webhook drain error: {e}", file=sys.stderr, flush=True)
