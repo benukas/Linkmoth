@@ -806,7 +806,7 @@ info "CA cert:       https://$IP:$PORT/ca.crt  (or /usr/local/share/ca-certifica
 info "CA fingerprint: $(openssl x509 -in "$TLS/ca.crt" -noout -fingerprint -sha256 | sed 's/^.*=//')"
 printf '\n'
 info "Linkmoth checks the network itself every few minutes and raises its own"
-info "incidents \342\200\224 no other service is required."
+info "incidents \342\200\223 no other service is required."
 printf '\n'
 note "Optional: if you run Uptime Kuma, point it here for instant, per-service"
 note "triggering (Settings > Notifications > Webhook):"

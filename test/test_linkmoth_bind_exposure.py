@@ -130,7 +130,7 @@ class PublicExposureGuardTests(unittest.TestCase):
         self.assertFalse(self.linkmoth._peer_is_trusted_local("1.1.1.1"))
 
     def test_top_level_trusted_proxy_cidrs_is_ignored(self):
-        # The old top-level key (per stale docs) must NOT be honored -- only the
+        # The old top-level key (per stale docs) must NOT be honored – only the
         # `auth` entry is read, so a misplaced key cannot silently grant trust.
         self.linkmoth.CFG["trusted_proxy_cidrs"] = ["8.8.8.0/24"]
         self.linkmoth.CFG["auth"] = {"trusted_proxy_cidrs": []}

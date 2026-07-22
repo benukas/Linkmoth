@@ -148,7 +148,7 @@ class BoundedTLSServerTests(unittest.TestCase):
                 # Each stalled connection must be terminated past the deadline: a
                 # 408, a clean close, or a reset all show the worker was released.
                 # Only a recv that blocks to its own timeout means the connection
-                # was still being serviced -- the bug this guards against.
+                # was still being serviced – the bug this guards against.
                 for peer in peers:
                     try:
                         data = peer.recv(256)
@@ -232,7 +232,7 @@ class BoundedTLSServerTests(unittest.TestCase):
                 # gap. Deadline 0.6s / drip 0.1s leaves room for several drips.
                 self.assertGreaterEqual(
                     survived_drips, 3,
-                    "connection closed too early -- deadline collapsed to the poll",
+                    "connection closed too early – deadline collapsed to the poll",
                 )
                 # And it must have been terminated near the deadline, not held
                 # open for the whole drip (the slow-loris bypass).

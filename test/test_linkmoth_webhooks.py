@@ -97,7 +97,7 @@ class ValidationTests(WebhookDbCase):
 
     def test_rejects_loopback_literal_webhook_at_creation(self):
         # An authenticated admin must not be able to point a webhook at the
-        # host's own loopback services (SSRF) -- for any 127.0.0.0/8 address,
+        # host's own loopback services (SSRF) – for any 127.0.0.0/8 address,
         # over either scheme.
         for url in (
             "http://127.0.0.1/hook",
@@ -463,7 +463,7 @@ class QueueTests(WebhookDbCase):
         self.assertAlmostEqual(row["escalation_seconds"], wh.MAX_AGE_SECONDS, delta=2)
         due_at = row["next_attempt"]
         # The drain loop only wakes periodically, so "now" at drain time is
-        # always a little past the exact due instant -- simulate that.
+        # always a little past the exact due instant – simulate that.
         with mock.patch.object(wh, "_post", return_value=200) as post:
             wh.drain_queue_once(self.db, now=due_at + 15)
         self.assertEqual(post.call_count, 1)
@@ -472,7 +472,7 @@ class QueueTests(WebhookDbCase):
         self.assertEqual(remaining, 0)  # delivered and removed, not expired
 
     def test_max_escalation_delivery_still_expires_after_full_retry_budget(self):
-        # Escalation-held rows must still expire eventually -- the fix only
+        # Escalation-held rows must still expire eventually – the fix only
         # adds back the hold time, it doesn't grant unlimited retries.
         wh_data = self.make_webhook()
         wh.update_webhook(self.db, wh_data["id"], {"escalation_minutes": 1440})

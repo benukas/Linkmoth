@@ -1,7 +1,7 @@
 """Linkmoth core: state/config paths, config loading and validation, the
 SQLite connection and schema, TLS context, and host stats.
 
-Foundational -- every other Linkmoth module depends on this one, directly
+Foundational – every other Linkmoth module depends on this one, directly
 or indirectly (following the project's existing convention: this module
 never imports from any of them).
 """
@@ -974,7 +974,7 @@ AUTO_VACUUM_MODE = 2  # INCREMENTAL – reclaims pages on delete; manual VACUUM 
 
 def init_db(path=None):
     """`path` runs schema creation/migration against an arbitrary database
-    file instead of the live DB_PATH -- used by restore to migrate a scratch
+    file instead of the live DB_PATH – used by restore to migrate a scratch
     copy before it's ever swapped in; every other caller omits it."""
     target = Path(path) if path is not None else DB_PATH
     fresh = _ensure_private_state_file(target)
