@@ -402,32 +402,36 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.4.7-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.4.8-bootstrap.sh', readme)
         self.assertIn(
-            "releases/download/v0.4.7/linkmoth-v0.4.7-bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.4.8/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
         self.assertIn("does not require Cosign", readme)
-        self.assertIn("--max-redirs 1", readme)
+        self.assertIn("--max-redirs 0", readme)
+        self.assertNotIn("--proto-redir", readme)
         self.assertNotIn("--insecure-skip-verify", readme)
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.7"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.8"))
+        self.assertLess(changelog.index("## 0.4.8"), changelog.index("## 0.4.7"))
         self.assertIn('"checksum-verified": "Checksum-verified release"', dashboard)
         self.assertIn("Optional Sigstore-verified command", dashboard)
         self.assertIn("data.sigstore_update_command", dashboard)
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.4.7", advanced)
+        self.assertIn("VERSION=v0.4.8", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
         self.assertNotIn("--insecure-skip-verify", advanced)
         self.assertIn('sudo bash "linkmoth-$VERSION-bootstrap.sh" --sigstore-verified', advanced)
         self.assertIn("linkmoth-$VERSION-bootstrap.sh", advanced)
+        self.assertIn("https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh", advanced)
+        self.assertIn("--max-redirs 0", advanced)
         self.assertIn("https://github.com/benukas/Linkmoth/releases/download/$VERSION", advanced)
         self.assertIn("https://github.com/benukas/Linkmoth/.github/workflows/release.yml@refs/tags/$VERSION", advanced)
 
