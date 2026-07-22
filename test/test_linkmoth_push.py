@@ -55,6 +55,36 @@ class PushSecurityTests(unittest.TestCase):
                     self.subscription("https://push.example.test/sub/two"),
                 )
 
+    def test_broadcast_counts_only_confirmed_deliveries(self):
+        subscriptions = [
+            {"endpoint": "https://push.example.test/ok"},
+            {"endpoint": "https://push.example.test/transient"},
+            {"endpoint": "https://push.example.test/stale"},
+        ]
+        with (
+            mock.patch.dict("sys.modules", {"pywebpush": mock.Mock()}),
+            mock.patch.object(push, "ensure_vapid_keys", return_value=self.tmp / "key"),
+            mock.patch.object(push, "list_subscriptions", return_value=subscriptions),
+            mock.patch.object(
+                push, "_send_one",
+                side_effect=[
+                    (True, None),
+                    (False, None),
+                    (False, "https://push.example.test/stale"),
+                ],
+            ),
+            mock.patch.object(push, "delete_subscription") as delete,
+        ):
+            delivered = push.broadcast_push(
+                self.tmp, self.db, {"push_notifications_enabled": True},
+                "Title", "Body",
+            )
+
+        self.assertEqual(delivered, 1)
+        delete.assert_called_once_with(
+            self.db, "https://push.example.test/stale"
+        )
+
     @unittest.skipIf(os.name == "nt", "Windows does not expose POSIX file modes")
     def test_vapid_key_is_written_atomically_with_private_mode(self):
         def fake_run(args, **kwargs):

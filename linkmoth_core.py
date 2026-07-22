@@ -91,8 +91,26 @@ def installation_provenance():
     """Read local provenance without inferring trust from a version or remote."""
     if not SYSTEM_INSTALL:
         return {"state": "unverified-manual", "detail": "source checkout or manual installation"}
+
+    def without_record():
+        build_metadata = BASE / "linkmoth-build.json"
+        try:
+            metadata = json.loads(build_metadata.read_text(encoding="utf-8"))
+            if (metadata.get("schema") != 1
+                    or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(metadata.get("version", "")))
+                    or not re.fullmatch(r"[0-9a-f]{40}", str(metadata.get("release_commit", "")))):
+                raise ValueError
+            return {"state": "unverified-manual", "detail": "versioned release installed without publisher verification"}
+        except FileNotFoundError:
+            return {"state": "legacy-unavailable"}
+        except (OSError, ValueError, json.JSONDecodeError):
+            return {"state": "unverified-manual", "detail": "manual installation with unavailable build metadata"}
+
     try:
         st = os.lstat(INSTALLATION_RECORD)
+    except FileNotFoundError:
+        return without_record()
+    try:
         if (stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode)
                 or st.st_uid != 0 or st.st_gid != 0
                 or stat.S_IMODE(st.st_mode) & 0o022):
@@ -111,19 +129,6 @@ def installation_provenance():
                 or metadata.get("release_commit") != record.get("release_commit")):
             raise ValueError
         return {"state": verification, "record": {k: record.get(k) for k in ("version", "release_commit", "archive_sha256", "installed_at")}}
-    except FileNotFoundError:
-        build_metadata = BASE / "linkmoth-build.json"
-        try:
-            metadata = json.loads(build_metadata.read_text(encoding="utf-8"))
-            if (metadata.get("schema") != 1
-                    or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", str(metadata.get("version", "")))
-                    or not re.fullmatch(r"[0-9a-f]{40}", str(metadata.get("release_commit", "")))):
-                raise ValueError
-            return {"state": "unverified-manual", "detail": "versioned release installed without publisher verification"}
-        except FileNotFoundError:
-            return {"state": "legacy-unavailable"}
-        except (OSError, ValueError, json.JSONDecodeError):
-            return {"state": "unverified-manual", "detail": "manual installation with unavailable build metadata"}
     except (OSError, ValueError, json.JSONDecodeError):
         return {"state": "invalid"}
 
@@ -233,9 +238,10 @@ def manual_update_check():
         "--noproxy '*' --connect-timeout 10 --max-time 300 --output \"$name\" \"$target\"; };"
     )
     normal_command = (
-        f"VERSION=v{latest}; curl -fsSLO --proto '=https' --proto-redir '=https' "
-        f"--noproxy '*' --max-redirs 1 {release_base}/{bootstrap_name} "
-        f"&& sudo bash {bootstrap_name}"
+        f"VERSION=v{latest}; NAME=linkmoth-$VERSION-bootstrap.sh; "
+        f"curl -fsSLo \"$NAME\" --proto '=https' --noproxy '*' --max-redirs 0 "
+        f"https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh "
+        f"&& sudo bash \"$NAME\""
     )
     sigstore_command = (
         f"VERSION=v{latest}; BASE={release_base}; {safe_download} "
@@ -264,8 +270,18 @@ def manual_update_check():
 def _version_tuple(value):
     parsed = _strict_version(value)
     core, _, prerelease = parsed.partition("-")
-    # Stable releases sort after prereleases with the same numeric version.
-    return tuple(int(piece) for piece in core.split(".")) + (1 if not prerelease else 0, prerelease)
+    core_parts = tuple(int(piece) for piece in core.split("."))
+    # SemVer compares dot-separated prerelease identifiers individually:
+    # numeric identifiers compare numerically and sort before non-numeric
+    # identifiers. A stable release sorts after every prerelease of the same
+    # core version.
+    if not prerelease:
+        return core_parts + (1, ())
+    prerelease_parts = tuple(
+        (0, int(piece)) if piece.isdigit() else (1, piece)
+        for piece in prerelease.split(".")
+    )
+    return core_parts + (0, prerelease_parts)
 
 
 def _allowed_local_dns_address(value):
@@ -908,9 +924,21 @@ class BoundedTLSServer(HTTPServer):
             except OSError:
                 pass
             return
-        self._workers.submit(
-            self._handle_tls_request, request, client_address, accepted_at,
-        )
+        try:
+            self._workers.submit(
+                self._handle_tls_request, request, client_address, accepted_at,
+            )
+        except RuntimeError:
+            # The executor rejects submissions once shutdown starts. A request
+            # accepted in that narrow race still owns both a socket and one of
+            # our bounded capacity slots, so release both here rather than
+            # permanently shrinking the live server's capacity.
+            try:
+                self.shutdown_request(request)
+            except OSError:
+                pass
+            finally:
+                self._slots.release()
 
     def _handle_tls_request(self, request, client_address, accepted_at):
         tls_request = None

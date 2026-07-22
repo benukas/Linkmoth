@@ -600,13 +600,48 @@ class AuthenticatedTests(LinkmothTestBase):
         )
         self.assertEqual(code, 403)
         _, _, cookie, csrf = self._login()
-        code, body, _, _ = http(
-            "POST", f"{self.base}/api/diagnose",
-            headers={"X-CSRF-Token": csrf},
-            cookies={"__Host-linkmoth_session": cookie},
-        )
+        finished = threading.Event()
+
+        def diagnose_once():
+            finished.set()
+            return None
+
+        with patch.object(
+            self.linkmoth.ENGINE, "diagnose_once", side_effect=diagnose_once
+        ):
+            code, body, _, _ = http(
+                "POST", f"{self.base}/api/diagnose",
+                headers={"X-CSRF-Token": csrf},
+                cookies={"__Host-linkmoth_session": cookie},
+            )
+            self.assertTrue(finished.wait(timeout=2))
         self.assertEqual(code, 200)
         self.assertTrue(body.get("started"))
+
+    def test_manual_diagnosis_worker_contains_failures(self):
+        with (
+            patch.object(
+                self.linkmoth.ENGINE, "diagnose_once",
+                side_effect=sqlite3.OperationalError("database is locked"),
+            ),
+            patch("builtins.print") as log,
+        ):
+            linkmoth_handler._run_manual_diagnosis()
+        self.assertIn("manual diagnosis failed: database is locked", log.call_args.args[0])
+
+    def test_manual_diagnosis_rejects_overlapping_work(self):
+        _, _, cookie, csrf = self._login()
+        self.assertTrue(linkmoth_handler.MANUAL_DIAGNOSIS_SLOT.acquire(blocking=False))
+        try:
+            code, body, _, _ = http(
+                "POST", f"{self.base}/api/diagnose",
+                headers={"X-CSRF-Token": csrf},
+                cookies={"__Host-linkmoth_session": cookie},
+            )
+        finally:
+            linkmoth_handler.MANUAL_DIAGNOSIS_SLOT.release()
+        self.assertEqual(code, 409)
+        self.assertIn("already running", body["error"])
 
     def test_manual_update_check_requires_admin_session_and_csrf(self):
         code, _, _, _ = http("POST", f"{self.base}/api/update/check", {})
@@ -679,6 +714,45 @@ class AuthenticatedTests(LinkmothTestBase):
         )
         self.assertEqual(code, 200)
         self.assertTrue(body.get("saved"))
+
+    def test_retention_reduction_requires_explicit_confirmation(self):
+        _, _, cookie, csrf = self._login()
+        auth = {"X-CSRF-Token": csrf}
+        self.linkmoth.CFG["retention_days"] = 90
+
+        code, body, _, _ = http(
+            "POST", f"{self.base}/api/settings",
+            {"retention_days": 1},
+            headers=auth,
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 409)
+        self.assertEqual(body["confirmation_required"], "retention_days")
+        self.assertIn("permanently deletes", body["errors"]["retention_days"])
+        self.assertEqual(self.linkmoth.CFG["retention_days"], 90)
+
+        code, body, _, _ = http(
+            "POST", f"{self.base}/api/settings",
+            {
+                "retention_days": 1,
+                "_confirm_retention_reduction": True,
+            },
+            headers=auth,
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(body["saved"])
+        self.assertEqual(self.linkmoth.CFG["retention_days"], 1)
+
+        code, body, _, _ = http(
+            "POST", f"{self.base}/api/settings",
+            {"retention_days": 30},
+            headers=auth,
+            cookies={"__Host-linkmoth_session": cookie},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(body["saved"])
+        self.assertEqual(self.linkmoth.CFG["retention_days"], 30)
 
     def test_quiet_hours_settings_validate_and_apply(self):
         _, _, cookie, csrf = self._login()

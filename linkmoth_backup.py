@@ -275,6 +275,15 @@ def _replace_live_database(scratch_path, db_path):
     return preserved
 
 
+def _rollback_live_database(db_path, preserved):
+    """Remove a failed restore and put the exact previous database back."""
+    db_path.unlink(missing_ok=True)
+    for sidecar in _db_sidecars(db_path):
+        sidecar.unlink(missing_ok=True)
+    if preserved is not None:
+        shutil.move(str(preserved), str(db_path))
+
+
 def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
                            validate_settings=None):
     """Restore history and settings from a backup archive.
@@ -291,8 +300,9 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
     silently didn't take. Only once both the database and the settings check
     out does the scratch file replace the live one (WAL-safely, preserving
     the previous database as `.pre-restore-*`); `apply_settings` then writes
-    the settings. If that final write fails unexpectedly, the previous
-    database is put back rather than left half-restored.
+    the settings. If that final write fails, whether by raising or by returning
+    validation/write errors, the previous database is put back rather than
+    left half-restored.
 
     Returns a summary dict. Raises ValueError for a malformed, oversized, or
     incompatible archive, an unapplyable settings payload, or a database
@@ -388,12 +398,14 @@ def restore_backup_archive(archive_path, db_path, init_db, apply_settings,
         # put the previous database back if applying settings blew up in a
         # way apply_settings itself doesn't turn into a clean (False, errors).
         # Pre-swap validation makes this path unlikely, but keep it exact.
-        db_path.unlink(missing_ok=True)
-        for sidecar in _db_sidecars(db_path):
-            sidecar.unlink(missing_ok=True)
-        if preserved is not None:
-            shutil.move(str(preserved), str(db_path))
+        _rollback_live_database(db_path, preserved)
         raise ValueError(f"settings could not be applied to the restored archive: {e}") from None
+    if not settings_ok:
+        _rollback_live_database(db_path, preserved)
+        raise ValueError(
+            "settings could not be applied to the restored archive: "
+            f"{settings_result}"
+        )
 
     return {
         "manifest": manifest,

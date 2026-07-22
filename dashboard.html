@@ -1016,6 +1016,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <div class="set-row"><label for="s-baseline">Baseline check (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">How often Linkmoth may auto-open an incident when a background check finds a fault. 0 turns it off.</span></span></label><input id="s-baseline" type="number" min="0" max="1440" step="1"></div>
           <div class="set-row"><label for="s-history">Latency history (minutes)<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Background diagnosis interval that feeds the sparkline graphs. 0 = use baseline interval only.</span></span></label><input id="s-history" type="number" min="0" max="1440" step="1"></div>
           <div class="set-row"><label for="s-retention">Keep history (days)</label><input id="s-retention" type="number" min="1" max="3650" step="1"></div>
+          <p class="set-hint">Lowering this permanently deletes older history during the next cleanup. Increasing it later cannot recover deleted data.</p>
         </div>
         <div class="set-section">
           <h4>Targets</h4>
@@ -1297,6 +1298,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 let refreshSec = 5;
 let settingsLoaded = false;
+let savedRetentionDays = null;
 let lastStats = null;
 let csrfToken = null;
 let fireDrillSyncRank = 0;
@@ -2740,6 +2742,7 @@ async function refresh() {
   }
   if (s.settings) {
     refreshSec = s.settings.ui_refresh_seconds || 5;
+    savedRetentionDays = Number(s.settings.retention_days);
     if (!settingsLoaded) {
       $("s-kuma").value = s.settings.kuma_url;
       $("s-refresh").value = s.settings.ui_refresh_seconds;
@@ -4912,6 +4915,19 @@ document.addEventListener("click", async (ev) => {
   setTimeout(() => { btn.textContent = "Copy story"; }, 1800);
 });
 
+function confirmRetentionReduction(nextDays) {
+  if (!Number.isInteger(nextDays) || nextDays < 1 || nextDays > 3650 ||
+      !Number.isFinite(savedRetentionDays) ||
+      nextDays >= savedRetentionDays) return true;
+  const oldUnit = savedRetentionDays === 1 ? "day" : "days";
+  const nextUnit = nextDays === 1 ? "day" : "days";
+  return confirm(
+    `Are you sure you want to reduce history from ${savedRetentionDays} ${oldUnit} ` +
+    `to ${nextDays} ${nextUnit}? The next cleanup will permanently delete ` +
+    `older history. Increasing retention later cannot recover it.`
+  );
+}
+
 $("save-settings").addEventListener("click", async () => {
   const msg = $("settings-msg");
   const payload = {
@@ -4938,6 +4954,18 @@ $("save-settings").addEventListener("click", async () => {
     quiet_hours_start: $("s-quiet-start").value,
     quiet_hours_end: $("s-quiet-end").value,
   };
+  const nextRetentionDays = Number(payload.retention_days);
+  if (!confirmRetentionReduction(nextRetentionDays)) {
+    msg.textContent = "Not saved – history retention was left unchanged";
+    msg.className = "bad";
+    setTimeout(() => { msg.textContent = ""; }, 5000);
+    return;
+  }
+  if (Number.isInteger(nextRetentionDays) && nextRetentionDays >= 1 &&
+      nextRetentionDays <= 3650 && Number.isFinite(savedRetentionDays) &&
+      nextRetentionDays < savedRetentionDays) {
+    payload._confirm_retention_reduction = true;
+  }
   try {
     const r = await fetch("/api/settings", {
       method: "POST",
@@ -4948,6 +4976,7 @@ $("save-settings").addEventListener("click", async () => {
     if (out.saved) {
       msg.textContent = "Saved – applied immediately";
       msg.className = "ok";
+      savedRetentionDays = Number(out.settings?.retention_days ?? nextRetentionDays);
       settingsLoaded = false;
       refresh();
     } else {

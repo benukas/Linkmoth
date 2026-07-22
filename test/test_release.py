@@ -51,6 +51,21 @@ DIST_FILES = {
 
 
 class PublicReleaseTests(unittest.TestCase):
+    def test_retention_reduction_warns_before_irreversible_cleanup(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn(
+            "Lowering this permanently deletes older history during the next cleanup",
+            dashboard,
+        )
+        self.assertIn("function confirmRetentionReduction(nextDays)", dashboard)
+        save_handler = dashboard.index('$("save-settings").addEventListener')
+        confirmation = dashboard.index(
+            "if (!confirmRetentionReduction(nextRetentionDays))", save_handler
+        )
+        request = dashboard.index('fetch("/api/settings"', save_handler)
+        self.assertLess(confirmation, request)
+        self.assertIn("payload._confirm_retention_reduction = true", dashboard)
+
     def test_pwa_has_standard_opaque_apple_touch_icon(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         source = (ROOT / "linkmoth_core.py").read_text(encoding="utf-8")
@@ -338,6 +353,14 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn('handle.write(f"{digest.hexdigest()}  {os.path.basename(archive)}\\n")', builder)
         self.assertNotIn("sha256sum", builder)
         self.assertNotIn("shasum -a", builder)
+
+    def test_tagged_bootstrap_derives_only_a_strict_versioned_filename(self):
+        bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")
+        self.assertIn('case "$RELEASE_VERSION" in\n  @*)', bootstrap)
+        self.assertIn('linkmoth-v*-bootstrap.sh)', bootstrap)
+        self.assertIn('RELEASE_VERSION="${BOOTSTRAP_NAME#linkmoth-}"', bootstrap)
+        self.assertIn('RELEASE_VERSION="${RELEASE_VERSION%-bootstrap.sh}"', bootstrap)
+        self.assertIn("save the tagged bootstrap as linkmoth-vX.Y.Z-bootstrap.sh", bootstrap)
 
     def test_sigstore_mode_pins_identity_and_fails_closed(self):
         bootstrap = (ROOT / "bootstrap.sh").read_text(encoding="utf-8")

@@ -293,11 +293,34 @@ class InstallationProvenanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             record = base / "installation.json"
-            record.write_text("{}", encoding="utf-8")
+            record.write_text(json.dumps({
+                "schema": 1,
+                "version": "v0.4.8",
+                "release_commit": "a" * 40,
+                "archive_sha256": "b" * 64,
+                "verification": "checksum-verified",
+                "installed_at": "2026-07-22T12:00:00Z",
+            }), encoding="utf-8")
             record.chmod(0o644)
             with mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True), \
                  mock.patch.object(linkmoth_core, "BASE", base), \
                  mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", record):
+                result = self.linkmoth.installation_provenance()
+        self.assertEqual(result["state"], "invalid")
+
+    def test_existing_record_without_installed_build_metadata_is_invalid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            record = base / "installation.json"
+            record.write_text("{}", encoding="utf-8")
+            record.chmod(0o644)
+            safe_stat = mock.Mock(
+                st_mode=self.linkmoth.stat.S_IFREG | 0o644, st_uid=0, st_gid=0,
+            )
+            with mock.patch.object(linkmoth_core, "SYSTEM_INSTALL", True), \
+                 mock.patch.object(linkmoth_core, "BASE", base), \
+                 mock.patch.object(linkmoth_core, "INSTALLATION_RECORD", record), \
+                 mock.patch.object(self.linkmoth.os, "lstat", return_value=safe_stat):
                 result = self.linkmoth.installation_provenance()
         self.assertEqual(result["state"], "invalid")
 
@@ -371,8 +394,33 @@ class ManualUpdateCheckTests(unittest.TestCase):
         self.assertIn("--sigstore-verified", result["verified_update_command"])
         self.assertEqual(result["sigstore_update_command"], result["verified_update_command"])
         self.assertIn("--noproxy '*'", result["update_command"])
-        self.assertIn("--max-redirs 1", result["update_command"])
+        self.assertIn("--max-redirs 0", result["update_command"])
+        self.assertIn(
+            "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh",
+            result["update_command"],
+        )
+        self.assertNotIn("releases/download", result["update_command"])
         self.assertNotIn("cosign", result["update_command"])
+
+    def test_prerelease_versions_follow_semantic_version_ordering(self):
+        ordered = [
+            "1.0.0-alpha",
+            "1.0.0-alpha.1",
+            "1.0.0-alpha.beta",
+            "1.0.0-beta",
+            "1.0.0-beta.2",
+            "1.0.0-beta.11",
+            "1.0.0-rc.1",
+            "1.0.0-rc.10",
+            "1.0.0",
+            "1.0.1-alpha",
+        ]
+        keys = [linkmoth_core._version_tuple(version) for version in ordered]
+        self.assertEqual(keys, sorted(keys))
+        self.assertGreater(
+            linkmoth_core._version_tuple("1.0.0-rc.10"),
+            linkmoth_core._version_tuple("1.0.0-rc.2"),
+        )
 
     def test_update_check_rejects_wrong_release_url(self):
         payload = b'{"tag_name":"v0.2.1","published_at":"2026-07-13T00:00:00Z","html_url":"https://example.test/release"}'
@@ -1203,6 +1251,24 @@ class HistoryRangeTests(unittest.TestCase):
         result = self.linkmoth.ENGINE.history_range(6)
         self.assertTrue(result["bucketed"])
         self.assertTrue(any(s["severity"] == "bad" for s in result["samples"]))
+
+    def test_malformed_stored_checks_do_not_break_status_or_history(self):
+        with self.linkmoth.db() as conn:
+            conn.execute(
+                "INSERT INTO runs(ts, severity, code, title, checks, kind)"
+                " VALUES(?,?,?,?,?,?)",
+                (time.time(), "ok", "all_clear", "t", "{not-json", "baseline"),
+            )
+
+        status = self.linkmoth.ENGINE.status()
+        self.assertEqual(status["last_run"]["checks"], [])
+        self.assertEqual(status["history"][-1]["ms"], {})
+        expanded = self.linkmoth.ENGINE.history_range(6)
+        self.assertEqual(expanded["samples"][-1]["ms"], {})
+
+        engine_module = importlib.import_module("linkmoth_engine")
+        self.assertEqual(engine_module._decode_stored_checks('{"wrong": "shape"}'), [])
+        self.assertEqual(engine_module._decode_stored_checks('["not-an-object"]'), [])
 
 
 class DoctorJsonTests(unittest.TestCase):

@@ -389,6 +389,40 @@ class BackupRestoreRoundTripTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["source"], "pre-existing")
 
+    def test_restore_rolls_back_when_settings_write_returns_errors(self):
+        core = self._seed_source()
+        archive = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")
+        self.archive_path.write_bytes(archive)
+
+        target_core = _reimport_core(self.target_dir)
+        with target_core.db() as conn:
+            conn.execute(
+                "INSERT INTO incidents(started, source, detail, resolved)"
+                " VALUES(?,?,?,?)",
+                (time.time(), "pre-existing", "must-survive", None),
+            )
+
+        def settings_write_fails(_settings):
+            return False, {"_save": "disk is full"}
+
+        with self.assertRaisesRegex(ValueError, "disk is full"):
+            backup.restore_backup_archive(
+                self.archive_path, target_core.DB_PATH,
+                target_core.init_db, settings_write_fails,
+                target_core.validate_settings,
+            )
+
+        with target_core.db() as conn:
+            sources = [
+                row[0] for row in conn.execute(
+                    "SELECT source FROM incidents ORDER BY id"
+                ).fetchall()
+            ]
+        self.assertEqual(sources, ["pre-existing"])
+        self.assertFalse(list(
+            target_core.DB_PATH.parent.glob("state.db.pre-restore-*")
+        ))
+
     def test_restore_rejects_unknown_schema_version_without_touching_disk(self):
         core = self._seed_source()
         archive_bytes = backup.build_backup_archive(core.db, core._export_settings, "1.2.3")

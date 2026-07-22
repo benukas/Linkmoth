@@ -1013,7 +1013,13 @@ def normalize_stored_check(check):
 
 
 def normalize_stored_checks(checks):
-    return [normalize_stored_check(check) for check in (checks or [])]
+    if not isinstance(checks, (list, tuple)):
+        return []
+    return [
+        normalize_stored_check(check)
+        for check in checks
+        if isinstance(check, dict)
+    ]
 
 
 def normalize_stored_verdict(item):
@@ -1952,6 +1958,18 @@ def _day_start(ts):
         return None
 
 
+def _shift_day_start(day_start, days):
+    """Move a local midnight by calendar days, preserving DST boundaries."""
+    try:
+        lt = time.localtime(day_start)
+        return time.mktime((
+            lt.tm_year, lt.tm_mon, lt.tm_mday + int(days),
+            0, 0, 0, 0, 0, -1,
+        ))
+    except (OSError, OverflowError, TypeError, ValueError):
+        return None
+
+
 _SCORE_CACHE_LOCK = threading.Lock()
 _SCORE_CACHE = {}
 # The grade is a per-day figure, but /api/status is polled every
@@ -1988,7 +2006,16 @@ def connection_score(days=30, use_cache=True):
                 "score": None, "grade": None, "factors": None,
                 "baseline_score": None, "baseline_grade": None, "trend": None,
                 "headline": "Host clock is not set, so days cannot be graded."}
-    window_start = today_start - (days - 1) * 86400
+    day_boundaries = [
+        _shift_day_start(today_start, offset)
+        for offset in range(-(days - 1), 2)
+    ]
+    if any(boundary is None for boundary in day_boundaries):
+        return {"days": days, "history": [], "sample_count": 0, "graded": False,
+                "score": None, "grade": None, "factors": None,
+                "baseline_score": None, "baseline_grade": None, "trend": None,
+                "headline": "Host clock is not set, so days cannot be graded."}
+    window_start = day_boundaries[0]
     samples, segments_by_incident, load_rows = [], {}, []
     try:
         with db() as conn:
@@ -2026,9 +2053,7 @@ def connection_score(days=30, use_cache=True):
     all_segments = [s for group in segments_by_incident.values() for s in group]
 
     history, latency_by_day = [], {}
-    for index in range(days):
-        start = window_start + index * 86400
-        end = start + 86400
+    for start, end in zip(day_boundaries, day_boundaries[1:]):
         day_samples = by_day.get(start, [])
         entry = {"day": time.strftime("%Y-%m-%d", time.localtime(start)),
                  "samples": len(day_samples)}

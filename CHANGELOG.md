@@ -12,6 +12,18 @@
   identity and transparency-log check, and fails closed if Cosign or any
   signature verification is unavailable.
 
+### Fixed
+
+- Reducing history retention now requires an explicit destructive-action
+  confirmation in both the dashboard and API. Restore failures roll the live
+  database back, malformed stored diagnostics no longer break status pages,
+  prerelease update ordering follows semantic-version rules, and connection
+  scoring remains correct across daylight-saving transitions.
+- Background and network work is more resilient: manual diagnoses cannot pile
+  up, HTTPS capacity is released during shutdown races, webhook responses are
+  bounded, push delivery totals are accurate, and dual-stack webhook services
+  prefer IPv4 on hosts without a working IPv6 route.
+
 ## 0.4.7
 
 ### Added

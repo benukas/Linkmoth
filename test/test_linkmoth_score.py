@@ -54,8 +54,9 @@ class ConnectionScoreTests(unittest.TestCase):
         today_start = self.probes._day_start(now)
         with self.core.db() as conn:
             for ago in range(days - 1, -1, -1):
-                day_start = today_start - ago * 86400
-                day_end = min(day_start + 86400 - 1, now)
+                day_start = self.probes._shift_day_start(today_start, -ago)
+                next_start = self.probes._shift_day_start(today_start, -ago + 1)
+                day_end = min(next_start - 1, now)
                 span = max(1.0, day_end - day_start)
                 value = override.get(ago, latency)
                 for index in range(per_day):
@@ -216,6 +217,45 @@ class ConnectionScoreTests(unittest.TestCase):
         for bad in (10**18, -8640000, 10**12):
             self.assertIsNone(self.probes._day_start(bad))
         self.assertIsNotNone(self.probes._day_start(time.time()))
+
+    @unittest.skipUnless(hasattr(time, "tzset"), "requires POSIX timezone control")
+    def test_calendar_days_remain_graded_across_dst_transition(self):
+        old_tz = os.environ.get("TZ")
+        try:
+            os.environ["TZ"] = "America/New_York"
+            time.tzset()
+            now = time.mktime((2025, 3, 10, 12, 0, 0, 0, 0, -1))
+            today_start = self.probes._day_start(now)
+            boundaries = [
+                self.probes._shift_day_start(today_start, offset)
+                for offset in (-2, -1, 0, 1)
+            ]
+            self.assertEqual(boundaries[2] - boundaries[1], 23 * 3600)
+
+            with self.core.db() as conn:
+                for start, end in zip(boundaries, boundaries[1:]):
+                    end = min(end, now)
+                    for index in range(6):
+                        ts = start + (end - start) * ((index + 1) / 7)
+                        conn.execute(
+                            "INSERT INTO quality_samples(ts, latency_ms, jitter_ms,"
+                            " loss_pct, state) VALUES(?,?,?,?,?)",
+                            (ts, 18.0, 2.0, 0.0, "good"),
+                        )
+
+            with mock.patch.object(self.probes.time, "time", return_value=now):
+                result = self.probes.connection_score(3, use_cache=False)
+            self.assertEqual(
+                [day["day"] for day in result["history"]],
+                ["2025-03-08", "2025-03-09", "2025-03-10"],
+            )
+            self.assertTrue(all(day["score"] is not None for day in result["history"]))
+        finally:
+            if old_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old_tz
+            time.tzset()
 
     def test_score_never_probes_the_network(self):
         """The whole premise of the feature: it reads stored evidence only."""

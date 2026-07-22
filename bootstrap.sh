@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Linkmoth versioned release bootstrap installer. This file is generated during
-# release construction; do not run the repository copy directly.
+# Linkmoth versioned release bootstrap installer. Release assets have the
+# version substituted at build time; an exact tagged source copy derives the
+# same pinned version from its required local filename.
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -9,8 +10,22 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
 
 OFFICIAL_REPO="benukas/Linkmoth"
 RELEASE_VERSION="@LINKMOTH_VERSION@"
-
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+case "$RELEASE_VERSION" in
+  @*)
+    BOOTSTRAP_NAME="${0##*/}"
+    case "$BOOTSTRAP_NAME" in
+      linkmoth-v*-bootstrap.sh)
+        RELEASE_VERSION="${BOOTSTRAP_NAME#linkmoth-}"
+        RELEASE_VERSION="${RELEASE_VERSION%-bootstrap.sh}"
+        ;;
+      *)
+        die "save the tagged bootstrap as linkmoth-vX.Y.Z-bootstrap.sh"
+        ;;
+    esac
+    ;;
+esac
 
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo bash linkmoth-<version>-bootstrap.sh"
 command -v curl >/dev/null || die "curl is required"
