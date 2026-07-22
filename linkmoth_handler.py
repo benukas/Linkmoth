@@ -90,7 +90,7 @@ def _peer_is_trusted_local(peer_ip):
     Linkmoth is LAN-only by design; this backs a request-level guard against
     an accidental router port-forward, not just documentation. A configured
     `trusted_proxy_cidrs` entry is the opt-in for a deliberate reverse-proxy
-    or remote-access setup (e.g. a VPN overlay) — anything else reaching a
+    or remote-access setup (e.g. a VPN overlay) – anything else reaching a
     public/global address is refused outright.
     """
     try:
@@ -160,14 +160,14 @@ class _BoundedHeaderReader:
     The deadline is a true wall-clock bound. A socket timeout only limits each
     individual ``recv()``, so delegating a whole line to the underlying
     ``BufferedReader.readline()`` (which loops over many ``recv()`` calls) would
-    let a client that drips one byte at a time — each byte arriving before the
-    per-recv timeout — hold a worker far past the deadline. Instead we fill from
+    let a client that drips one byte at a time – each byte arriving before the
+    per-recv timeout – hold a worker far past the deadline. Instead we fill from
     small ``read1()`` chunks and re-check the deadline before every chunk, so no
     pacing of bytes can extend a request past ``deadline + HEADER_POLL_SECONDS``.
 
     Over-read bytes (a chunk can span a line boundary, or reach past the final
     blank line into the body) are held in ``self._buf`` and served by this
-    wrapper's own ``readline``/``read``/``read1`` — never pulled out where the
+    wrapper's own ``readline``/``read``/``read1`` – never pulled out where the
     body read (``rfile.read(length)``) could lose them.
     """
 
@@ -596,7 +596,7 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def _json_object_safe(self, body):
-        """Lenient parse — returns {} on missing/invalid input (no raise)."""
+        """Lenient parse – returns {} on missing/invalid input (no raise)."""
         try:
             data = json.loads(body) if body else {}
         except (json.JSONDecodeError, TypeError):
@@ -851,7 +851,7 @@ class Handler(BaseHTTPRequestHandler):
         data = self._json_object_safe(body)
         try:
             if path == "/api/auth/totp/setup":
-                # No secret verification here — just stage a pending enrollment.
+                # No secret verification here – just stage a pending enrollment.
                 # Recovery codes are withheld until the user activates.
                 secret, uri = auth.begin_totp_setup()
                 self._send(200, {"secret": secret, "otpauth_uri": uri})
@@ -1019,7 +1019,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/metrics":
             # Prometheus can't hold a browser session. Accept a read-only
-            # token first — it's strictly less powerful than the webhook
+            # token first – it's strictly less powerful than the webhook
             # bearer (it can never reach /trigger or the inbound webhook
             # routes to create diagnostic activity), so a scraper only
             # needs least privilege here. The webhook bearer is still
@@ -1219,7 +1219,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/push/vapid-key":
             from linkmoth_push import push_available, vapid_public_key_b64
             if not push_available(STATE_DIR):
-                self._send(503, {"error": "browser push unavailable — run: sudo bash install.sh --with-push"})
+                self._send(503, {"error": "browser push unavailable – run: sudo bash install.sh --with-push"})
                 return
             key = vapid_public_key_b64(STATE_DIR)
             if not key:
@@ -1508,7 +1508,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/push/subscribe":
             from linkmoth_push import push_available, save_subscription
             if not push_available(STATE_DIR):
-                self._send(503, {"error": "browser push unavailable — run: sudo bash install.sh --with-push"})
+                self._send(503, {"error": "browser push unavailable – run: sudo bash install.sh --with-push"})
                 return
             try:
                 sub = json.loads(body)
@@ -1662,17 +1662,17 @@ def doctor(json_output=False):
         })
         if not json_output:
             print(f"[{'ok' if healthy else 'FAIL'}] {name}"
-                  + (f" — {detail}" if detail else ""))
+                  + (f" – {detail}" if detail else ""))
         if not healthy:
             problems += 1
 
     def info(name, detail=""):
         checks.append({"name": name, "status": "info", "detail": detail})
         if not json_output:
-            print(f"[--] {name}" + (f" — {detail}" if detail else ""))
+            print(f"[--] {name}" + (f" – {detail}" if detail else ""))
 
     report("python >= 3.9", sys.version_info >= (3, 9), sys.version.split()[0])
-    # DNS is resolved with a stdlib socket now — no `dig` binary required.
+    # DNS is resolved with a stdlib socket now – no `dig` binary required.
     for tool in ("ping", "ip", "systemctl"):
         path = shutil.which(tool)
         report(f"tool: {tool}", path is not None, path or "not found")
@@ -1682,7 +1682,7 @@ def doctor(json_output=False):
         None,
     )
     info("CA trust mechanism",
-         trust_tool or "none found — clients trust the CA manually")
+         trust_tool or "none found – clients trust the CA manually")
     report("config", CONFIG_ERROR is None, CONFIG_ERROR or str(CONFIG_PATH))
     report("state dir writable", os.access(STATE_DIR, os.W_OK), str(STATE_DIR))
     try:
@@ -1712,13 +1712,13 @@ def doctor(json_output=False):
         report("browser push (optional)", True, "pywebpush available")
     except ImportError:
         info("browser push (optional)",
-             "off — run: sudo bash install.sh --with-push (uses /opt/linkmoth/venv, not system pip)")
+             "off – run: sudo bash install.sh --with-push (uses /opt/linkmoth/venv, not system pip)")
     rc_ntp, ntp = run_cmd(["timedatectl", "show", "-p", "NTPSynchronized", "--value"])
     if rc_ntp == 0 and ntp.strip() == "yes":
         report("clock synchronized (NTP)", True)
     elif rc_ntp == 0 and ntp.strip() == "no":
         info("clock synchronized (NTP)",
-             "NOT synced — TOTP codes and HTTPS need accurate time; check: timedatectl")
+             "NOT synced – TOTP codes and HTTPS need accurate time; check: timedatectl")
     else:
         info("clock synchronized (NTP)", "could not determine")
     try:
@@ -1729,7 +1729,7 @@ def doctor(json_output=False):
         report("TLS certificate", False, str(e))
     gw, dev = default_route()
     report("default route", gw is not None,
-           f"via {gw} on {dev}" if gw else "none — is the network up?")
+           f"via {gw} on {dev}" if gw else "none – is the network up?")
     try:
         probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         probe.bind((CFG["bind"], CFG["port"]))
@@ -1756,7 +1756,7 @@ def doctor(json_output=False):
         names = ", ".join(f"{i['iface']} ({i['address']})" for i in containers)
         info(
             "container bridge interfaces",
-            f"{names} — host-local, not normally reachable from outside; "
+            f"{names} – host-local, not normally reachable from outside; "
             f"narrow \"bind\" if you want to exclude them too",
         )
     if json_output:

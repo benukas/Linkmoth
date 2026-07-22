@@ -291,7 +291,7 @@ class PublicReleaseTests(unittest.TestCase):
     def test_ladder_keeps_probe_details_compact_and_nonduplicative(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         # Each check (row + its evidence) is wrapped in one .ladder-check block,
-        # and the divider sits on that block — never between a check and its own
+        # and the divider sits on that block – never between a check and its own
         # evidence, and never trailing after the last check.
         self.assertIn('.ladder-check { border-top: 1px solid var(--border); }', dashboard)
         self.assertIn('.ladder-check:first-child, .ladder-group + .ladder-check { border-top: none; }', dashboard)

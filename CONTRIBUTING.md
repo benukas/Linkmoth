@@ -5,7 +5,7 @@ Copyright © 2026 Benas Urniežius.
 Linkmoth is published as a public AGPL-3.0-only project, and the official
 Linkmoth version is maintained solely by its copyright holder. **Pull requests
 are welcome and will be read**, but review happens at the maintainer's own
-pace and merging is not guaranteed — most will not be merged immediately, if
+pace and merging is not guaranteed – most will not be merged immediately, if
 at all. A pull request that's a genuinely good fit may be merged and shipped
 in a future update; there is no promise of if, or when. Opening a pull
 request does not make it accepted, merged, or licensed to the official

@@ -124,7 +124,7 @@ class OutageTrackerTests(unittest.TestCase):
         self.assertEqual(len(self.recoveries), 1)
         self.assertEqual(self.recoveries[0]["prior_fault"]["code"], "wan_down")
         # The recovery notification carries the *broken* ladder from onset,
-        # not the healthy checks that just confirmed recovery — otherwise a
+        # not the healthy checks that just confirmed recovery – otherwise a
         # Discord/push recipient is told nothing about what was actually down.
         fault_checks = self.recoveries[0]["fault_checks"]
         self.assertTrue(any(c["id"] == "raw_ping" and c["ok"] is False for c in fault_checks))

@@ -11,7 +11,7 @@ monthly network report, read-only API tokens, fire drill, `--doctor --json`.
 
 Context that shaped this list:
 - Notifiers are already broad (Discord, push, ntfy, Home Assistant, Slack, n8n,
-  generic webhook) — adding more chat targets is low value.
+  generic webhook) – adding more chat targets is low value.
 - All integrations today are **push**; there is no pull/scrape endpoint.
 - Every incident is already recorded with timestamps and a blame verdict, but
   almost nothing is extracted from that history yet.
@@ -24,7 +24,7 @@ Turn the incident log we already keep into a shareable record.
 - A `/report` view + export (CSV first, PDF later): incident count, total
   downtime, blame breakdown (WAN vs router vs WLAN vs DNS), longest outage,
   time-of-day pattern.
-- "Copy evidence for ISP support" — a timestamped, plain-language list of
+- "Copy evidence for ISP support" – a timestamped, plain-language list of
   WAN-blamed incidents suitable to paste into a complaint.
 - Once connection quality lands, extend this into a **quality SLA report**
   (not just uptime: latency/bufferbloat percentiles over the month).
@@ -43,7 +43,7 @@ A scrape endpoint so Grafana/Prometheus users can graph and alert.
 ## 3. Verdict-driven actions / escalation  (high value, moderate effort)
 Move from *notify* to *respond*.
 
-- Rules like "if WAN is dead > N minutes, run <action>" — e.g. pulse a smart
+- Rules like "if WAN is dead > N minutes, run <action>" – e.g. pulse a smart
   plug (Home Assistant / Tado / generic HTTP) to power-cycle the modem.
 - Escalation policy: notify channel A immediately, channel B if still down after
   N minutes.
@@ -76,56 +76,56 @@ The private-CA trust step is the biggest beginner hurdle.
 
 ---
 
-## Brainstorm — standalone value (2026-07-17)
+## Brainstorm – standalone value (2026-07-17)
 
 Ideas from the standalone-first repositioning, each checked against the
 LAN-only threat model. Grouped by security cost. Unreviewed; prune freely.
 
 ### Zero new attack surface (pure rendering/analytics over existing data)
 
-- **Monthly network health digest** — auto-summary through the existing
+- **Monthly network health digest** – auto-summary through the existing
   notify channels: uptime, incident count, blame breakdown, quality trend
   vs last month. Turns silent good months into visible delivered value.
-- **Plain-language quality findings** — "evenings are 3× worse than
+- **Plain-language quality findings** – "evenings are 3× worse than
   mornings", "loss spikes recur daily after 20:00". Analytics over
   `quality_samples`; feeds the ISP report.
-- **Incident story paragraph** — on close, render the evidence trail as one
+- **Incident story paragraph** – on close, render the evidence trail as one
   human-readable narrative ("At 21:14 the router stopped answering; local
   DNS had already failed 40 s earlier…") with a copy button. This is the
-  text people paste into chats/forums — organic marketing surface.
-- **Wi-Fi vs wired differential verdicts** — when `target_wifi_clients` are
+  text people paste into chats/forums – organic marketing surface.
+- **Wi-Fi vs wired differential verdicts** – when `target_wifi_clients` are
   configured, compare their loss against the wired baseline to say "your
   Wi-Fi is the problem, not your ISP" explicitly.
-- **First-run confidence builder** — guided "pull your WAN cable now" test
+- **First-run confidence builder** – guided "pull your WAN cable now" test
   during onboarding; Linkmoth catches it live. Proves the product in
   minute one instead of waiting weeks for a real outage.
-- **`--doctor --json`** — machine-readable environment output for bug
+- **`--doctor --json`** – machine-readable environment output for bug
   reports and future tooling.
 
 ### Small, well-understood new surface (needs the usual care, no new class of risk)
 
-- **Prometheus `/metrics`** (roadmap #2) — read-only text endpoint; reuse
+- **Prometheus `/metrics`** (roadmap #2) – read-only text endpoint; reuse
   webhook bearer or LAN-bind-only; never expose secrets in labels.
-- **Scoped read-only API token** — a separate token class that can only GET
+- **Scoped read-only API token** – a separate token class that can only GET
   status/quality (never settings, incidents detail optional), for Homepage/
   Glance/kiosk widgets and Home Assistant REST sensors. Distinct from both
   the admin session and the webhook secret; revocable from Settings.
-- **Bufferbloat / latency-under-load score** — measure ping inflation while
+- **Bufferbloat / latency-under-load score** – measure ping inflation while
   saturating the link briefly against the configured HTTPS targets. Opt-in
   (data caps), bounded transfer size, outbound-only to already-configured
   targets; no listening surface. The single most *felt* daily-value metric
   for gamers and video calls.
-- **Throughput trend sampling** — same opt-in/bounded framing; a trend line,
+- **Throughput trend sampling** – same opt-in/bounded framing; a trend line,
   not a speedtest brand.
 
 ### Real new capability = real guardrails required (design docs first)
 
-- **Verdict-driven actions** (roadmap #3) — e.g. pulse a smart plug to
+- **Verdict-driven actions** (roadmap #3) – e.g. pulse a smart plug to
   power-cycle the modem when WAN is dead > N minutes. Requires: RFC1918
   target validation (reuse device rules), max attempts + cooldown, dry-run
   mode, never act on low confidence, off by default, action log in the
   incident trail.
-- **Escalation tiers** — notify channel A immediately, channel B if still
+- **Escalation tiers** – notify channel A immediately, channel B if still
   down after N minutes. Mostly reuses the outbound queue; the care point is
   clear state so recoveries cancel pending escalations.
 
@@ -133,5 +133,5 @@ LAN-only threat model. Grouped by security cost. Unreviewed; prune freely.
 
 - `.github/FUNDING.yml` + a funding link in README's Supporting section.
 - Demo GIF for the README hero (placeholder comment already in place).
-- A "caught it" discussion thread/pinned issue inviting incident stories —
+- A "caught it" discussion thread/pinned issue inviting incident stories –
   each one is a testimonial.

@@ -842,7 +842,7 @@ def build_tls_context():
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.options |= ssl.OP_NO_COMPRESSION
     # AEAD ciphers only: excludes CBC-mode TLS 1.2 suites (Lucky13-class
-    # padding-oracle risk). TLS 1.3 is unaffected — it has no CBC suites.
+    # padding-oracle risk). TLS 1.3 is unaffected – it has no CBC suites.
     context.set_ciphers("ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20")
     try:
         context.load_cert_chain(certfile=cert, keyfile=key)
@@ -922,7 +922,7 @@ class BoundedTLSServer(HTTPServer):
 
 
 AUTO_VACUUM_NAMES = {0: "NONE", 1: "FULL", 2: "INCREMENTAL"}
-AUTO_VACUUM_MODE = 2  # INCREMENTAL — reclaims pages on delete; manual VACUUM still repacks fully
+AUTO_VACUUM_MODE = 2  # INCREMENTAL – reclaims pages on delete; manual VACUUM still repacks fully
 
 
 def init_db(path=None):
@@ -1315,7 +1315,7 @@ def vacuum_database(engine):
         return False, {"error": "database file not found"}
     with engine.lock:
         if engine.run_in_progress:
-            return False, {"error": "diagnosis in progress — try again shortly"}
+            return False, {"error": "diagnosis in progress – try again shortly"}
         size_before = DB_PATH.stat().st_size
         conn = sqlite3.connect(str(DB_PATH), timeout=60)
         try:
@@ -1339,7 +1339,7 @@ def vacuum_database(engine):
 
 
 def auto_vacuum(engine):
-    """Background reclaim after janitor deletes — incremental when enabled, else occasional full VACUUM."""
+    """Background reclaim after janitor deletes – incremental when enabled, else occasional full VACUUM."""
     if not DB_PATH.is_file():
         return
     info = db_maintenance_info()
@@ -1566,7 +1566,7 @@ class _SupportPseudonyms:
                 self._private_networks[address] = f"PRIVATE-NET-{len(self._private_networks) + 1}"
             return self._private_networks[address]
         # The trailing guard rejects longer dotted continuations ("1.2.3.4.5",
-        # "10.0.0.1.example") but tolerates sentence punctuation — an address
+        # "10.0.0.1.example") but tolerates sentence punctuation – an address
         # at the end of a sentence ("replied from 10.0.0.1.") must still be
         # pseudonymized.
         return re.sub(

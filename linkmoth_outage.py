@@ -104,12 +104,12 @@ class OutageTracker:
             f"Linkmoth detected: {verdict.get('title') or verdict.get('code')}",
             verdict,
             {"source": "linkmoth", "verdict": verdict, "checks": checks},
-            "global outage detected by Linkmoth — alerts deferred until recovery",
+            "global outage detected by Linkmoth – alerts deferred until recovery",
         )
 
     def _touch(self, db_connect, verdict: dict, checks: list):
         # Keep the most recently observed *broken* fault ladder, not just the
-        # onset one — a long outage can shift which rung is failing, and the
+        # onset one – a long outage can shift which rung is failing, and the
         # eventual recovery notification should reflect the latest bad state.
         with db_connect() as conn:
             conn.execute(

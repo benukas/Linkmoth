@@ -10,7 +10,7 @@ from typing import Optional
 
 from linkmoth_discord import send_kuma_discord_alert
 
-# Verdict codes where the path to the internet is broken — not a single-service fault.
+# Verdict codes where the path to the internet is broken – not a single-service fault.
 GLOBAL_OUTAGE_CODES = frozenset({"pi_link", "router_down", "wan_down"})
 OUTAGE_EVAL_MAX_AGE = 300
 MAX_SUPPRESSED_ALERTS = 500
@@ -203,7 +203,7 @@ def parse_inbound_payload(body: bytes):
     monitor = str(data.get("monitor") or "").strip()
     message = str(data.get("message") or data.get("detail") or "").strip()
     parts = [p for p in (monitor, message) if p]
-    detail = f"{source}: {' — '.join(parts)}"[:300] if parts else f"{source}: webhook"
+    detail = f"{source}: {' – '.join(parts)}"[:300] if parts else f"{source}: webhook"
     return status, detail, source, data
 
 
@@ -228,7 +228,7 @@ def handle_inbound_alert(status, detail, raw, engine, cfg: dict, db_connect,
             detail,
             verdict,
             raw,
-            "global network outage — alert silenced",
+            "global network outage – alert silenced",
         )
         return {
             "action": "suppressed",

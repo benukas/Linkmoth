@@ -96,6 +96,12 @@ nav button.active { color: var(--text); border-color: var(--text); }
 .mt4 { margin: 4px 0 0; }
 .mt10 { margin-top: 10px; }
 .mt12 { margin-top: 12px; }
+/* Supporting lines under a card's headline figures. Without this they
+   inherit the 20px body size and compete with the numbers they explain.
+   #verdict p is more specific, so the verdict card keeps its own size. */
+.hint { font-size: 16px; line-height: 1.45; }
+#quality-card .hint, #score-card .hint { color: var(--muted); }
+.set-hint { font-size: 15px; line-height: 1.45; color: var(--muted); }
 .hint-block { display: block; margin-top: 2px; }
 .wlan-hint { margin: 4px 0 10px 58px; font-size: 14px; color: var(--muted); }
 .v-compact {
@@ -2585,12 +2591,14 @@ function renderQuality(q) {
   $("q-loss").textContent = fmtPct(c.loss_pct);
   const ago = c.ts ? Math.max(0, Math.round((Date.now() / 1000 - c.ts) / 60)) : null;
   meta.textContent = "Internet path" + (ago !== null ? ` · updated ${ago} min ago` : "");
+  // A "good" badge already says the numbers are healthy; repeating it in a
+  // sentence is noise. Only surface reasons when something is actually wrong.
   reasons.textContent = (c.reasons && c.reasons.length)
     ? c.reasons.join(" · ")
-    : (c.state === "good" ? "Latency, jitter, and loss all look healthy." : "");
+    : "";
   const findings = (q.findings && q.findings.findings) || [];
   $("q-findings").textContent = findings.length
-    ? "Over the last week: " + findings.join(" ")
+    ? "7 days: " + findings.join(" ")
     : "";
   renderLoadTest(q.load_test);
 }

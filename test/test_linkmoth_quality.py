@@ -178,7 +178,7 @@ class LoadTestTests(unittest.TestCase):
             self.lm._validate_load_url("http://speed.example.com/file")
         with self.assertRaises(ValueError):
             self.lm._validate_load_url("")
-        # localhost resolves to loopback — must be refused.
+        # localhost resolves to loopback – must be refused.
         with self.assertRaises(ValueError):
             self.lm._validate_load_url("https://localhost/file")
         with mock.patch.object(
@@ -318,7 +318,7 @@ class LoadTestTests(unittest.TestCase):
         # Regression test for the bug this session found while completing
         # the fix: max_bytes must bound the WHOLE test's transfer, not reset
         # for each repeated request. Two responses of 6 and 4+ bytes with
-        # max_bytes=10 must stop exactly at 10 total, not 6+6=12 or more —
+        # max_bytes=10 must stop exactly at 10 total, not 6+6=12 or more –
         # and must still open a second connection to keep the line busy.
         response1 = mock.MagicMock()
         response1.status = 200
@@ -383,7 +383,7 @@ class LoadTestTests(unittest.TestCase):
 
     def test_measure_loaded_quality_none_when_bytes_never_progress(self):
         # If the downloader made no progress during any sampled window (e.g.
-        # it already finished, or never started), nothing is "under load" —
+        # it already finished, or never started), nothing is "under load" –
         # returning a grade built from these would be exactly the falsely
         # confident result this fix exists to prevent.
         stats = {"bytes": 0}
@@ -422,7 +422,7 @@ class LoadTestTests(unittest.TestCase):
 
     def test_summary_load_test_present_without_a_current_sample(self):
         # A fresh install (or baseline_minutes=0 "explainer" role) may have
-        # no periodic ping sample yet — the load-test result must still be
+        # no periodic ping sample yet – the load-test result must still be
         # reported so the dashboard isn't blocked from showing it.
         with self.lm.db() as conn:
             conn.execute("DELETE FROM quality_samples")
@@ -514,7 +514,10 @@ class QualityFindingsTests(unittest.TestCase):
                 self._add(self._local_ts(day, hour), 11.0)
         result = self.lm.quality_findings(7)
         self.assertEqual(len(result["findings"]), 1)
-        self.assertIn("No recurring quality problems", result["findings"][0])
+        # A healthy week reports the figures only: the card already shows a
+        # "good" badge, so restating that in prose is redundant.
+        self.assertIn("Median 11 ms", result["findings"][0])
+        self.assertIn("100% of samples good", result["findings"][0])
 
     def test_summary_carries_findings(self):
         for day in (1, 2, 3):

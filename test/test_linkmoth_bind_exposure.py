@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for classify_network_interfaces/bind_exposure_risk — the check that
+"""Tests for classify_network_interfaces/bind_exposure_risk – the check that
 warns when binding to 0.0.0.0 would expose Linkmoth beyond the LAN over a
 VPN/tunnel or container-bridge interface."""
 import importlib
@@ -94,7 +94,7 @@ class BindExposureTests(unittest.TestCase):
 
 class PublicExposureGuardTests(unittest.TestCase):
     """_peer_is_trusted_local backs a request-level guard against an
-    accidental router port-forward — see Handler._reject_if_publicly_exposed.
+    accidental router port-forward – see Handler._reject_if_publicly_exposed.
     """
 
     @classmethod

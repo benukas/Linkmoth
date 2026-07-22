@@ -99,7 +99,7 @@ detect_pkg_manager() {
 # Auto-detect a single unambiguous LAN IPv4 address so a fresh install can
 # bind to it instead of 0.0.0.0. 0.0.0.0 listens on every interface,
 # including VPN/tunnel ones (WireGuard, Tailscale, NordVPN's nordlynx) that
-# reach beyond the LAN without any router port-forward — Linkmoth cannot see
+# reach beyond the LAN without any router port-forward – Linkmoth cannot see
 # or rule those out, so narrowing the bind is the only real fix. Container
 # bridges (Docker/Podman) are excluded too, though they are lower risk
 # (host-local, not normally reachable from outside). Prints nothing when
@@ -159,7 +159,7 @@ PY
 # `chown`/`chmod PATH` follows symlinks, so a planted symlink at a managed path
 # (e.g. /etc/linkmoth/config.json) would redirect the operation onto an
 # arbitrary file. Open with O_NOFOLLOW, verify it is a regular file, and operate
-# on the file descriptor — the same TOCTOU-safe pattern as
+# on the file descriptor – the same TOCTOU-safe pattern as
 # _ensure_private_state_file in linkmoth.py. Runs isolated (-I).
 secure_regular_file() {  # secure_regular_file PATH OWNER GROUP MODE_OCTAL
   python3 -I - "$1" "$2" "$3" "$4" <<'PY'
@@ -424,7 +424,7 @@ STAGE=""
 BACKUP_APP=""
 BACKUP_UNIT=""
 # Track what THIS run created so a failed fresh install (no previous version to
-# restore) can undo it completely — most importantly the system CA trust anchor.
+# restore) can undo it completely – most importantly the system CA trust anchor.
 # Config and state directories that predate this run (e.g. kept by an earlier
 # uninstall without --purge) are never deleted by the rollback.
 USER_CREATED=0
@@ -457,7 +457,7 @@ cleanup_and_rollback() {
       echo "previous Linkmoth version restored and restarted." >&2
     fi
   # Fresh-install failure: there is no previous version, so leaving partial
-  # state behind — a trusted CA anchor, service units, the service user — is a
+  # state behind – a trusted CA anchor, service units, the service user – is a
   # security and hygiene problem. Undo exactly what this run created.
   elif [ "$IS_UPDATE" -eq 0 ]; then
     echo "ERROR: fresh install failed - undoing changes made so far" >&2
@@ -549,7 +549,7 @@ if [ "$WITH_PUSH" -eq 1 ]; then
     setup_ok=1
     chown -R root:linkmoth "$VENV"
     chmod -R g+rX "$VENV"
-    ok "browser push ready (/opt/linkmoth/venv — not system pip)"
+    ok "browser push ready (/opt/linkmoth/venv – not system pip)"
   fi
   if [ "$setup_ok" -eq 0 ]; then
     echo "WARNING: browser push setup failed - continuing without it."

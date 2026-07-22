@@ -410,7 +410,7 @@ class AuthManager:
         return hashes, salts
 
     def setup_totp(self) -> Tuple[str, List[str]]:
-        """Immediate activation — for the trusted CLI/console path only."""
+        """Immediate activation – for the trusted CLI/console path only."""
         secret = generate_totp_secret()
         codes = generate_recovery_codes()
         hashes, salts = self._recovery_hashes(codes)
@@ -438,7 +438,7 @@ class AuthManager:
         """Dashboard 2FA enrollment, phase 1: stage a pending secret.
 
         2FA is not active until activate_totp() proves the user enrolled the
-        secret. Only one pending setup exists at a time — this overwrites any
+        secret. Only one pending setup exists at a time – this overwrites any
         prior pending state atomically. Recovery codes do not exist yet.
         """
         secret = generate_totp_secret()
@@ -446,7 +446,7 @@ class AuthManager:
             store = self._load_store_unlocked()
             store["pending_totp_secret"] = secret
             store["pending_totp_created"] = time.time()
-            # Recovery codes are NOT generated yet — they are issued only once
+            # Recovery codes are NOT generated yet – they are issued only once
             # the user proves enrollment by entering a valid code (activate).
             store.pop("pending_recovery_hashes", None)
             store.pop("pending_recovery_salts", None)
@@ -462,7 +462,7 @@ class AuthManager:
             store = self._load_store_unlocked()
             pending = store.get("pending_totp_secret")
             if not pending:
-                raise ValueError("no pending 2FA setup — start setup first")
+                raise ValueError("no pending 2FA setup – start setup first")
             try:
                 created = float(store.get("pending_totp_created"))
             except (TypeError, ValueError):
@@ -474,7 +474,7 @@ class AuthManager:
                 expired = True
         if expired:
             self.audit_event("totp_setup_expired", detail="pending enrollment cleared")
-            raise ValueError("2FA setup expired — start again")
+            raise ValueError("2FA setup expired – start again")
         if not self._consume_totp(pending, (code or "").strip()):
             raise ValueError("invalid code")
         codes = generate_recovery_codes()
@@ -484,7 +484,7 @@ class AuthManager:
             store = self._load_store_unlocked()
             # Re-read under lock; pending must still be the same secret.
             if store.get("pending_totp_secret") != pending:
-                raise ValueError("2FA setup changed — start again")
+                raise ValueError("2FA setup changed – start again")
             try:
                 created = float(store.get("pending_totp_created"))
             except (TypeError, ValueError):
@@ -502,7 +502,7 @@ class AuthManager:
                 self._save_store_unlocked(store)
         if expired:
             self.audit_event("totp_setup_expired", detail="pending enrollment cleared")
-            raise ValueError("2FA setup expired — start again")
+            raise ValueError("2FA setup expired – start again")
         self.destroy_all_sessions()
         self.audit_event("totp_enabled", detail="all sessions invalidated")
         return codes
@@ -901,8 +901,8 @@ class AuthManager:
 
     # Read-only API tokens: a separate credential class for widgets and
     # scrapers (Homepage, Glance, Home Assistant REST sensors). They can
-    # only be accepted on explicitly read-only GET endpoints — never for
-    # settings, incidents management, or anything state-changing — and are
+    # only be accepted on explicitly read-only GET endpoints – never for
+    # settings, incidents management, or anything state-changing – and are
     # stored hashed, like sessions.
     READONLY_TOKEN_PREFIX = "lmro_"
     READONLY_TOKEN_LIMIT = 10

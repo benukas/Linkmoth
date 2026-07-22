@@ -244,7 +244,7 @@ def check_router_wlan(gateway_ok, include_evidence=False):
         result = (None, "not configured")
         return (*result, {}) if include_evidence else result
     if not gateway_ok:
-        result = (None, "router LAN unreachable — skipped")
+        result = (None, "router LAN unreachable – skipped")
         return (*result, {}) if include_evidence else result
     ok, detail, _ms, evidence = probe_group([
         (client, ping(client, count=2, timeout=1)) for client in clients
@@ -265,7 +265,7 @@ def check_router_wlan(gateway_ok, include_evidence=False):
 
 def wifi_wired_differential(checks):
     """One plain-language sentence when Wi-Fi witnesses disagree with a
-    healthy wired path — "it's your Wi-Fi, not your provider" — or None
+    healthy wired path – "it's your Wi-Fi, not your provider" – or None
     when there is nothing defensible to say. Pure over one run's checks."""
     by_id = {ch["id"]: ch for ch in normalize_stored_checks(checks)}
     wlan = by_id.get("router_wlan")
@@ -278,7 +278,7 @@ def wifi_wired_differential(checks):
     if wlan.get("ok") is False:
         return (
             "The wired path and the internet look healthy while no Wi-Fi"
-            " witness replied — this points at Wi-Fi (radio, access point,"
+            " witness replied – this points at Wi-Fi (radio, access point,"
             " or sleeping witnesses), not your provider."
         )
     wlan_ms = wlan.get("ms")
@@ -288,7 +288,7 @@ def wifi_wired_differential(checks):
             and wlan_ms >= 100 and wlan_ms >= 10 * gateway_ms):
         return (
             f"Wi-Fi witnesses reply far slower than the wired router path"
-            f" ({round(wlan_ms)} ms vs {round(gateway_ms)} ms) — that gap"
+            f" ({round(wlan_ms)} ms vs {round(gateway_ms)} ms) – that gap"
             f" is on the radio side, not your provider."
         )
     return None
@@ -531,12 +531,12 @@ def _dns_query_a(server, domain, timeout=2.0):
     if len(resp) < 12 or resp[0:2] != txn:
         return False
     flags_hi, flags_lo = resp[2], resp[3]
-    if not (flags_hi & 0x80):        # QR bit — must be a response, not an echo
+    if not (flags_hi & 0x80):        # QR bit – must be a response, not an echo
         return False
-    if (flags_lo & 0x0F) != 0:       # RCODE — must be no-error
+    if (flags_lo & 0x0F) != 0:       # RCODE – must be no-error
         return False
     ancount = struct.unpack(">H", resp[6:8])[0]
-    truncated = bool(flags_hi & 0x02)  # TC — server answered, just over UDP size
+    truncated = bool(flags_hi & 0x02)  # TC – server answered, just over UDP size
     return ancount >= 1 or truncated
 
 
@@ -699,7 +699,7 @@ def _local_ipv4_addresses():
     return addresses
 
 
-# Interface name prefixes for non-LAN network kinds. Checked in order — a
+# Interface name prefixes for non-LAN network kinds. Checked in order – a
 # tunnel/VPN interface is the higher-severity case (typically routable from a
 # remote network over the internet); a container bridge is host-local and
 # lower severity. Anything not matched is treated as a normal LAN interface.
@@ -729,7 +729,7 @@ def classify_network_interfaces(raw_output=None):
     """List (iface, address, kind) for every IPv4 address on the host.
 
     kind is one of "lan", "tunnel", "container", "loopback". Used to warn
-    when binding to 0.0.0.0 would expose Linkmoth beyond the LAN — e.g. over
+    when binding to 0.0.0.0 would expose Linkmoth beyond the LAN – e.g. over
     an active WireGuard/Tailscale/NordVPN interface, which is not something
     Linkmoth can otherwise see or rule out.
     """
@@ -828,7 +828,7 @@ def micro_local_dns(provider):
     if rc != 0 or load_state.strip() != "loaded":
         steps.append(_micro_step(
             f"{name} service", False,
-            "systemd service not found — it may run in a container",
+            "systemd service not found – it may run in a container",
         ))
     else:
         rc, svc = run_cmd(["systemctl", "is-active", service])
@@ -954,7 +954,7 @@ def run_ladder():
         ):
             add(
                 "local_dns", "Local DNS resolver", None,
-                "no same-host DNS resolver detected — skipped",
+                "no same-host DNS resolver detected – skipped",
                 address=address, provider="generic",
             )
         else:
@@ -1021,11 +1021,11 @@ def normalize_stored_verdict(item):
     out = dict(item)
     if out.get("code") == "pihole_broken":
         out["code"] = "local_dns_broken"
-        out["title"] = "Local DNS resolver stopped answering — internet itself is fine"
+        out["title"] = "Local DNS resolver stopped answering – internet itself is fine"
     if out.get("verdict_code") == "pihole_broken":
         out["verdict_code"] = "local_dns_broken"
         out["verdict_title"] = (
-            "Local DNS resolver stopped answering — internet itself is fine"
+            "Local DNS resolver stopped answering – internet itself is fine"
         )
     if out.get("diagnosis_code") == "pihole_broken":
         out["diagnosis_code"] = "local_dns_broken"
@@ -1040,7 +1040,7 @@ def normalize_stored_verdict(item):
     return out
 
 
-# Verdict codes whose failure point is beyond the router — the set a user
+# Verdict codes whose failure point is beyond the router – the set a user
 # can reasonably hold their internet provider accountable for.
 ISP_ATTRIBUTABLE_CODES = frozenset({
     "wan_down", "partial_routing", "restricted_connectivity",
@@ -1052,7 +1052,7 @@ REPORT_WINDOWS = (7, 30, 90)
 
 HISTORY_RANGE_HOURS = (6, 24, 24 * 7, 24 * 30)
 # However long the requested window, never hand the frontend more raw points
-# than this — beyond it, samples are averaged into fixed-width time buckets
+# than this – beyond it, samples are averaged into fixed-width time buckets
 # so a 30-day chart stays as cheap to render as a 6-hour one.
 MAX_HISTORY_POINTS = 300
 
@@ -1087,7 +1087,7 @@ _STORY_SOURCES = {
 
 def incident_story(detail):
     """Render one incident's evidence packet as a short plain-language
-    narrative — the paragraph a person would paste into a chat to explain
+    narrative – the paragraph a person would paste into a chat to explain
     what happened. Pure rendering over data already in the packet; no
     credentials, no raw addresses beyond what rung details already show."""
     inc = detail.get("incident") or {}
@@ -1116,7 +1116,7 @@ def incident_story(detail):
             if label != first_failure.get("label")
         ]
         if healthy:
-            line += f" — while {', '.join(healthy[:3])} stayed healthy"
+            line += f" – while {', '.join(healthy[:3])} stayed healthy"
         sentences.append(line + ".")
     title = inc.get("diagnosis_title") or inc.get("verdict_title")
     if title:
@@ -1190,10 +1190,10 @@ def incident_story(detail):
 def isp_report_letter(report):
     """Plain-language, credential-free evidence text for an ISP support
     ticket. Contains incident references, local times, durations, and
-    verdict titles — never LAN addresses or secrets."""
+    verdict titles – never LAN addresses or secrets."""
     days = report["days"]
     isp = report["isp"]
-    lines = ["Internet reliability evidence — generated locally by Linkmoth"]
+    lines = ["Internet reliability evidence – generated locally by Linkmoth"]
     window = f"Window: last {days} days"
     if report.get("monitoring_since"):
         since = time.strftime(
@@ -1269,7 +1269,7 @@ def isp_report_letter(report):
                 f" incident closed {closed}"
             )
             lines.append(
-                f"- {item['ref'] or '(no ref)'} — {when}, {timing} — "
+                f"- {item['ref'] or '(no ref)'} – {when}, {timing} – "
                 + (item["title"] or item["code"] or "outage")
             )
     lines.extend([
@@ -1337,7 +1337,7 @@ def verdict(checks):
              "Check router power and cables, then give it a reboot.")
     elif not ok("upstream_dns") and not ok("raw_ping") and not ok("https"):
         v = ("bad", "wan_down",
-             "Internet is dead beyond the router — likely internet provider outage or router WAN cable fault",
+             "Internet is dead beyond the router – likely internet provider outage or router WAN cable fault",
              "LAN and router are fine, but direct DNS, ping, and HTTPS all fail beyond them.",
              "Check the router's WAN cable and WAN light, then your internet provider's status page.")
     elif not ok("upstream_dns") and not ok("raw_ping"):
@@ -1363,12 +1363,12 @@ def verdict(checks):
             explain += " Likely cause: " + "; ".join(failed) + "."
         v = (
             "bad", "local_dns_broken",
-            "Local DNS resolver stopped answering — internet itself is fine",
+            "Local DNS resolver stopped answering – internet itself is fine",
             explain, hint,
         )
     elif not ok("upstream_dns"):
         v = ("bad", "upstream_dns_down", "Routing works but public DNS resolvers don't answer",
-             "Ping to the outside works, yet 1.1.1.1/8.8.8.8 won't answer DNS. Unusual — possibly ISP DNS interference.",
+             "Ping to the outside works, yet 1.1.1.1/8.8.8.8 won't answer DNS. Unusual – possibly ISP DNS interference.",
              "Try again in a few minutes; if it persists, contact your internet provider.")
     elif not ok("raw_ping"):
         v = ("warn", "partial_routing", "DNS answers but ping to the internet fails",
@@ -1416,7 +1416,7 @@ def verdict(checks):
     sev, code, title, explain, hint = v
     if c["power"]["ok"] is False and code != "host_power":
         sev = "bad" if sev == "bad" else "warn"
-        explain += " Also: the host reports " + c["power"]["detail"] + " — a weak power supply causes ghost problems."
+        explain += " Also: the host reports " + c["power"]["detail"] + " – a weak power supply causes ghost problems."
     return {"severity": sev, "code": code, "title": title, "explain": explain, "hint": hint}
 
 
@@ -1558,7 +1558,7 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
         # A fast line can finish one bounded response before loaded latency is
         # sampled. Keep requesting separately bounded responses for the test
         # duration so the measurement cannot quietly become an idle ping test.
-        # max_bytes bounds the WHOLE test's transfer, not each response —
+        # max_bytes bounds the WHOLE test's transfer, not each response –
         # stats["bytes"] (shared across every request) is what still_going()
         # checks, so repeating requests can never inflate total data used
         # beyond the configured, documented cap.
@@ -1632,7 +1632,7 @@ def run_load_test(store=True):
     Ping the quality target at idle, then again while a bounded download
     saturates the link, and grade the latency inflation the way the
     dslreports scale does (A under +30 ms … F above +400 ms). The transfer
-    stops at load_test_seconds or load_test_max_mb — whichever comes first —
+    stops at load_test_seconds or load_test_max_mb – whichever comes first –
     and keeps requesting fresh responses in between so a fast connection that
     finishes one response early doesn't go idle for the rest of the window.
     Only pings that overlap increasing downloaded bytes contribute to the
@@ -1754,7 +1754,7 @@ QUALITY_DAYPARTS = (
 def quality_findings(days=7):
     """Plain-language recurring-pattern findings over recent quality
     samples: time-of-day comparisons, loss concentration, and trend. Pure
-    analytics over data already stored — the sentences a user can point at
+    analytics over data already stored – the sentences a user can point at
     when saying "the internet is always bad in the evening"."""
     qcfg = quality_config()
     cutoff = time.time() - days * 86400
@@ -1853,9 +1853,8 @@ def quality_findings(days=7):
         good_share = sum(1 for s in samples if s["state"] == "good") / len(samples)
         if overall is not None and good_share >= 0.9:
             findings.append(
-                f"No recurring quality problems in the last {days} days —"
-                f" median latency {round(overall)} ms,"
-                f" {round(good_share * 100)}% of samples good."
+                f"Median {round(overall)} ms, "
+                f"{round(good_share * 100)}% of samples good."
             )
     result["findings"] = findings
     return result

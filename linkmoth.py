@@ -202,7 +202,7 @@ def auth_show_audit():
         return 2
     for event in auth.audit_events(limit):
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(event["ts"]))
-        detail = f" — {event['detail']}" if event["detail"] else ""
+        detail = f" – {event['detail']}" if event["detail"] else ""
         print(f"{stamp}  {event['ip']:<39}  {event['event']}{detail}")
     return 0
 

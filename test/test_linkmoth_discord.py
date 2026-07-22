@@ -79,7 +79,7 @@ class DiscordEmbedTests(unittest.TestCase):
             {
                 "severity": "ok",
                 "code": "all_clear",
-                "title": "All clear — everything answers",
+                "title": "All clear – everything answers",
                 "explain": "Router, upstream DNS, ping and HTTPS all respond normally.",
                 "hint": "",
             },
@@ -140,8 +140,8 @@ class DiscordEmbedTests(unittest.TestCase):
         self.assertEqual(ladder["name"], "Fault ladder")
 
     def test_recovery_embed_omits_incident_field_for_global_outage(self):
-        # The outage tracker's recovery has no real incidents-table row —
-        # a bare "Incident: —" field is noise, not information.
+        # The outage tracker's recovery has no real incidents-table row –
+        # a bare "Incident: –" field is noise, not information.
         data = linkmoth_discord.incident_payload(
             {"id": None, "ref": None, "started": time.time() - 60,
              "source": "linkmoth", "detail": "Global outage cleared"},
@@ -152,7 +152,7 @@ class DiscordEmbedTests(unittest.TestCase):
         embed = linkmoth_discord.build_embed(data, "recovery")
         self.assertFalse(any(f["name"] == "Incident" for f in embed["fields"]))
         duration_field = next(f for f in embed["fields"] if f["name"] == "Duration")
-        self.assertNotEqual(duration_field["value"], "—")
+        self.assertNotEqual(duration_field["value"], "–")
 
     def test_recovery_embed_includes_suppressed_digest(self):
         data = linkmoth_discord.incident_payload(
@@ -427,12 +427,12 @@ class EngineDiscordIntegrationTests(unittest.TestCase):
         proxy.record_suppressed(
             self.linkmoth.db, 0, "HomeAssistant: down", {"code": "wan_down"},
             {"monitor": {"name": "HomeAssistant"}, "heartbeat": {"status": 0}},
-            "global network outage — alert silenced",
+            "global network outage – alert silenced",
         )
         proxy.record_suppressed(
             self.linkmoth.db, 0, "Plex: down", {"code": "wan_down"},
             {"monitor": {"name": "Plex"}, "heartbeat": {"status": 0}},
-            "global network outage — alert silenced",
+            "global network outage – alert silenced",
         )
         inc_id = self._open_incident()
         ok = {"severity": "ok", "code": "all_clear", "title": "All clear",

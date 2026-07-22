@@ -387,7 +387,7 @@ def execute_device(device, ping_func):
             summary = f"Reachable, but {service['detail']}"
         else:
             failed = service["detail"] if service is not None else ping_detail
-            summary = f"No usable response — {failed}"
+            summary = f"No usable response – {failed}"
     except Exception as exc:
         state = "error"
         results = [{

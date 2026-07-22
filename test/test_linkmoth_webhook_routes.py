@@ -381,7 +381,7 @@ class MetricsRouteTests(LinkmothTestBase):
     def test_metrics_accepts_readonly_token_without_webhook_secret(self):
         # A metrics scraper should never need the write-capable webhook
         # bearer (which can also hit /trigger and the inbound webhook
-        # routes) — the purpose-built read-only token must be enough on
+        # routes) – the purpose-built read-only token must be enough on
         # its own.
         value, _ = self.auth.create_readonly_token("prometheus")
         code, body, _, headers = http(

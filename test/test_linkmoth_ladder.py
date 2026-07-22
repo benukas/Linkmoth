@@ -40,7 +40,7 @@ class _FakeDNSSocket:
         flags_hi = 0x80  # QR set, no truncation
         flags_lo = 0x00  # RCODE 0 (no error)
         header = txn + bytes([flags_hi, flags_lo]) + struct.pack(">HHHH", 1, 1, 0, 0)
-        return header + b"\x00" * 8  # a (bogus) answer record — not parsed
+        return header + b"\x00" * 8  # a (bogus) answer record – not parsed
 
     def close(self):
         pass
@@ -238,7 +238,7 @@ class VerdictIntegrationTests(unittest.TestCase):
             {"id": "power", "ok": True, "detail": "power ok"},
             {"id": "link", "ok": True, "detail": "eth0: link up, 1000 Mb/s"},
             {"id": "gateway", "ok": True, "detail": "192.168.1.1: 2 ms"},
-            {"id": "router_wlan", "ok": None, "detail": "not configured — skipped"},
+            {"id": "router_wlan", "ok": None, "detail": "not configured – skipped"},
             {"id": "pihole_dns", "ok": True, "detail": "ok"},
             {"id": "upstream_dns", "ok": True, "detail": "ok"},
             {"id": "raw_ping", "ok": True, "detail": "ok"},
@@ -251,7 +251,7 @@ class VerdictIntegrationTests(unittest.TestCase):
 
     def test_router_wlan_down_verdict(self):
         checks = self._base_checks(
-            router_wlan={"ok": False, "detail": "❌ Wireless client timeout — Router 2.4/5GHz radios may have crashed"},
+            router_wlan={"ok": False, "detail": "❌ Wireless client timeout – Router 2.4/5GHz radios may have crashed"},
         )
         v = self.linkmoth.verdict(checks)
         self.assertEqual(v["code"], "router_wlan_down")

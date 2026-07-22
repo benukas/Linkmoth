@@ -657,7 +657,7 @@ class QueueTests(WebhookDbCase):
 
 class TestSendTests(WebhookDbCase):
     def test_https_delivery_pins_the_validated_address(self):
-        # Only one DNS resolution happens (the validation one) — the actual
+        # Only one DNS resolution happens (the validation one) – the actual
         # connection reuses that answer instead of re-resolving the hostname,
         # closing the gap where a later DNS answer could redirect delivery
         # to a different address than the one just validated.
