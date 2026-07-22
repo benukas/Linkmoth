@@ -1059,7 +1059,14 @@ class Handler(BaseHTTPRequestHandler):
             payload = linkmoth.ENGINE.status()
             payload["auth"] = auth.public_status(session)
             payload["quality"] = quality_summary(limit=120)
-            payload["score"] = connection_score()
+            # The score is a presentational extra; /api/status is what the
+            # whole dashboard depends on. Never let a failure computing it
+            # take the rest of the payload down with it.
+            try:
+                payload["score"] = connection_score()
+            except Exception as exc:
+                print(f"connection score failed: {exc}", file=sys.stderr, flush=True)
+                payload["score"] = None
             payload["wifi_note"] = wifi_wired_differential(
                 linkmoth.ENGINE.last_run_checks()
             )

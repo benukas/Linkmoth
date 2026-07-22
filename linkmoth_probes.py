@@ -1853,11 +1853,32 @@ _FACTOR_PHRASES = {
 
 
 def _day_start(ts):
-    lt = time.localtime(ts)
-    return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+    """Local midnight for `ts`, or None if the timestamp is not a real date.
+
+    A host without an RTC (every Raspberry Pi) can record samples before NTP
+    corrects its clock, leaving rows dated 1970 or far in the future.
+    localtime/mktime raise on those, and this runs inside /api/status -- an
+    unguarded raise here would take the whole dashboard down over one bad
+    row, so such rows are reported unusable and skipped by callers."""
+    try:
+        lt = time.localtime(ts)
+        return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+    except (OSError, OverflowError, ValueError):
+        return None
 
 
-def connection_score(days=30):
+_SCORE_CACHE_LOCK = threading.Lock()
+_SCORE_CACHE = {}
+# The grade is a per-day figure, but /api/status is polled every
+# ui_refresh_seconds (as low as 2s) by every open dashboard. Recomputing a
+# 30-day aggregate over tens of thousands of rows on every poll would burn
+# real CPU on a Raspberry Pi to produce an answer that changes once a day,
+# so results are cached briefly. New samples only land every
+# history_sample_minutes anyway.
+SCORE_CACHE_SECONDS = 60
+
+
+def connection_score(days=30, use_cache=True):
     """A daily connection-health grade built only from evidence already
     stored -- quality samples, any bufferbloat tests that were run, and
     recorded outage segments. Read-only: it never probes the network, so
@@ -1871,7 +1892,18 @@ def connection_score(days=30):
     """
     days = max(2, min(90, int(days or 30)))
     now = time.time()
-    window_start = _day_start(now) - (days - 1) * 86400
+    if use_cache:
+        with _SCORE_CACHE_LOCK:
+            hit = _SCORE_CACHE.get(days)
+            if hit and hit["expires"] > now:
+                return hit["value"]
+    today_start = _day_start(now)
+    if today_start is None:
+        return {"days": days, "history": [], "sample_count": 0, "graded": False,
+                "score": None, "grade": None, "factors": None,
+                "baseline_score": None, "baseline_grade": None, "trend": None,
+                "headline": "Host clock is not set, so days cannot be graded."}
+    window_start = today_start - (days - 1) * 86400
     samples, segments_by_incident, load_rows = [], {}, []
     try:
         with db() as conn:
@@ -1899,9 +1931,13 @@ def connection_score(days=30):
 
     by_day, bloat_by_day = {}, {}
     for sample in samples:
-        by_day.setdefault(_day_start(sample["ts"]), []).append(sample)
+        key = _day_start(sample["ts"])
+        if key is not None:
+            by_day.setdefault(key, []).append(sample)
     for row in load_rows:
-        bloat_by_day[_day_start(row["ts"])] = row["bloat_ms"]
+        key = _day_start(row["ts"])
+        if key is not None:
+            bloat_by_day[key] = row["bloat_ms"]
     all_segments = [s for group in segments_by_incident.values() for s in group]
 
     history, latency_by_day = [], {}
@@ -1946,9 +1982,15 @@ def connection_score(days=30):
         "trend": None,
         "headline": "",
     }
+    def _cache(value):
+        with _SCORE_CACHE_LOCK:
+            _SCORE_CACHE[days] = {"value": value,
+                                  "expires": now + SCORE_CACHE_SECONDS}
+        return value
+
     if not result["graded"]:
         result["headline"] = "Not enough data yet today."
-        return result
+        return _cache(result)
 
     earlier = [item["score"] for item in graded[:-1]]
     if len(earlier) >= MIN_BASELINE_DAYS:
@@ -1965,7 +2007,7 @@ def connection_score(days=30):
         )
     else:
         result["headline"] = "No problems worth flagging today."
-    return result
+    return _cache(result)
 
 
 def quality_summary(limit=288):

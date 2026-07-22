@@ -122,20 +122,20 @@ class ConnectionScoreTests(unittest.TestCase):
 
     def test_bufferbloat_result_feeds_the_score(self):
         self._seed()
-        clean = self.probes.connection_score()["score"]
+        clean = self.probes.connection_score(use_cache=False)["score"]
         with self.core.db() as conn:
             conn.execute(
                 "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms, grade)"
                 " VALUES(?,?,?,?,?)",
                 (time.time(), 18.0, 400.0, 380.0, "F"),
             )
-        bloated = self.probes.connection_score()
+        bloated = self.probes.connection_score(use_cache=False)
         self.assertLess(bloated["score"], clean)
         self.assertLessEqual(bloated["factors"]["bufferbloat"], -15)
 
     def test_outage_time_is_penalised(self):
         self._seed()
-        clean = self.probes.connection_score()["score"]
+        clean = self.probes.connection_score(use_cache=False)["score"]
         now = time.time()
         with self.core.db() as conn:
             cur = conn.execute(
@@ -148,13 +148,13 @@ class ConnectionScoreTests(unittest.TestCase):
                 " VALUES(?,?,?)",
                 (cur.lastrowid, now - 3600, now - 1800),
             )
-        degraded = self.probes.connection_score()
+        degraded = self.probes.connection_score(use_cache=False)
         self.assertLess(degraded["score"], clean)
         self.assertLessEqual(degraded["factors"]["downtime"], -20)
 
     def test_false_alarm_incident_does_not_count_as_downtime(self):
         self._seed()
-        clean = self.probes.connection_score()["score"]
+        clean = self.probes.connection_score(use_cache=False)["score"]
         now = time.time()
         with self.core.db() as conn:
             cur = conn.execute(
@@ -167,7 +167,55 @@ class ConnectionScoreTests(unittest.TestCase):
                 " VALUES(?,?,?)",
                 (cur.lastrowid, now - 3600, now - 1800),
             )
-        self.assertEqual(self.probes.connection_score()["score"], clean)
+        self.assertEqual(
+            self.probes.connection_score(use_cache=False)["score"], clean)
+
+    def test_result_is_cached_between_status_polls(self):
+        """/api/status is polled every few seconds by every open dashboard,
+        but the grade is a per-day figure. Recomputing a 30-day aggregate on
+        every poll would burn real CPU on a Pi for an answer that changes
+        once a day, so repeat calls must be served from cache."""
+        self._seed()
+        first = self.probes.connection_score()
+        with mock.patch.object(self.probes, "db") as db_mock:
+            second = self.probes.connection_score()
+        db_mock.assert_not_called()
+        self.assertEqual(second, first)
+
+    def test_cache_can_be_bypassed(self):
+        self._seed()
+        self.probes.connection_score()
+        with mock.patch.object(self.probes, "db", wraps=self.core.db) as db_mock:
+            self.probes.connection_score(use_cache=False)
+        self.assertTrue(db_mock.called)
+
+    def test_cache_is_keyed_by_window(self):
+        self._seed()
+        thirty = self.probes.connection_score(30)
+        seven = self.probes.connection_score(7)
+        self.assertEqual(len(thirty["history"]), 30)
+        self.assertEqual(len(seven["history"]), 7)
+
+    def test_out_of_range_timestamp_does_not_break_the_score(self):
+        """A host without an RTC can record samples before NTP fixes its
+        clock. localtime/mktime raise on those rows, and this runs inside
+        /api/status -- one bad row must not take the dashboard down."""
+        self._seed()
+        with self.core.db() as conn:
+            for bad in (10**18, -8640000, 10**12):
+                conn.execute(
+                    "INSERT INTO quality_samples(ts, latency_ms, jitter_ms,"
+                    " loss_pct, state) VALUES(?,?,?,?,?)",
+                    (bad, 18.0, 2.0, 0.0, "good"),
+                )
+        result = self.probes.connection_score(use_cache=False)
+        self.assertTrue(result["graded"])
+        self.assertGreaterEqual(result["score"], 90)
+
+    def test_unusable_timestamp_returns_none_rather_than_raising(self):
+        for bad in (10**18, -8640000, 10**12):
+            self.assertIsNone(self.probes._day_start(bad))
+        self.assertIsNotNone(self.probes._day_start(time.time()))
 
     def test_score_never_probes_the_network(self):
         """The whole premise of the feature: it reads stored evidence only."""
