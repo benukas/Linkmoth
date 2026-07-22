@@ -451,6 +451,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   flex: 1; min-width: 160px; font: 17px system-ui, sans-serif; padding: 9px 12px;
   border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
+.secret-reveal { flex: none; padding: 9px 14px; font-size: 15px; }
 .set-row input[type="checkbox"] {
   flex: none; width: 22px; height: 22px; min-width: 22px; cursor: pointer;
 }
@@ -1110,7 +1111,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
           <div class="set-section">
             <h4>Inbound webhook<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop"><b>Another app sends an alert into Linkmoth.</b> Copy the URL and bearer token below into Uptime Kuma, Grafana, Zabbix, or your script. Linkmoth then runs a diagnosis. Send a JSON <code>POST</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Example body: <code>{"source":"grafana","event":"down","monitor":"WAN"}</code>.</span></span></h4>
             <div class="set-row"><label for="wh-inbound-url">Linkmoth inbound URL</label><input id="wh-inbound-url" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
-            <div class="set-row"><label for="wh-inbound-secret">Bearer token</label><input id="wh-inbound-secret" type="text" readonly spellcheck="false" autocomplete="off" value="Loading…"></div>
+            <div class="set-row"><label for="wh-inbound-secret">Bearer token</label><input id="wh-inbound-secret" type="password" readonly spellcheck="false" autocomplete="off" value="Loading…"><button type="button" id="wh-reveal-token" class="action-btn secret-reveal" aria-pressed="false">Reveal</button></div>
             <div class="device-form-actions">
               <button type="button" id="wh-copy-url" class="action-btn">Copy inbound URL</button>
               <button type="button" id="wh-copy-token" class="action-btn">Copy bearer token</button>
@@ -3783,11 +3784,19 @@ async function loadInboundWebhookInfo() {
     inboundWebhookInfo = out;
     $("wh-inbound-url").value = out.url || "Unavailable";
     $("wh-inbound-secret").value = out.secret || "Unavailable";
+    maskInboundToken();
   } catch (e) {
     inboundWebhookInfo = null;
     $("wh-inbound-url").value = "Could not load inbound URL";
     $("wh-inbound-secret").value = "Could not load bearer token";
+    maskInboundToken();
   }
+}
+
+function maskInboundToken() {
+  $("wh-inbound-secret").type = "password";
+  $("wh-reveal-token").textContent = "Reveal";
+  $("wh-reveal-token").setAttribute("aria-pressed", "false");
 }
 
 async function copyInboundWebhook(value, label) {
@@ -3807,6 +3816,14 @@ async function copyInboundWebhook(value, label) {
   }
   setTimeout(() => { msg.textContent = ""; }, 6000);
 }
+
+$("wh-reveal-token").addEventListener("click", () => {
+  const field = $("wh-inbound-secret"), btn = $("wh-reveal-token");
+  const revealing = field.type === "password";
+  field.type = revealing ? "text" : "password";
+  btn.textContent = revealing ? "Hide" : "Reveal";
+  btn.setAttribute("aria-pressed", String(revealing));
+});
 
 $("wh-copy-url").addEventListener("click", () =>
   copyInboundWebhook(inboundWebhookInfo && inboundWebhookInfo.url, "Inbound URL"));

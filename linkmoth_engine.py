@@ -645,6 +645,15 @@ class Engine:
             self._emit_webhook(inc_id, "fault_closed", final)
 
     def status(self):
+        from linkmoth_outage import OUTAGE_TRACKER
+        from linkmoth_push import list_subscriptions, push_available
+        from linkmoth_notify import quiet_hours_status
+        # One connection for the whole payload. db() is re-entrant, so every
+        # helper below (stats, history, meta, push, quiet hours, ...) reuses
+        # this one instead of opening its own -- this endpoint is polled
+        # every few seconds by every open dashboard, and the connect/close
+        # round trips dominated it. It also means the whole payload is read
+        # from a single consistent snapshot.
         with db() as conn:
             last = conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
             incidents = conn.execute(
@@ -660,63 +669,60 @@ class Engine:
                         (open_inc["id"],),
                     )
                 ]
-        last_d = None
-        patterns = None
-        if last:
-            last_d = normalize_stored_verdict(dict(last))
-            last_d["checks"] = normalize_stored_checks(json.loads(last_d["checks"]))
-            if last_d.get("severity") != "ok" and last_d.get("code"):
-                patterns = self.patterns(code=last_d["code"])
-        try:
-            kuma_url = _kuma_url(CFG.get("kuma_url", "auto"))
-        except ValueError:
-            kuma_url = ""
-        from linkmoth_outage import OUTAGE_TRACKER
-        from linkmoth_push import list_subscriptions, push_available
-        from linkmoth_notify import quiet_hours_status
-        host = host_stats()
-        database = db_maintenance_info()
-        return {
-            "now": time.time(),
-            "diagnosing": self.run_in_progress or (
-                self.loop_thread is not None and self.loop_thread.is_alive()
-            ),
-            "open_incident": (
-                normalize_stored_verdict(open_inc) if open_inc else None
-            ),
-            "open_incident_meta": self.open_incident_meta(),
-            "open_incident_runs": runs_of_open,
-            "last_run": last_d,
-            "patterns": patterns,
-            "incidents": [
-                normalize_stored_verdict(dict(i)) for i in incidents
-            ],
-            "stats": self.stats(),
-            "history": self.history(),
-            "history_meta": self.history_meta(),
-            "fire_drill": fire_drill_status(),
-            "kuma_url": kuma_url,
-            "settings": public_settings(),
-            "local_dns": local_dns_runtime_info(),
-            "database": database,
-            "host": host,
-            "observer_health": {
-                "warnings": observer_health_warnings(last_d.get("ts") if last_d else None, host, database),
-            },
-            "outage_active": OUTAGE_TRACKER.summary(db),
-            "push": {
-                "available": push_available(STATE_DIR),
-                "enabled": bool(CFG.get("push_notifications_enabled", True)),
-                "subscribers": len(list_subscriptions(db)),
-            },
-            "quiet_hours": quiet_hours_status(CFG, db),
-            "app": {
-                "version": VERSION,
-                "github": GITHUB_REPO,
-                "changelog": CHANGELOG_URL,
-                "provenance": installation_provenance(),
-            },
-        }
+            last_d = None
+            patterns = None
+            if last:
+                last_d = normalize_stored_verdict(dict(last))
+                last_d["checks"] = normalize_stored_checks(json.loads(last_d["checks"]))
+                if last_d.get("severity") != "ok" and last_d.get("code"):
+                    patterns = self.patterns(code=last_d["code"])
+            try:
+                kuma_url = _kuma_url(CFG.get("kuma_url", "auto"))
+            except ValueError:
+                kuma_url = ""
+            host = host_stats()
+            database = db_maintenance_info()
+            return {
+                "now": time.time(),
+                "diagnosing": self.run_in_progress or (
+                    self.loop_thread is not None and self.loop_thread.is_alive()
+                ),
+                "open_incident": (
+                    normalize_stored_verdict(open_inc) if open_inc else None
+                ),
+                "open_incident_meta": self.open_incident_meta(),
+                "open_incident_runs": runs_of_open,
+                "last_run": last_d,
+                "patterns": patterns,
+                "incidents": [
+                    normalize_stored_verdict(dict(i)) for i in incidents
+                ],
+                "stats": self.stats(),
+                "history": self.history(),
+                "history_meta": self.history_meta(),
+                "fire_drill": fire_drill_status(),
+                "kuma_url": kuma_url,
+                "settings": public_settings(),
+                "local_dns": local_dns_runtime_info(),
+                "database": database,
+                "host": host,
+                "observer_health": {
+                    "warnings": observer_health_warnings(last_d.get("ts") if last_d else None, host, database),
+                },
+                "outage_active": OUTAGE_TRACKER.summary(db),
+                "push": {
+                    "available": push_available(STATE_DIR),
+                    "enabled": bool(CFG.get("push_notifications_enabled", True)),
+                    "subscribers": len(list_subscriptions(db)),
+                },
+                "quiet_hours": quiet_hours_status(CFG, db),
+                "app": {
+                    "version": VERSION,
+                    "github": GITHUB_REPO,
+                    "changelog": CHANGELOG_URL,
+                    "provenance": installation_provenance(),
+                },
+            }
 
     def stats(self):
         now = time.time()

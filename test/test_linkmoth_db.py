@@ -6,6 +6,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -96,6 +97,103 @@ class DbMaintenanceTests(unittest.TestCase):
     def test_auto_vacuum_skips_when_no_freelist(self):
         engine = self.linkmoth.Engine()
         self.linkmoth.auto_vacuum(engine)  # should not raise
+
+
+class ReentrantDbTests(unittest.TestCase):
+    """db() reuses an already-open connection on the same thread, so
+    composed read paths stop paying a connect/close round trip per helper.
+    The outermost block keeps ownership of commit, rollback and close."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.state = Path(tempfile.mkdtemp(prefix="linkmoth_reentrant_"))
+        os.environ["LINKMOTH_STATE_DIR"] = str(cls.state)
+        for _mod in ("linkmoth", "linkmoth_core", "linkmoth_probes",
+                     "linkmoth_engine", "linkmoth_handler"):
+            if _mod in sys.modules:
+                del sys.modules[_mod]
+        cls.linkmoth = importlib.import_module("linkmoth")
+        cls.core = importlib.import_module("linkmoth_core")
+        cls.linkmoth.init_db()
+
+    def test_nested_block_reuses_the_same_connection(self):
+        with self.core.db() as outer:
+            with self.core.db() as inner:
+                self.assertIs(inner, outer)
+
+    def test_outer_block_commits_work_done_in_a_nested_block(self):
+        with self.core.db() as conn:
+            conn.execute("DELETE FROM app_meta WHERE key='reentrant'")
+        with self.core.db():
+            with self.core.db() as inner:
+                inner.execute(
+                    "INSERT INTO app_meta(key, value) VALUES('reentrant','yes')")
+        with self.core.db() as conn:
+            row = conn.execute(
+                "SELECT value FROM app_meta WHERE key='reentrant'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["value"], "yes")
+
+    def test_failure_in_a_nested_block_rolls_the_whole_thing_back(self):
+        with self.core.db() as conn:
+            conn.execute("DELETE FROM app_meta WHERE key='rollback'")
+        with self.assertRaises(RuntimeError):
+            with self.core.db() as outer:
+                outer.execute(
+                    "INSERT INTO app_meta(key, value) VALUES('rollback','x')")
+                with self.core.db():
+                    raise RuntimeError("nested failure")
+        with self.core.db() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM app_meta WHERE key='rollback'").fetchone()[0]
+        self.assertEqual(count, 0)
+
+    def test_connection_state_is_cleared_after_the_outer_block(self):
+        with self.core.db():
+            pass
+        self.assertIsNone(getattr(self.core._DB_REENTRANT, "active", None))
+
+    def test_each_thread_gets_its_own_connection(self):
+        import threading
+        seen, lock = {}, threading.Lock()
+
+        def worker(index):
+            with self.core.db() as conn:
+                with lock:
+                    seen[index] = id(conn)
+                time.sleep(0.05)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(len(set(seen.values())), 4)
+
+    def test_a_different_target_still_opens_its_own_connection(self):
+        other = self.state / "other.db"
+        with self.core.db() as outer:
+            with self.core.db(other) as inner:
+                self.assertIsNot(inner, outer)
+
+    def test_status_uses_a_single_connection(self):
+        """The reason the re-entrancy exists: /api/status is polled every
+        few seconds and used to fan out to a dozen connections."""
+        engine = self.linkmoth.Engine()
+        engine.status()
+        opened = []
+        real_connect = sqlite3.connect
+
+        def counting(*args, **kwargs):
+            opened.append(1)
+            return real_connect(*args, **kwargs)
+
+        sqlite3.connect = counting
+        try:
+            engine.status()
+        finally:
+            sqlite3.connect = real_connect
+        self.assertEqual(len(opened), 1)
 
 
 if __name__ == "__main__":

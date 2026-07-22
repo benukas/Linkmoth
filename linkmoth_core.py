@@ -757,16 +757,37 @@ def public_settings():
     return out
 
 
+_DB_REENTRANT = threading.local()
+
+
 @contextmanager
 def db(path=None):
     """`path` targets an arbitrary database file (e.g. a restore scratch
-    copy) instead of the live DB_PATH; every other caller omits it."""
+    copy) instead of the live DB_PATH; every other caller omits it.
+
+    Re-entrant per thread: a nested `with db()` inside an outer one reuses
+    the outer connection instead of opening its own. Composed read paths
+    (Engine.status() alone fanned out to 13 separate connections) were
+    paying a connect + open/fstat/fchmod + close round trip each time,
+    which dominated the cost of the endpoint the dashboard polls every few
+    seconds. The outermost block still owns commit, rollback and close, so
+    the nested work also lands in one transaction and one consistent
+    snapshot rather than several.
+
+    Thread-local because sqlite3 connections are not shareable across
+    threads; concurrent HTTP workers each get their own.
+    """
     global DB_LOCK_RETRIES
     target = Path(path) if path is not None else DB_PATH
+    active = getattr(_DB_REENTRANT, "active", None)
+    if active is not None and active["path"] == target:
+        yield active["conn"]
+        return
     _ensure_private_state_file(target)
     conn = sqlite3.connect(target, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
+    _DB_REENTRANT.active = {"path": target, "conn": conn}
     try:
         yield conn
         for delay in (0.0, 0.025, 0.05, 0.1, 0.2, 0.4):
@@ -785,6 +806,7 @@ def db(path=None):
         conn.rollback()
         raise
     finally:
+        _DB_REENTRANT.active = None
         conn.close()
 
 
