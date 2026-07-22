@@ -1931,6 +1931,9 @@ _FACTOR_PHRASES = {
 }
 
 
+_MAX_UNIX_TIMESTAMP = 253402300799  # 9999-12-31 23:59:59 UTC
+
+
 def _day_start(ts):
     """Local midnight for `ts`, or None if the timestamp is not a real date.
 
@@ -1941,7 +1944,7 @@ def _day_start(ts):
     raise here would take the whole dashboard down over one bad row, so such
     rows are reported unusable and skipped by callers."""
     try:
-        if ts < 0:
+        if ts < 0 or ts > _MAX_UNIX_TIMESTAMP:
             return None
         lt = time.localtime(ts)
         return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
@@ -2139,4 +2142,3 @@ def quality_summary(limit=288):
             "loss_bad_pct": qcfg["loss_bad_pct"],
         },
     }
-
