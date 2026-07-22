@@ -1935,14 +1935,17 @@ def _day_start(ts):
     """Local midnight for `ts`, or None if the timestamp is not a real date.
 
     A host without an RTC (every Raspberry Pi) can record samples before NTP
-    corrects its clock, leaving rows dated 1970 or far in the future.
-    localtime/mktime raise on those, and this runs inside /api/status -- an
-    unguarded raise here would take the whole dashboard down over one bad
-    row, so such rows are reported unusable and skipped by callers."""
+    corrects its clock, leaving rows dated before the Unix epoch or far in the
+    future.  Some platforms normalize pre-epoch values instead of raising, so
+    reject those explicitly.  This runs inside /api/status -- an unguarded
+    raise here would take the whole dashboard down over one bad row, so such
+    rows are reported unusable and skipped by callers."""
     try:
+        if ts < 0:
+            return None
         lt = time.localtime(ts)
         return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
-    except (OSError, OverflowError, ValueError):
+    except (OSError, OverflowError, TypeError, ValueError):
         return None
 
 
@@ -2136,5 +2139,4 @@ def quality_summary(limit=288):
             "loss_bad_pct": qcfg["loss_bad_pct"],
         },
     }
-
 
