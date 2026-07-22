@@ -989,6 +989,23 @@ def init_db(path=None):
                 ON incident_outage_segments(incident_id, started);
             CREATE UNIQUE INDEX IF NOT EXISTS incident_outage_segments_one_open
                 ON incident_outage_segments(incident_id) WHERE ended IS NULL;
+            -- The two big append-only tables grow to tens of thousands of
+            -- rows at the default retention, and both are read on every
+            -- /api/status poll (every ui_refresh_seconds, per open
+            -- dashboard). Without these, the status query counted runs per
+            -- incident by scanning the whole runs table once per incident,
+            -- and every "newest N samples" read scanned and sorted the
+            -- entire quality_samples table. Existing installs pick these up
+            -- on the next start, since init_db() self-migrates.
+            CREATE INDEX IF NOT EXISTS idx_runs_incident_id ON runs(incident_id);
+            CREATE INDEX IF NOT EXISTS idx_runs_ts ON runs(ts);
+            CREATE INDEX IF NOT EXISTS idx_quality_samples_ts
+                ON quality_samples(ts);
+            CREATE INDEX IF NOT EXISTS idx_load_tests_ts ON load_tests(ts);
+            CREATE INDEX IF NOT EXISTS idx_incidents_started
+                ON incidents(started);
+            CREATE INDEX IF NOT EXISTS idx_incidents_resolved
+                ON incidents(resolved);
             """
         )
         try:
