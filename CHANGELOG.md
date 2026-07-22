@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.4.9
+
+### Fixed
+
+- A hand-edited `config.json` with a non-numeric value under `quality` (for
+  example a string `load_test_hours`) could raise while the dashboard status
+  was being built and take the whole page down. Such values now fall back to
+  their defaults instead.
+- Reducing the history retention no longer jams the save when the field is
+  cleared or set below the minimum; the browser now clamps the value exactly
+  as the server does before confirming the reduction.
+- Removed an unreachable settings-failure path from backup restore.
+
+### Changed
+
+- The certificate-safety guidance on the sign-in screen now appears only during
+  first-run onboarding, when the certificate-trust decision is actually made,
+  rather than on every sign-in.
+
 ## 0.4.8
 
 ### Changed
