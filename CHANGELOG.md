@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- Warnings and incidents now share one History list that can be sorted by
+  newest, oldest, or most severe, and filtered to either type. A warning is
+  labelled as such and still never counts as downtime.
+- A warning can be dismissed once it has been read. Dismissal records what was
+  already seen rather than muting the fault, so if it happens again it comes
+  back.
+
+### Changed
+
+- The accountability report leads with the headline figures and moves the
+  longest-outage detail and blame breakdown behind a **Show breakdown**
+  expander, as labelled rows instead of facts strung together with separators.
+
 ## 0.6.0
 
 ### Added

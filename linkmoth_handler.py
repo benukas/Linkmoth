@@ -1574,6 +1574,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(409, {"error": err})
             else:
                 self._send(200, {"verdict": v})
+        elif path == "/api/warnings/dismiss":
+            try:
+                data = json.loads(body) if body else {}
+                if not isinstance(data, dict):
+                    raise ValueError
+            except (json.JSONDecodeError, ValueError):
+                self._send(400, {"error": "expected a JSON object"})
+                return
+            ok, err = linkmoth.ENGINE.dismiss_warning(
+                data.get("code"), data.get("until_ts"))
+            if ok:
+                self._send(200, {"dismissed": True,
+                                 "warnings": linkmoth.ENGINE.warnings_list(50)})
+            else:
+                self._send(400, {"error": err})
         elif path == "/api/incident/close":
             ok, result = linkmoth.ENGINE.close_open_incident()
             if ok:

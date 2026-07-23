@@ -39,6 +39,9 @@ class WarningsListTests(unittest.TestCase):
         with self.linkmoth.db() as conn:
             conn.execute("DELETE FROM runs")
             conn.execute("DELETE FROM incidents")
+            # Dismissals are a persistent high-water mark; leaving one behind
+            # silently hides the next test's warnings.
+            conn.execute("DELETE FROM dismissed_warnings")
         self.engine = self.linkmoth.Engine()
         self.now = time.time()
 
@@ -122,6 +125,47 @@ class WarningsListTests(unittest.TestCase):
 
     def test_no_warnings_is_an_empty_list_not_an_error(self):
         self.assertEqual(self.engine.warnings_list(), [])
+
+    # ---- dismissal ---------------------------------------------------------
+    def test_dismissing_hides_what_has_been_seen(self):
+        for i in range(4):
+            self._run(self.now - 3600 + i * 300)
+        episode = self.engine.warnings_list()[0]
+        ok, err = self.engine.dismiss_warning("host_power", episode["last_ts"])
+        self.assertTrue(ok, err)
+        self.assertEqual(self.engine.warnings_list(), [])
+
+    def test_a_recurrence_after_dismissal_comes_back(self):
+        """Dismissal acknowledges what was seen; it must not mute the fault
+        forever, or a returning problem would be silently hidden."""
+        self._run(self.now - 3600)
+        self.engine.dismiss_warning("host_power", self.now - 3600)
+        self._run(self.now - 10)
+        found = self.engine.warnings_list()
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["code"], "host_power")
+
+    def test_dismissing_one_code_leaves_the_others(self):
+        self._run(self.now - 300)
+        self._run(self.now - 300, code="link_degraded")
+        self.engine.dismiss_warning("host_power", self.now - 300)
+        self.assertEqual([w["code"] for w in self.engine.warnings_list()],
+                         ["link_degraded"])
+
+    def test_dismissal_survives_and_only_ever_moves_forward(self):
+        """Re-dismissing with an older mark must not un-hide newer warnings."""
+        self._run(self.now - 3600)
+        self._run(self.now - 300)
+        self.engine.dismiss_warning("host_power", self.now - 300)
+        self.engine.dismiss_warning("host_power", self.now - 9999)
+        self.assertEqual(self.engine.warnings_list(), [])
+
+    def test_bad_dismiss_input_is_rejected(self):
+        for code, ts in (("", 123), (None, 123), ("host_power", "soon"),
+                         ("host_power", None), ("host_power", 0)):
+            ok, err = self.engine.dismiss_warning(code, ts)
+            self.assertFalse(ok)
+            self.assertTrue(err)
 
 
 if __name__ == "__main__":

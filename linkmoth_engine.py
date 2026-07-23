@@ -990,7 +990,7 @@ class Engine:
         keeping the newest run's evidence, so the list reads as "this was
         wrong, from here to here" rather than a wall of duplicates.
         """
-        rows = []
+        rows, dismissed = [], {}
         try:
             with db() as conn:
                 rows = [dict(r) for r in conn.execute(
@@ -998,9 +998,15 @@ class Engine:
                     " FROM runs WHERE incident_id IS NULL AND severity != 'ok'"
                     " ORDER BY ts DESC LIMIT ?", (self.WARNING_SCAN_LIMIT,),
                 )]
+                dismissed = {r["code"]: r["until_ts"] for r in conn.execute(
+                    "SELECT code, until_ts FROM dismissed_warnings")}
         except sqlite3.Error as e:
             print(f"warnings read failed: {e}", file=sys.stderr, flush=True)
             return []
+
+        # Drop what has already been acknowledged. Anything newer than the
+        # dismissal survives, so a fault that comes back is not hidden.
+        rows = [r for r in rows if r["ts"] > dismissed.get(r["code"], float("-inf"))]
 
         # Group per code, not by adjacency: two warnings can be active at
         # once, and the baseline interleaves them, so a neighbouring different
@@ -1031,6 +1037,35 @@ class Engine:
             latest_for_code[row["code"]] = episode
         episodes.sort(key=lambda item: item["last_ts"], reverse=True)
         return episodes[:limit]
+
+    def dismiss_warning(self, code, until_ts):
+        """Acknowledge every warning for `code` up to `until_ts`.
+
+        Stored as a high-water mark rather than deleting the runs: the
+        evidence stays in history for reports, and a recurrence after this
+        moment reappears instead of being permanently muted.
+        """
+        code = str(code or "").strip()
+        if not code:
+            return False, "a warning code is required"
+        try:
+            until = float(until_ts)
+        except (TypeError, ValueError):
+            return False, "a numeric timestamp is required"
+        if until <= 0:
+            return False, "a numeric timestamp is required"
+        try:
+            with db() as conn:
+                conn.execute(
+                    "INSERT INTO dismissed_warnings(code, until_ts, dismissed_at)"
+                    " VALUES(?,?,?) ON CONFLICT(code) DO UPDATE SET"
+                    " until_ts=MAX(until_ts, excluded.until_ts),"
+                    " dismissed_at=excluded.dismissed_at",
+                    (code, until, time.time()))
+        except sqlite3.Error as e:
+            print(f"warning dismiss failed: {e}", file=sys.stderr, flush=True)
+            return False, "could not record the dismissal"
+        return True, None
 
     def incidents_list(self, limit=50, code=None):
         q = ("SELECT i.*, (SELECT COUNT(*) FROM runs r WHERE r.incident_id=i.id) AS run_count"

@@ -1019,6 +1019,14 @@ def init_db(path=None):
                 checks TEXT NOT NULL,
                 duration_ms REAL
             );
+            -- Dismissing a warning clears what has already been seen, not the
+            -- code forever: everything up to until_ts is hidden, so a later
+            -- recurrence surfaces again instead of being silently suppressed.
+            CREATE TABLE IF NOT EXISTS dismissed_warnings(
+                code TEXT PRIMARY KEY,
+                until_ts REAL NOT NULL,
+                dismissed_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS suppressed_alerts(
                 id INTEGER PRIMARY KEY,
                 ts REAL NOT NULL,

@@ -75,11 +75,16 @@ class DbMaintenanceTests(unittest.TestCase):
         self.assertIn("diagnosis in progress", result["error"])
 
     def test_vacuum_reclaims_space_after_bulk_delete(self):
+        # Enough rows that vacuuming reclaims real pages. A single row leaves
+        # nothing to reclaim, so the assertion below then measured page
+        # allocation noise and could flip on an unrelated schema change.
+        payload = json.dumps([{"id": "x", "detail": "y" * 200}])
         with self.linkmoth.db() as conn:
-            conn.execute(
+            conn.executemany(
                 "INSERT INTO runs(incident_id, ts, severity, code, title, explain, hint, checks, duration_ms)"
                 " VALUES(?,?,?,?,?,?,?,?,?)",
-                (None, 1.0, "ok", "all_clear", "t", "", "", "[]", 1.0),
+                [(None, float(i), "ok", "all_clear", "t", "", "", payload, 1.0)
+                 for i in range(2000)],
             )
         size_before = self.linkmoth.DB_PATH.stat().st_size
         with self.linkmoth.db() as conn:
