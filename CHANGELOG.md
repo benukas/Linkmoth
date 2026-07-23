@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.12
+
 ### Changed
 
 - Linkmoth no longer re-runs two host commands that cannot have changed. The
