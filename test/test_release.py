@@ -402,9 +402,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.4.10-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.4.11-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.4.10/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.4.11/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -415,7 +415,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.10"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.4.11"))
+        self.assertLess(changelog.index("## 0.4.11"), changelog.index("## 0.4.10"))
         self.assertLess(changelog.index("## 0.4.10"), changelog.index("## 0.4.9"))
         self.assertLess(changelog.index("## 0.4.9"), changelog.index("## 0.4.8"))
         self.assertLess(changelog.index("## 0.4.8"), changelog.index("## 0.4.7"))
@@ -425,7 +426,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.4.10", advanced)
+        self.assertIn("VERSION=v0.4.11", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
