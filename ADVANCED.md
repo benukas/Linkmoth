@@ -14,7 +14,7 @@ The normal quick-start path needs no Cosign. It downloads the bootstrap source
 directly from the exact protected Linkmoth version tag and refuses redirects:
 
 ```bash
-VERSION=v0.4.11; NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME"
+VERSION=v0.4.12; NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME"
 ```
 
 The tagged bootstrap derives `$VERSION` only from the strict local filename.
@@ -40,7 +40,7 @@ download the same pinned bootstrap and its bundle, verify the bootstrap before
 using `sudo`, and explicitly select `--sigstore-verified`:
 
 ```bash
-VERSION=v0.4.11
+VERSION=v0.4.12
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 download_linkmoth_asset() {
   local name="$1" source="$BASE/$1" target
@@ -292,7 +292,7 @@ script (the quick-start path), the installer isn't left on the host, so
 re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
-VERSION=v0.4.11   # use your installed version (shown in the dashboard footer)
+VERSION=v0.4.12   # use your installed version (shown in the dashboard footer)
 NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME" --with-push
 ```
 
