@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- **Settings → General → Debug** now has a **Show command log** toggle. When on,
+  a terminal panel under the toggle streams every command Linkmoth runs on the
+  host with its exit code, duration, and output, including standard error when
+  a command fails. It is held in memory only, capped at the most recent 300
+  entries, never written to disk, and off by default.
+
 ## 0.4.10
 
 ### Fixed

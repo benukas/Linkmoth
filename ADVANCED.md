@@ -1010,6 +1010,26 @@ evidence can insert a more specific first action. Run verification after each
 change and stop when the linked rung turns green. Below is the recovery guide
 for Linkmoth itself.
 
+### Debug command log
+
+When a check behaves in a way the verdict does not explain, turn on
+**Settings → General → Debug → Show command log**. A terminal panel appears
+under the toggle and shows every command Linkmoth runs on the host as it
+happens – `ping`, `ip`, `systemctl`, `ethtool`, `vcgencmd` and the rest – with
+its exit code, how long it took, and its output. A failing command also shows
+its standard error, which is usually the only place that says why.
+
+It answers questions the dashboard otherwise cannot: whether a tool is missing
+on this distribution, whether a probe is timing out rather than failing, and
+exactly which arguments a check ran with.
+
+The log is held in memory only. It keeps the most recent 300 commands, is
+never written to the database or disk, and is emptied when the service
+restarts or when you press **Clear**. Recording is off by default and costs
+nothing while off. **Copy** puts the visible log on the clipboard; it can
+contain local hostnames and addresses, so treat it like the support summary
+and keep it out of public issues.
+
 ### First moves, always
 
 - `journalctl -u linkmoth -f` – live logs
