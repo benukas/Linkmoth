@@ -103,6 +103,27 @@ nav button.active { color: var(--text); border-color: var(--text); }
 #quality-card .hint, #score-card .hint { color: var(--muted); }
 .set-hint { font-size: 15px; line-height: 1.45; color: var(--muted); }
 .hint-block { display: block; margin-top: 2px; }
+/* Debug command log. A terminal is the honest presentation here: this is raw
+   command output, and dressing it up as cards would make it harder to scan. */
+.debug-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 6px; }
+.debug-count { font-size: 14px; color: var(--muted); margin-right: auto; }
+.debug-follow { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+.debug-follow input { width: auto; margin: 0; }
+.debug-bar .action-btn { width: auto; margin-top: 0; padding: 7px 14px; font-size: 14px; min-height: 0; }
+.debug-output {
+  margin: 0; padding: 12px 14px; max-height: 340px; overflow: auto;
+  background: #0b0b0b; color: #d6d3cc; border: 1px solid var(--border);
+  border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-theme="white"] .debug-output { background: #14171a; color: #e4e2dc; }
+.debug-output .t { color: #7f8c8d; }
+.debug-output .c { color: #8ab4f8; }
+.debug-output .ok { color: #7ec699; }
+.debug-output .bad { color: #f08a7a; }
+.debug-output .o { color: #b9b6ae; }
+.debug-empty { color: #7f8c8d; }
 .wlan-hint { margin: 4px 0 10px 58px; font-size: 14px; color: var(--muted); }
 .v-compact {
   font-size: 26px; line-height: 1.22; font-weight: 600; overflow-wrap: anywhere;
@@ -1011,6 +1032,23 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <div class="set-section">
           <h4>Session</h4>
           <button id="logout-btn" type="button" class="action-btn hidden">Sign out</button>
+        </div>
+        <div class="set-section">
+          <h4>Debug<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Records every command Linkmoth runs on this host (ping, ip, systemctl and the rest) with its exit code, duration, and output. Kept in memory only, capped at the most recent 300, and cleared when the service restarts. Leave it off for normal use.</span></span></h4>
+          <div class="set-row">
+            <label for="s-debug-commands">Show command log</label>
+            <input id="s-debug-commands" type="checkbox">
+          </div>
+          <p class="set-hint">Applies as soon as you save. Output can include local hostnames and addresses, so treat a copied log like the support summary.</p>
+          <div id="debug-console" class="hidden">
+            <div class="debug-bar">
+              <span id="debug-count" class="debug-count">no commands recorded yet</span>
+              <label class="debug-follow"><input id="debug-follow" type="checkbox" checked> Follow</label>
+              <button type="button" id="debug-copy" class="action-btn">Copy</button>
+              <button type="button" id="debug-clear" class="action-btn">Clear</button>
+            </div>
+            <pre id="debug-output" class="debug-output" aria-live="polite" aria-label="Command log"></pre>
+          </div>
         </div>
       </div>
 
@@ -2776,8 +2814,10 @@ async function refresh() {
       $("s-quiet-enabled").checked = !!s.settings.quiet_hours_enabled;
       $("s-quiet-start").value = s.settings.quiet_hours_start || "22:00";
       $("s-quiet-end").value = s.settings.quiet_hours_end || "07:00";
+      $("s-debug-commands").checked = !!s.settings.debug_command_log;
       settingsLoaded = true;
     }
+    applyDebugConsole(!!s.settings.debug_command_log);
   }
   if (s.quiet_hours) {
     const q = s.quiet_hours;
@@ -4912,6 +4952,103 @@ document.addEventListener("click", async (ev) => {
   setTimeout(() => { btn.textContent = "Copy support summary"; }, 1800);
 });
 
+// ---- debug command log -------------------------------------------------
+// Polls only while the console is visible, and only asks for entries newer
+// than the highest sequence it already holds, so an idle log costs one tiny
+// response per tick instead of the whole buffer.
+let debugSeq = 0;
+let debugTimer = null;
+let debugLines = [];
+const DEBUG_MAX_LINES = 300;
+
+function debugAtBottom(el) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+}
+
+function renderDebugLog() {
+  const out = $("debug-output");
+  if (!debugLines.length) {
+    out.innerHTML = '<span class="debug-empty">Waiting for the next command…</span>';
+    return;
+  }
+  const follow = $("debug-follow").checked;
+  const stick = follow || debugAtBottom(out);
+  out.innerHTML = debugLines.join("\n");
+  if (stick) out.scrollTop = out.scrollHeight;
+}
+
+function debugEntryHtml(entry) {
+  const when = new Date(entry.ts * 1000).toLocaleTimeString();
+  const failed = entry.rc !== 0;
+  const status = failed ? `exit ${entry.rc}` : "ok";
+  const head = `<span class="t">${esc(when)}</span> `
+    + `<span class="${failed ? "bad" : "ok"}">${esc(status)}</span> `
+    + `<span class="t">${entry.duration_ms} ms</span>  `
+    + `<span class="c">$ ${esc(entry.command)}</span>`;
+  if (!entry.output) return head;
+  const body = esc(entry.output).split("\n").map((l) => `    ${l}`).join("\n");
+  return `${head}\n<span class="o">${body}</span>`
+    + (entry.truncated ? '\n<span class="t">    … output truncated</span>' : "");
+}
+
+async function pollDebugLog() {
+  try {
+    const r = await fetch(`/api/debug/commands?since=${debugSeq}`, { headers: authHeaders() });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!data.enabled) { applyDebugConsole(false); return; }
+    if (data.seq < debugSeq) { debugSeq = 0; debugLines = []; }  // service restarted
+    if (data.entries?.length) {
+      for (const entry of data.entries) debugLines.push(debugEntryHtml(entry));
+      if (debugLines.length > DEBUG_MAX_LINES) {
+        debugLines = debugLines.slice(-DEBUG_MAX_LINES);
+      }
+      debugSeq = data.seq;
+      renderDebugLog();
+    }
+    const total = debugLines.length;
+    $("debug-count").textContent = total
+      ? `${total} command${total === 1 ? "" : "s"} shown (newest last, keeps the last ${data.max_entries})`
+      : "no commands recorded yet";
+  } catch (e) { /* transient; the next tick retries */ }
+}
+
+function applyDebugConsole(enabled) {
+  $("debug-console").classList.toggle("hidden", !enabled);
+  if (enabled) {
+    if (debugTimer === null) {
+      renderDebugLog();
+      pollDebugLog();
+      debugTimer = setInterval(pollDebugLog, 2000);
+    }
+  } else if (debugTimer !== null) {
+    clearInterval(debugTimer);
+    debugTimer = null;
+  }
+}
+
+$("debug-clear").addEventListener("click", async () => {
+  try {
+    await fetch("/api/debug/commands/clear", { method: "POST", headers: authHeaders() });
+  } catch (e) { /* the buffer is best-effort; fall through and clear locally */ }
+  debugSeq = 0;
+  debugLines = [];
+  renderDebugLog();
+  $("debug-count").textContent = "no commands recorded yet";
+});
+
+$("debug-copy").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  const text = $("debug-output").textContent;
+  try {
+    await copyPlainText(text);
+    btn.textContent = "Copied";
+  } catch (e) {
+    btn.textContent = "Copy failed";
+  }
+  setTimeout(() => { btn.textContent = "Copy"; }, 1800);
+});
+
 document.addEventListener("click", async (ev) => {
   const btn = ev.target.closest(".copy-story-btn");
   if (!btn) return;
@@ -4976,6 +5113,7 @@ $("save-settings").addEventListener("click", async () => {
     discord_notifications_enabled: $("s-discord-enabled").checked,
     push_notifications_enabled: $("s-push-enabled").checked,
     quiet_hours_enabled: $("s-quiet-enabled").checked,
+    debug_command_log: $("s-debug-commands").checked,
     quiet_hours_start: $("s-quiet-start").value,
     quiet_hours_end: $("s-quiet-end").value,
   };

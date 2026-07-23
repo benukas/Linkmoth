@@ -368,6 +368,11 @@ DEFAULT_CONFIG = {
     "notify_webhook_url": "",
     "notify_webhook_enabled": False,
     "target_wifi_clients": [],
+    # Records every command Linkmoth runs on the host into an in-memory ring
+    # buffer the dashboard can display. Off by default: it is a debugging aid,
+    # not something to leave running, and the buffer is deliberately never
+    # written to disk.
+    "debug_command_log": False,
     # Connection quality: periodically measure internet latency, jitter, and
     # packet loss (not just up/down) and classify good/fair/poor. Thresholds are
     # in milliseconds / percent. "targets" empty means reuse ping_targets.
@@ -709,6 +714,7 @@ SETTABLE = {
     "quiet_hours_end": _quiet_time,
     "notify_webhook_url": lambda v: str(v).strip()[:2000],
     "notify_webhook_enabled": _bool_setting,
+    "debug_command_log": _bool_setting,
 }
 
 
@@ -1405,19 +1411,97 @@ def auto_vacuum(engine):
         print(f"auto_vacuum: {exc}", file=sys.stderr, flush=True)
 
 
+# Debug command log. Every command Linkmoth runs on the host goes through
+# run_cmd, so recording there captures all of them with no per-caller changes.
+# Deliberately in memory only and bounded: this is a live debugging view, not
+# an audit trail, and it must not grow the database or the disk footprint.
+COMMAND_LOG_MAX = 300
+COMMAND_LOG_OUTPUT_MAX = 4000
+_COMMAND_LOG = deque(maxlen=COMMAND_LOG_MAX)
+_COMMAND_LOG_LOCK = threading.Lock()
+_COMMAND_LOG_SEQ = 0
+
+
+def _record_command(args, rc, output, started, duration_ms):
+    """Append one command to the ring buffer. Never raises: a debugging aid
+    must not be able to break the probe that is being debugged."""
+    global _COMMAND_LOG_SEQ
+    try:
+        text = output if isinstance(output, str) else str(output)
+        truncated = len(text) > COMMAND_LOG_OUTPUT_MAX
+        entry = {
+            "ts": started,
+            "command": " ".join(str(a) for a in args),
+            "rc": rc,
+            "duration_ms": duration_ms,
+            "output": text[:COMMAND_LOG_OUTPUT_MAX],
+            "truncated": truncated,
+        }
+        with _COMMAND_LOG_LOCK:
+            _COMMAND_LOG_SEQ += 1
+            entry["seq"] = _COMMAND_LOG_SEQ
+            _COMMAND_LOG.append(entry)
+    except Exception:
+        pass
+
+
+def command_log(since=0):
+    """Entries newer than `since`, oldest first, with the current sequence.
+
+    The dashboard polls with the last sequence it holds, so a quiet period
+    costs one small empty response rather than the whole buffer each time.
+    """
+    try:
+        after = int(since)
+    except (TypeError, ValueError):
+        after = 0
+    with _COMMAND_LOG_LOCK:
+        entries = [dict(item) for item in _COMMAND_LOG if item["seq"] > after]
+        latest = _COMMAND_LOG_SEQ
+    return {
+        "enabled": bool(CFG.get("debug_command_log", False)),
+        "entries": entries,
+        "seq": latest,
+        "max_entries": COMMAND_LOG_MAX,
+    }
+
+
+def clear_command_log():
+    with _COMMAND_LOG_LOCK:
+        _COMMAND_LOG.clear()
+
+
 def run_cmd(args, timeout=10):
+    # Reading the flag per call (rather than caching it) is what makes the
+    # toggle take effect immediately, and costs one dict lookup on a path that
+    # is about to spawn a process anyway.
+    record = bool(CFG.get("debug_command_log", False))
+    started = time.time()
+
+    def done(rc, out, logged=None):
+        if record:
+            _record_command(args, rc, out if logged is None else logged,
+                            started, int((time.time() - started) * 1000))
+        return rc, out
+
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-        return p.returncode, p.stdout.strip()
+        out = p.stdout.strip()
+        stderr = p.stderr.strip()
+        # Callers only ever get stdout, and that contract is unchanged. But a
+        # failing command usually explains itself on stderr, which is exactly
+        # what someone reading this log needs, so record both.
+        logged = f"{out}\n{stderr}".strip() if p.returncode != 0 and stderr else out
+        return done(p.returncode, out, logged)
     except subprocess.TimeoutExpired:
-        return -1, "timeout"
+        return done(-1, "timeout")
     except FileNotFoundError:
-        return -2, "tool missing"
+        return done(-2, "tool missing")
     except OSError as e:
         # e.g. the tool exists but isn't executable (PermissionError), or the
         # OS can't spawn it right now. Callers all branch on rc != 0; returning
         # a sentinel keeps a probe/ladder step from raising out of its caller.
-        return -3, f"could not run: {e.__class__.__name__}"
+        return done(-3, f"could not run: {e.__class__.__name__}")
 
 
 def _cpu_totals():

@@ -40,8 +40,8 @@ from linkmoth_core import (
     REQUEST_HEADER_DEADLINE_SECONDS, TLS_HANDSHAKE_TIMEOUT_SECONDS, VERSION,
     WHITE_LOGO_PATH, WHITE_MARK_PATH, BoundedTLSServer, CFG, STATE_DIR,
     _ca_cert_path, _export_settings, _safe_request_host, apply_settings,
-    build_tls_context, db, db_maintenance_info, init_db, manual_update_check,
-    run_cmd, tls_paths, vacuum_database,
+    build_tls_context, clear_command_log, command_log, db, db_maintenance_info,
+    init_db, manual_update_check, run_cmd, tls_paths, vacuum_database,
 )
 from linkmoth_backup import BackupInProgress, build_backup_archive_to_path
 from linkmoth_engine import _set_meta, fire_drill_status, prometheus_metrics
@@ -1097,6 +1097,11 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 days = 30
             self._send(200, connection_score(days))
+        elif url.path == "/api/debug/commands":
+            # Deliberately absent from READONLY_TOKEN_GET_PATHS: command output
+            # is a full-session admin view, not something a scoped widget token
+            # should be able to read.
+            self._send(200, command_log(qs.get("since", ["0"])[0]))
         elif url.path == "/api/auth/audit":
             try:
                 limit = int(qs.get("limit", ["50"])[0])
@@ -1382,6 +1387,9 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as exc:
                 self._send_device_exception(exc)
+        elif path == "/api/debug/commands/clear":
+            clear_command_log()
+            self._send(200, {"cleared": True, **command_log()})
         elif path == "/api/diagnose":
             if not MANUAL_DIAGNOSIS_SLOT.acquire(blocking=False):
                 self._send(409, {"error": "a manual diagnosis is already running"})
