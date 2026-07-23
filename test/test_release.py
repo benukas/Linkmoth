@@ -109,6 +109,15 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_network_misconfig_warnings_surface_above_the_verdict(self):
+        """The whole value of the check is that a duplicate IP is seen before
+        the verdict, so the block must render on Today, ahead of #verdict."""
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        self.assertIn('<div id="network-notes"', dashboard)
+        self.assertIn("renderNetworkNotes(s.network_notes)", dashboard)
+        self.assertLess(
+            dashboard.index('id="network-notes"'), dashboard.index('id="verdict"'))
+
     def test_user_visible_times_are_local_and_do_not_expose_iso_z(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn(".toISOString()", dashboard)

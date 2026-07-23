@@ -820,6 +820,162 @@ def bind_exposure_risk(bind_addr, interfaces=None):
     return [i for i in interfaces if i["kind"] in ("tunnel", "container")]
 
 
+def _parse_ipv4_interfaces(raw):
+    """(iface, address, network) for every non-loopback IPv4 address, parsed
+    from `ip -o -4 addr show`. Keeps the prefix so subnet overlap can be
+    judged, not just equal addresses."""
+    interfaces = []
+    for match in re.finditer(
+        r"^\d+:\s+(\S+?)(?:@\S+)?\s+inet\s+(\d+\.\d+\.\d+\.\d+)/(\d+)",
+        raw, re.MULTILINE,
+    ):
+        iface, address, prefix = match.group(1), match.group(2), match.group(3)
+        try:
+            if ipaddress.IPv4Address(address).is_loopback or iface == "lo":
+                continue
+            network = ipaddress.ip_network(f"{address}/{prefix}", strict=False)
+        except (ipaddress.AddressValueError, ValueError):
+            continue
+        interfaces.append({"iface": iface, "address": address, "network": network})
+    return interfaces
+
+
+def _parse_default_route_devices(raw):
+    """Interface names carrying a default route, in order, from
+    `ip route show default` (which may list more than one)."""
+    return re.findall(r"^default\b.*?\bdev\s+(\S+)", raw, re.MULTILINE)
+
+
+def _join_names(names):
+    names = list(names)
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+_NETWORK_NOTES_LOCK = threading.Lock()
+_NETWORK_NOTES_CACHE = {"expires": 0.0, "warnings": []}
+NETWORK_NOTES_CACHE_SECONDS = 30
+
+
+def network_misconfig_warnings(addr_output=None, route_output=None,
+                               route_ok=True, use_cache=True):
+    """Detect local network misconfigurations that would otherwise make
+    Linkmoth blame the network for the host's own mistake.
+
+    Pure inspection of this host's own addresses and routes – no probing.
+    The whole point of the tool is to name who is at fault, and the LAN's own
+    foot-guns (two interfaces sharing an address, no default route) produce
+    symptoms that look exactly like a router or WAN outage. Naming them turns
+    a misleading "router is down" verdict into an accurate "fix your own
+    config" one.
+
+    Runs inside /api/status, so it is cached and can never raise: a bad line
+    of `ip` output must not take the dashboard down.
+    """
+    now = time.monotonic()
+    if use_cache:
+        with _NETWORK_NOTES_LOCK:
+            if now < _NETWORK_NOTES_CACHE["expires"]:
+                return [dict(w) for w in _NETWORK_NOTES_CACHE["warnings"]]
+
+    if addr_output is None:
+        rc, addr_output = run_cmd(["ip", "-o", "-4", "addr", "show"])
+        addr_output = addr_output if rc == 0 else ""
+    if route_output is None:
+        rc, route_output = run_cmd(["ip", "route", "show", "default"])
+        route_ok = rc == 0
+        route_output = route_output if rc == 0 else ""
+
+    warnings = []
+    try:
+        interfaces = _parse_ipv4_interfaces(addr_output or "")
+        flagged_ifaces = set()
+
+        # Same address on two interfaces: the clearest foot-gun, and exactly
+        # the case that reads as an intermittent router fault.
+        by_address = {}
+        for item in interfaces:
+            by_address.setdefault(item["address"], set()).add(item["iface"])
+        for address, ifaces in sorted(by_address.items()):
+            if len(ifaces) >= 2:
+                names = sorted(ifaces)
+                flagged_ifaces.update(names)
+                warnings.append({
+                    "level": "bad", "code": "duplicate_address",
+                    "title": "Duplicate IP address",
+                    "detail": (
+                        f"{address} is configured on {_join_names(names)}. Two"
+                        " interfaces answering for one address on the same"
+                        " network cause intermittent drops that look like a"
+                        " router or internet fault. Give one interface a"
+                        " different address, or disable it."),
+                })
+
+        # Different addresses but overlapping subnets: softer, but still
+        # produces asymmetric routing that mimics packet loss.
+        reported_pairs = set()
+        for i, first in enumerate(interfaces):
+            for second in interfaces[i + 1:]:
+                if first["iface"] == second["iface"]:
+                    continue
+                if first["address"] == second["address"]:
+                    continue  # already covered as a duplicate
+                pair = tuple(sorted((first["iface"], second["iface"])))
+                if pair in reported_pairs:
+                    continue
+                if first["network"].overlaps(second["network"]):
+                    reported_pairs.add(pair)
+                    flagged_ifaces.update(pair)
+                    warnings.append({
+                        "level": "warn", "code": "overlapping_subnet",
+                        "title": "Two interfaces on one subnet",
+                        "detail": (
+                            f"{first['iface']} ({first['address']}) and"
+                            f" {second['iface']} ({second['address']}) are on"
+                            " the same subnet. Traffic can leave and return on"
+                            " different interfaces, which looks like packet"
+                            " loss. Put them on separate subnets, or leave only"
+                            " one on this network."),
+                    })
+
+        if route_ok:
+            devices = _parse_default_route_devices(route_output or "")
+            unique_devices = sorted(set(devices))
+            if not devices:
+                warnings.append({
+                    "level": "bad", "code": "no_default_route",
+                    "title": "No default route",
+                    "detail": (
+                        "This host has no default route, so every internet"
+                        " check fails as a local routing problem, not"
+                        " necessarily an outage. Set a gateway on the"
+                        " interface that reaches your router."),
+                })
+            elif (len(unique_devices) >= 2
+                  and not set(unique_devices).issubset(flagged_ifaces)):
+                # Suppressed when the same interfaces already got an addressing
+                # warning above, so one root cause is named once.
+                warnings.append({
+                    "level": "warn", "code": "multiple_default_routes",
+                    "title": "Internet reachable via multiple interfaces",
+                    "detail": (
+                        "Default routes exist via"
+                        f" {_join_names(unique_devices)}. Replies may return on"
+                        " a different interface than requests, which looks like"
+                        " packet loss. Leave a single default route, or set"
+                        " interface metrics so one is clearly preferred."),
+                })
+    except Exception as exc:  # never break /api/status over a parse quirk
+        print(f"network misconfig check failed: {exc}", file=sys.stderr, flush=True)
+        warnings = []
+
+    with _NETWORK_NOTES_LOCK:
+        _NETWORK_NOTES_CACHE["warnings"] = [dict(w) for w in warnings]
+        _NETWORK_NOTES_CACHE["expires"] = time.monotonic() + NETWORK_NOTES_CACHE_SECONDS
+    return warnings
+
+
 def local_dns_is_same_host(address):
     try:
         parsed = ipaddress.IPv4Address(address)
