@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 
 
-WORKFLOW = (Path(__file__).resolve().parent.parent / ".github/workflows/release.yml").read_text(encoding="utf-8")
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
 
 class ReleasePipelineTests(unittest.TestCase):
@@ -37,11 +38,43 @@ class ReleasePipelineTests(unittest.TestCase):
         checks = WORKFLOW.split("  checks:\n", 1)[1].split("  publish:\n", 1)[0]
         self.assertIn('grep -qF "VERSION=$tag" ADVANCED.md', checks)
         self.assertIn(
-            'grep -qF "releases/download/$tag/linkmoth-$tag-bootstrap.sh" README.md',
+            'grep -qF "raw.githubusercontent.com/benukas/Linkmoth/$tag/bootstrap.sh"'
+            " README.md",
             checks,
         )
+        self.assertIn('grep -qF "linkmoth-$tag-bootstrap.sh" README.md', checks)
         self.assertIn('grep -qF "Checksum-verified release" README.md', checks)
         self.assertIn('grep -qF -- "--sigstore-verified" ADVANCED.md', checks)
+
+    def test_doc_checks_actually_match_the_shipped_docs(self):
+        """Every one of those greps must match the real README and ADVANCED.
+
+        Asserting the workflow merely *contains* a pattern is not enough: it
+        locks in whatever is written there, even once the docs have moved on.
+        A stale pattern fails the checks job, publish never runs, and the tag
+        ends up with no release at all, which is exactly what happened to
+        v0.4.8 and v0.4.9. So resolve $tag from the version the README itself
+        advertises and confirm each pattern is really present.
+        """
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
+        checks = WORKFLOW.split("  checks:\n", 1)[1].split("  publish:\n", 1)[0]
+
+        found = re.search(r"linkmoth-(v\d+\.\d+\.\d+)-bootstrap\.sh", readme)
+        self.assertIsNotNone(found, "README has no versioned bootstrap filename")
+        tag = found.group(1)
+
+        patterns = re.findall(
+            r'grep -qF (?:-- )?"([^"]+)" (README\.md|ADVANCED\.md)', checks)
+        self.assertTrue(patterns, "no documentation greps found in the checks job")
+        for pattern, filename in patterns:
+            expected = pattern.replace("$tag", tag)
+            haystack = readme if filename == "README.md" else advanced
+            self.assertIn(
+                expected, haystack,
+                f"release.yml requires {expected!r} in {filename}, but it is "
+                f"not there; the release would fail before publishing",
+            )
 
 
 if __name__ == "__main__":

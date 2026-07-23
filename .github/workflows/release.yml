@@ -63,8 +63,18 @@ jobs:
       - name: Verify quick-start docs reference this release
         run: |
           tag="$GITHUB_REF_NAME"
-          grep -qF "releases/download/$tag/linkmoth-$tag-bootstrap.sh" README.md || {
-            echo "::error::README.md quick start download link is not updated for $tag" >&2
+          # The quick start fetches the bootstrap from the protected tag's
+          # source tree, then runs it under a versioned filename; the script
+          # derives its pinned release version from that filename. Both halves
+          # must name this tag, so check each. This previously looked for a
+          # releases/download asset URL the quick start no longer uses, which
+          # failed every release after the command was simplified.
+          grep -qF "raw.githubusercontent.com/benukas/Linkmoth/$tag/bootstrap.sh" README.md || {
+            echo "::error::README.md quick start bootstrap URL is not updated for $tag" >&2
+            exit 1
+          }
+          grep -qF "linkmoth-$tag-bootstrap.sh" README.md || {
+            echo "::error::README.md quick start bootstrap filename is not updated for $tag" >&2
             exit 1
           }
           grep -qF "Checksum-verified release" README.md || {
