@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- Linkmoth no longer re-runs two host commands that cannot have changed. The
+  host's own IPv4 addresses are cached briefly instead of being read with `ip`
+  on every dashboard status poll, and `vcgencmd` is probed once rather than on
+  every fault-ladder run when the binary is missing or the service sandbox
+  hides the VideoCore device. Undervoltage detection is unaffected: the
+  `rpi_volt` sensor reading still runs. Both were found by reading the new
+  debug command log on a live installation.
+
 ## 0.4.11
 
 ### Added
