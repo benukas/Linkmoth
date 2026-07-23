@@ -491,6 +491,31 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 /* Local network misconfigurations shown on Today, above the verdict, so a
    duplicate IP is named rather than misread as a router fault. Reuses the
    config-note layout; a "bad" issue gets the same red as a critical verdict. */
+/* Warnings that never became incidents. They carry real evidence, so they get
+   a readable amber row you can open, not a glyph you cannot click. */
+.warn-count {
+  display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-text);
+  font-size: 14px; font-weight: 700; vertical-align: middle;
+}
+.warn-row {
+  border-left: 5px solid var(--warn-text); background: var(--card);
+  border-radius: 10px; margin: 0 0 10px; padding: 0;
+}
+.warn-row > summary {
+  cursor: pointer; list-style: none; padding: 12px 15px;
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+}
+.warn-row > summary::-webkit-details-marker { display: none; }
+.warn-row .wtitle { font-weight: 700; font-size: 16px; }
+.warn-row .wmeta { color: var(--muted); font-size: 14px; margin-left: auto; }
+.warn-row .wtimes { color: var(--muted); font-size: 14px; }
+.warn-body { padding: 0 15px 14px; font-size: 15px; line-height: 1.5; }
+.warn-body .ev {
+  margin-top: 8px; padding: 10px 12px; background: var(--bg); border-radius: 8px;
+  font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6;
+  overflow-x: auto;
+}
 #network-notes { margin: 0 0 16px; }
 .net-note.bad { background: var(--bad-bg); color: var(--bad-text); }
 .net-note .fix { display: block; margin-top: 3px; font-size: 14px; opacity: 0.9; }
@@ -958,6 +983,12 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       </div>
       <p id="hist-stats"></p>
     </div>
+    <section class="card hidden" id="warnings-card">
+      <h3>Warnings <span class="warn-count" id="warn-count"></span></h3>
+      <p class="hint">Faults that were seen but never became an incident, so they
+        are not counted as downtime. Worth reading when something feels off.</p>
+      <div id="warnings-list"></div>
+    </section>
     <section class="card" id="report-card">
       <h3>Accountability report<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Downtime, blame, and provider-path evidence built from the stored incident history – generated locally, credentials excluded.</span></span></h3>
       <div class="report-controls">
@@ -2980,6 +3011,7 @@ async function refresh() {
   if (!$("tab-history").classList.contains("hidden")) {
     loadHistory(true);
     loadReport();
+    loadWarnings();
   }
   if (!$("tab-settings").classList.contains("hidden")
       && !$("subtab-security").classList.contains("hidden")
@@ -3070,6 +3102,36 @@ function renderRunEvidence(run) {
     const micro = (c.micro || []).map((m) => `<br>&nbsp;&nbsp;↳ ${m.ok === null ? "–" : m.ok ? "✓" : "✕"} ${esc(m.label)}: ${esc(m.detail)}`).join("");
     return head + probes + micro;
   }).join("<br>");
+}
+
+function renderWarnings(list) {
+  const card = $("warnings-card"), body = $("warnings-list"), count = $("warn-count");
+  if (!list || !list.length) { card.classList.add("hidden"); body.innerHTML = ""; return; }
+  card.classList.remove("hidden");
+  count.textContent = list.length === 1 ? "1" : String(list.length);
+  body.innerHTML = list.map((w) => {
+    const repeated = w.count > 1
+      ? `seen ${w.count}× · ${fmtFullTs(w.first_ts)} → ${fmtFullTs(w.last_ts)}`
+      : fmtFullTs(w.last_ts);
+    const evidence = renderRunEvidence(w);
+    return `<details class="warn-row">`
+      + `<summary><span class="wtitle">${esc(w.title)}</span>`
+      + `<span class="wtimes">${esc(repeated)}</span>`
+      + `<span class="wmeta">${esc(w.code)}</span></summary>`
+      + `<div class="warn-body">${esc(w.explain || "")}`
+      + (w.hint ? `<div class="hint">${esc(w.hint)}</div>` : "")
+      + (evidence ? `<div class="ev">${evidence}</div>` : "")
+      + `</div></details>`;
+  }).join("");
+}
+
+async function loadWarnings() {
+  try {
+    const r = await fetch("/api/warnings?limit=50", { headers: authHeaders() });
+    if (!r.ok) return;
+    const data = await r.json();
+    renderWarnings(data.warnings);
+  } catch (e) { /* transient; the next History load retries */ }
 }
 
 function incidentSummaryHtml(inc) {
@@ -3960,7 +4022,7 @@ function showTab(name) {
     $("nav-" + t).classList.toggle("active", t === name);
   }
   if (name === "devices") loadDevices(false);
-  if (name === "history") { loadHistory(); loadReport(); }
+  if (name === "history") { loadHistory(); loadReport(); loadWarnings(); }
   if (name === "settings") showSettingsSubtab(currentSettingsSubtab);
   closeNavMenu();
   // Reflect the tab in the URL fragment so PWA shortcuts (/#history) and

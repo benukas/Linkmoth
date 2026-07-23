@@ -1194,6 +1194,15 @@ class Handler(BaseHTTPRequestHandler):
                 "secret": secret,
                 "curl_example": curl_example,
             })
+        elif url.path == "/api/warnings":
+            # Deliberately outside READONLY_TOKEN_GET_PATHS, matching
+            # /api/incidents: this carries full evidence ladders.
+            try:
+                limit = int(qs.get("limit", ["50"])[0])
+            except (ValueError, TypeError):
+                limit = 50
+            limit = max(1, min(200, limit))
+            self._send(200, {"warnings": linkmoth.ENGINE.warnings_list(limit)})
         elif url.path == "/api/incidents":
             try:
                 limit = int(qs.get("limit", ["50"])[0])

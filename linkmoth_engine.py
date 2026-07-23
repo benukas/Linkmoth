@@ -973,6 +973,65 @@ class Engine:
             return self._pattern_for(incs) if incs else None
         return {c: self._pattern_for(incs) for c, incs in by_code.items()}
 
+    # A warning never opens an incident: an incident means an actual fault,
+    # and letting warnings create them would corrupt uptime, downtime and the
+    # accountability report. But every diagnosis is already stored in `runs`
+    # with its full evidence ladder, so a warning that never escalated is
+    # recorded in full and simply had nowhere to be read. These surface it.
+    WARNING_EPISODE_GAP_SECONDS = 3600
+    WARNING_SCAN_LIMIT = 2000
+
+    def warnings_list(self, limit=50):
+        """Warnings that never became incidents, newest first.
+
+        A persistent fault is re-diagnosed every baseline interval, so the
+        same code can occupy hundreds of rows. Consecutive runs of one code
+        are collapsed into a single episode with a count and a time range,
+        keeping the newest run's evidence, so the list reads as "this was
+        wrong, from here to here" rather than a wall of duplicates.
+        """
+        rows = []
+        try:
+            with db() as conn:
+                rows = [dict(r) for r in conn.execute(
+                    "SELECT ts, severity, code, title, explain, hint, checks, kind"
+                    " FROM runs WHERE incident_id IS NULL AND severity != 'ok'"
+                    " ORDER BY ts DESC LIMIT ?", (self.WARNING_SCAN_LIMIT,),
+                )]
+        except sqlite3.Error as e:
+            print(f"warnings read failed: {e}", file=sys.stderr, flush=True)
+            return []
+
+        # Group per code, not by adjacency: two warnings can be active at
+        # once, and the baseline interleaves them, so a neighbouring different
+        # code must not split one continuous episode.
+        episodes = []
+        latest_for_code = {}
+        for row in rows:  # newest first, so a code's first row is its latest
+            current = latest_for_code.get(row["code"])
+            if (current is not None
+                    and current["first_ts"] - row["ts"] <= self.WARNING_EPISODE_GAP_SECONDS):
+                current["first_ts"] = row["ts"]
+                current["count"] += 1
+                continue
+            translated = normalize_stored_verdict(dict(row))
+            episode = {
+                "code": row["code"],
+                "severity": row["severity"],
+                "title": translated.get("title") or row["title"],
+                "explain": translated.get("explain") or row["explain"],
+                "hint": translated.get("hint") or row["hint"],
+                "kind": row["kind"],
+                "first_ts": row["ts"],
+                "last_ts": row["ts"],
+                "count": 1,
+                "checks": _decode_stored_checks(row["checks"]),
+            }
+            episodes.append(episode)
+            latest_for_code[row["code"]] = episode
+        episodes.sort(key=lambda item: item["last_ts"], reverse=True)
+        return episodes[:limit]
+
     def incidents_list(self, limit=50, code=None):
         q = ("SELECT i.*, (SELECT COUNT(*) FROM runs r WHERE r.incident_id=i.id) AS run_count"
              " FROM incidents i")
