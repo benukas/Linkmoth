@@ -472,6 +472,17 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .report-controls .custom-select { flex: 0 1 210px; }
 .report-controls .custom-select-trigger { min-height: 48px; }
 #report-summary p { margin: 6px 0; }
+.rep-detail { margin-top: 10px; }
+.rep-detail > summary {
+  cursor: pointer; color: var(--muted); font-size: 15px; padding: 4px 0;
+}
+.rep-detail-body h4 { margin: 12px 0 4px; font-size: 15px; }
+.rep-rows {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 0;
+  font-size: 15px; line-height: 1.5;
+}
+.rep-rows dt { color: var(--muted); }
+.rep-rows dd { margin: 0; font-variant-numeric: tabular-nums; }
 .set-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; flex-wrap: wrap; }
 .set-row label { min-width: 220px; font-size: 17px; font-weight: 600; }
 .set-row input, .set-row select {
@@ -506,6 +517,12 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   cursor: pointer; list-style: none; padding: 12px 15px;
   display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
 }
+.wbadge {
+  flex: none; padding: 2px 9px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-text);
+  font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.warn-dismiss { width: auto; margin-top: 10px; padding: 8px 16px; font-size: 14px; min-height: 0; }
 .warn-row > summary::-webkit-details-marker { display: none; }
 .warn-row .wtitle { font-weight: 700; font-size: 16px; }
 .warn-row .wmeta { color: var(--muted); font-size: 14px; margin-left: auto; }
@@ -960,12 +977,14 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <div class="custom-select" id="hist-filter-wrap">
           <button type="button" class="action-btn custom-select-trigger" id="hist-filter-trigger"
                   aria-haspopup="listbox" aria-expanded="false" aria-controls="hist-filter-menu">
-            <span id="hist-filter-label">All incidents</span>
+            <span id="hist-filter-label">Everything</span>
             <span class="custom-select-chevron" aria-hidden="true">▾</span>
           </button>
           <ul class="custom-select-menu hidden" id="hist-filter-menu" role="listbox" tabindex="-1"></ul>
           <select id="hist-filter" class="sr-only" tabindex="-1" aria-hidden="true">
-            <option value="">All incidents</option>
+            <option value="">Everything</option>
+            <option value="incidents">Incidents only</option>
+            <option value="warnings">Warnings only</option>
             <option value="open">Ongoing</option>
             <option value="wan_down">ISP / WAN</option>
             <option value="local_dns_broken">Local DNS</option>
@@ -980,15 +999,22 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
             <option value="all_clear">False alarms</option>
           </select>
         </div>
+        <div class="custom-select" id="hist-sort-wrap">
+          <button type="button" class="action-btn custom-select-trigger" id="hist-sort-trigger"
+                  aria-haspopup="listbox" aria-expanded="false" aria-controls="hist-sort-menu">
+            <span id="hist-sort-label">Newest first</span>
+            <span class="custom-select-chevron" aria-hidden="true">▾</span>
+          </button>
+          <ul class="custom-select-menu hidden" id="hist-sort-menu" role="listbox" tabindex="-1"></ul>
+          <select id="hist-sort" class="sr-only" tabindex="-1" aria-hidden="true">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="severity">Most severe first</option>
+          </select>
+        </div>
       </div>
       <p id="hist-stats"></p>
     </div>
-    <section class="card hidden" id="warnings-card">
-      <h3>Warnings <span class="warn-count" id="warn-count"></span></h3>
-      <p class="hint">Faults that were seen but never became an incident, so they
-        are not counted as downtime. Worth reading when something feels off.</p>
-      <div id="warnings-list"></div>
-    </section>
     <section class="card" id="report-card">
       <h3>Accountability report<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Downtime, blame, and provider-path evidence built from the stored incident history – generated locally, credentials excluded.</span></span></h3>
       <div class="report-controls">
@@ -3011,7 +3037,6 @@ async function refresh() {
   if (!$("tab-history").classList.contains("hidden")) {
     loadHistory(true);
     loadReport();
-    loadWarnings();
   }
   if (!$("tab-settings").classList.contains("hidden")
       && !$("subtab-security").classList.contains("hidden")
@@ -3104,35 +3129,50 @@ function renderRunEvidence(run) {
   }).join("<br>");
 }
 
-function renderWarnings(list) {
-  const card = $("warnings-card"), body = $("warnings-list"), count = $("warn-count");
-  if (!list || !list.length) { card.classList.add("hidden"); body.innerHTML = ""; return; }
-  card.classList.remove("hidden");
-  count.textContent = list.length === 1 ? "1" : String(list.length);
-  body.innerHTML = list.map((w) => {
-    const repeated = w.count > 1
-      ? `seen ${w.count}× · ${fmtFullTs(w.first_ts)} → ${fmtFullTs(w.last_ts)}`
-      : fmtFullTs(w.last_ts);
-    const evidence = renderRunEvidence(w);
-    return `<details class="warn-row">`
-      + `<summary><span class="wtitle">${esc(w.title)}</span>`
-      + `<span class="wtimes">${esc(repeated)}</span>`
-      + `<span class="wmeta">${esc(w.code)}</span></summary>`
-      + `<div class="warn-body">${esc(w.explain || "")}`
-      + (w.hint ? `<div class="hint">${esc(w.hint)}</div>` : "")
-      + (evidence ? `<div class="ev">${evidence}</div>` : "")
-      + `</div></details>`;
-  }).join("");
+function warningRowHtml(w) {
+  const repeated = w.count > 1
+    ? `seen ${w.count}× · ${fmtFullTs(w.first_ts)} → ${fmtFullTs(w.last_ts)}`
+    : fmtFullTs(w.last_ts);
+  const evidence = renderRunEvidence(w);
+  return `<details class="inc warn-row" data-warn-code="${esc(w.code)}" data-warn-until="${esc(String(w.last_ts))}">`
+    + `<summary><span class="wbadge">Warning</span>`
+    + `<span class="wtitle">${esc(w.title)}</span>`
+    + `<span class="wtimes">${esc(repeated)}</span>`
+    + `<span class="wmeta">${esc(w.code)}</span></summary>`
+    + `<div class="warn-body">${esc(w.explain || "")}`
+    + (w.hint ? `<div class="hint">${esc(w.hint)}</div>` : "")
+    + (evidence ? `<div class="ev">${evidence}</div>` : "")
+    + `<button type="button" class="action-btn warn-dismiss">Dismiss</button>`
+    + `<p class="hint">Clears what has been seen. If this happens again it comes back.</p>`
+    + `</div></details>`;
 }
 
-async function loadWarnings() {
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".warn-dismiss");
+  if (!btn) return;
+  const row = btn.closest("[data-warn-code]");
+  if (!row) return;
+  btn.disabled = true;
+  btn.textContent = "Dismissing…";
   try {
-    const r = await fetch("/api/warnings?limit=50", { headers: authHeaders() });
-    if (!r.ok) return;
-    const data = await r.json();
-    renderWarnings(data.warnings);
-  } catch (e) { /* transient; the next History load retries */ }
-}
+    const r = await fetch("/api/warnings/dismiss", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        code: row.dataset.warnCode,
+        until_ts: Number(row.dataset.warnUntil),
+      }),
+    });
+    if (!r.ok) throw new Error("dismiss failed");
+    row.remove();
+    if (!$("hist-list").children.length) {
+      $("hist-list").innerHTML = `<p class="empty">Nothing here. Either it never broke, or the filter is too picky.</p>`;
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = "Dismiss failed – retry";
+  }
+});
 
 function incidentSummaryHtml(inc) {
   const open = !inc.resolved;
@@ -3173,14 +3213,34 @@ async function loadReport() {
     } else {
       parts.push(`<p>No provider-path outages recorded in this window.</p>`);
     }
+    // Headline above stays short. The breakdowns below are the ones worth
+    // reading only when a number looks wrong, so they sit behind an expander
+    // as labelled rows rather than facts strung together with separators.
+    const detail = [];
     if (report.longest) {
-      const recovered = report.longest.recovered_at ? fmtTs(report.longest.recovered_at) : "not yet observed";
-      const closed = report.longest.resolved ? fmtTs(report.longest.resolved) : "still open";
-      parts.push(`<p>Longest outage: <span class="inc-ref">${esc(report.longest.ref || "–")}</span> · ${fmtDur(report.longest.window_downtime_s)} observed downtime · ${fmtDur(report.longest.incident_duration_s)} incident duration · network recovered ${esc(recovered)} · incident closed ${esc(closed)} · ${esc(report.longest.title || report.longest.code || "")}.</p>`);
+      const l = report.longest;
+      const rows = [
+        ["Reference", `<span class="inc-ref">${esc(l.ref || "–")}</span>`],
+        ["Cause", esc(l.title || l.code || "unknown")],
+        ["Observed downtime", esc(fmtDur(l.window_downtime_s))],
+        ["Incident duration", esc(fmtDur(l.incident_duration_s))],
+        ["Network recovered", esc(l.recovered_at ? fmtTs(l.recovered_at) : "not yet observed")],
+        ["Incident closed", esc(l.resolved ? fmtTs(l.resolved) : "still open")],
+      ];
+      detail.push(`<h4>Longest outage</h4><dl class="rep-rows">`
+        + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")
+        + `</dl>`);
     }
     const blame = Object.entries(report.blame || {});
     if (blame.length) {
-      parts.push(`<p class="hint">${blame.map(([code, b]) => `${esc(code)}: ${b.count}× (${fmtDur(b.downtime_s)})`).join(" · ")}</p>`);
+      detail.push(`<h4>Blame breakdown</h4><dl class="rep-rows">`
+        + blame.map(([code, b]) =>
+            `<dt>${esc(code)}</dt><dd>${b.count}× · ${esc(fmtDur(b.downtime_s))}</dd>`).join("")
+        + `</dl>`);
+    }
+    if (detail.length) {
+      parts.push(`<details class="rep-detail"><summary>Show breakdown</summary>`
+        + `<div class="rep-detail-body">${detail.join("")}</div></details>`);
     }
     $("report-summary").innerHTML = parts.join("");
     $("report-copy").classList.remove("hidden");
@@ -3269,12 +3329,25 @@ async function loadHistory(silent) {
   });
   historyLoading = true;
   try {
-    const code = $("hist-filter").value;
-    let data;
-    const resp = await fetch("/api/incidents?limit=100" + (code ? "&code=" + encodeURIComponent(code) : ""));
-    if (resp.status === 401) { await ensureAuth(); return; }
-    if (!resp.ok) throw new Error("history request failed");
-    data = await resp.json();
+    const rawFilter = $("hist-filter").value;
+    // "incidents"/"warnings" select a type; anything else is an incident code
+    // filter, which a warning cannot satisfy, so warnings drop out naturally.
+    const typeFilter = (rawFilter === "incidents" || rawFilter === "warnings") ? rawFilter : "";
+    const code = typeFilter ? "" : rawFilter;
+    let data = { incidents: [] };
+    if (typeFilter !== "warnings") {
+      const resp = await fetch("/api/incidents?limit=100" + (code ? "&code=" + encodeURIComponent(code) : ""));
+      if (resp.status === 401) { await ensureAuth(); return; }
+      if (!resp.ok) throw new Error("history request failed");
+      data = await resp.json();
+    }
+    let warnings = [];
+    if (typeFilter !== "incidents" && !code) {
+      try {
+        const wr = await fetch("/api/warnings?limit=50", { headers: authHeaders() });
+        if (wr.ok) warnings = (await wr.json()).warnings || [];
+      } catch (e) { /* incidents still render without them */ }
+    }
     if (lastStats) {
       let statsLine =
         `30 days: ${lastStats.uptime_pct}% uptime · ${lastStats.incidents_30d} incidents · ${lastStats.downtime_s ? fmtDur(lastStats.downtime_s) + " down" : "no downtime"}`;
@@ -3284,13 +3357,29 @@ async function loadHistory(silent) {
       }
       $("hist-stats").textContent = statsLine;
     }
-    const list = data.incidents || [];
-    if (!list.length) {
+    // One chronological list. Incidents sort on when they started, warnings on
+    // when they were last seen, so both answer "what happened, and when".
+    const entries = [
+      ...(data.incidents || []).map((i) => ({
+        type: "incident", at: i.started, sev: i.false_alarm ? 0 : 3, item: i,
+      })),
+      ...warnings.map((w) => ({
+        type: "warning", at: w.last_ts, sev: w.severity === "bad" ? 2 : 1, item: w,
+      })),
+    ];
+    const order = $("hist-sort").value;
+    entries.sort((a, b) => (
+      order === "oldest" ? a.at - b.at
+      : order === "severity" ? (b.sev - a.sev) || (b.at - a.at)
+      : b.at - a.at
+    ));
+    if (!entries.length) {
       $("hist-list").innerHTML = `<p class="empty">Nothing here. Either it never broke, or the filter is too picky.</p>`;
       return;
     }
-    $("hist-list").innerHTML = list.map((i) =>
-      `<details class="inc" data-id="${i.id}"${i.ref ? ` data-ref="${esc(i.ref)}"` : ""}>${incidentSummaryHtml(i)}
+    $("hist-list").innerHTML = entries.map((e) => e.type === "warning"
+      ? warningRowHtml(e.item)
+      : `<details class="inc" data-id="${e.item.id}"${e.item.ref ? ` data-ref="${esc(e.item.ref)}"` : ""}>${incidentSummaryHtml(e.item)}
         <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`
     ).join("");
     document.querySelectorAll("details.inc").forEach((el) => {
@@ -4022,7 +4111,7 @@ function showTab(name) {
     $("nav-" + t).classList.toggle("active", t === name);
   }
   if (name === "devices") loadDevices(false);
-  if (name === "history") { loadHistory(); loadReport(); loadWarnings(); }
+  if (name === "history") { loadHistory(); loadReport(); }
   if (name === "settings") showSettingsSubtab(currentSettingsSubtab);
   closeNavMenu();
   // Reflect the tab in the URL fragment so PWA shortcuts (/#history) and
@@ -4585,7 +4674,13 @@ function initCustomSelect({ selectId, triggerId, labelId, menuId, wrapId, fallba
 initCustomSelect({
   selectId: "hist-filter", triggerId: "hist-filter-trigger",
   labelId: "hist-filter-label", menuId: "hist-filter-menu",
-  wrapId: "hist-filter-wrap", fallbackLabel: "All incidents",
+  wrapId: "hist-filter-wrap", fallbackLabel: "Everything",
+  onChange: loadHistory,
+});
+initCustomSelect({
+  selectId: "hist-sort", triggerId: "hist-sort-trigger",
+  labelId: "hist-sort-label", menuId: "hist-sort-menu",
+  wrapId: "hist-sort-wrap", fallbackLabel: "Newest first",
   onChange: loadHistory,
 });
 initCustomSelect({
