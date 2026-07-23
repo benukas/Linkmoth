@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- History now has a **Warnings** section listing faults that were seen but
+  never became an incident, so they can finally be read. Each one opens to its
+  full evidence ladder, and a fault that persisted across many background
+  checks is collapsed into a single entry with a repeat count and a time range
+  instead of hundreds of identical rows. Warnings still never open an incident,
+  so uptime, downtime and the accountability report are unaffected.
+
 ## 0.5.0
 
 ### Added
