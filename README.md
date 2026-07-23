@@ -90,11 +90,11 @@ ssh user@<host-ip>
 **2. Install the latest release:**
 
 ```bash
-curl -fsSLo linkmoth-v0.5.0-bootstrap.sh --proto '=https' --noproxy '*' --max-redirs 0 https://raw.githubusercontent.com/benukas/Linkmoth/v0.5.0/bootstrap.sh && sudo bash linkmoth-v0.5.0-bootstrap.sh
+curl -fsSLo linkmoth-v0.6.0-bootstrap.sh --proto '=https' --noproxy '*' --max-redirs 0 https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.0/bootstrap.sh && sudo bash linkmoth-v0.6.0-bootstrap.sh
 ```
 
-The bootstrap comes directly from the exact protected `v0.5.0` tag and refuses
-redirects. It downloads the exact `v0.5.0` archive and its published
+The bootstrap comes directly from the exact protected `v0.6.0` tag and refuses
+redirects. It downloads the exact `v0.6.0` archive and its published
 SHA-256 file from the official GitHub Release, validates the checksum before
 extracting the archive or running its installer, and records the result as a
 **Checksum-verified release**. It also validates the complete archive against
