@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.11
+
 ### Added
 
 - **Settings → General → Debug** now has a **Show command log** toggle. When on,
