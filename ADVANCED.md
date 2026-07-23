@@ -1010,6 +1010,28 @@ evidence can insert a more specific first action. Run verification after each
 change and stop when the linked rung turns green. Below is the recovery guide
 for Linkmoth itself.
 
+### Local network misconfiguration warnings
+
+Some symptoms that look like a network fault are actually the host's own
+configuration. Linkmoth inspects this host's addresses and routes (no probing)
+and, when it finds one of these, shows a warning on **Today** above the verdict
+so it is not misread as a router or internet outage:
+
+- **Duplicate IP address** – the same IPv4 address on two interfaces (a common
+  result of pinning a static IP on both Wi-Fi and Ethernet). Both answer ARP
+  for one address on the same network, causing intermittent drops that look
+  like a flaky router.
+- **Two interfaces on one subnet** – different addresses, same subnet. Traffic
+  can leave and return on different interfaces, which reads as packet loss.
+- **No default route** – every internet check then fails as a local routing
+  problem, not necessarily an outage.
+- **Internet reachable via multiple interfaces** – more than one default route,
+  so replies may return asymmetrically.
+
+Each warning names the exact interfaces and the fix. For a single-appliance
+install (for example a Pi-hole on Ethernet) the simplest fix is usually to
+leave one interface on the network and disable or re-address the other.
+
 ### Debug command log
 
 When a check behaves in a way the verdict does not explain, turn on

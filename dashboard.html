@@ -488,6 +488,12 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 }
 .config-note .ico { flex: none; font-size: 17px; line-height: 1.35; }
 .config-note b { font-weight: 700; }
+/* Local network misconfigurations shown on Today, above the verdict, so a
+   duplicate IP is named rather than misread as a router fault. Reuses the
+   config-note layout; a "bad" issue gets the same red as a critical verdict. */
+#network-notes { margin: 0 0 16px; }
+.net-note.bad { background: var(--bad-bg); color: var(--bad-text); }
+.net-note .fix { display: block; margin-top: 3px; font-size: 14px; opacity: 0.9; }
 .set-row input[type="checkbox"] {
   flex: none; width: 22px; height: 22px; min-width: 22px; cursor: pointer;
 }
@@ -750,6 +756,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 
   <div id="tab-today">
     <div id="today-banner" class="banner hidden"></div>
+    <div id="network-notes" class="hidden"></div>
     <section id="verdict" class="card ok">
       <h2 id="v-title">Waiting for first data…</h2>
       <p id="v-ref" class="hint hidden"></p>
@@ -2616,6 +2623,25 @@ function renderConfigNotes(notes) {
   ).join("");
 }
 
+function renderNetworkNotes(notes) {
+  const el = $("network-notes");
+  if (!notes || !notes.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  el.classList.remove("hidden");
+  el.innerHTML = notes.map((n) => {
+    // The detail's last sentence is the fix ("Give one interface..."); show it
+    // as a quieter second line so the problem reads first.
+    const parts = String(n.detail || "").split(/(?<=\.)\s+(?=[A-Z])/);
+    const fix = parts.length > 1 ? parts.pop() : "";
+    const problem = parts.join(" ");
+    const level = n.level === "bad" ? "bad" : "";
+    return `<div class="config-note net-note ${level}">`
+      + `<span class="ico" aria-hidden="true">&#9888;</span>`
+      + `<span><b>${esc(n.title)}:</b> ${esc(problem)}`
+      + (fix ? `<span class="fix">${esc(fix)}</span>` : "")
+      + `</span></div>`;
+  }).join("");
+}
+
 function renderQuality(q) {
   const meta = $("q-meta"), badge = $("q-badge"), reasons = $("q-reasons");
   const setBadge = (cls, text) => { badge.className = "q-badge " + cls; badge.textContent = text; };
@@ -2775,6 +2801,7 @@ async function refresh() {
   renderQuality(s.quality);
   renderScore(s.score);
   renderConfigNotes(s.config_notes);
+  renderNetworkNotes(s.network_notes);
   $("q-wifi").textContent = s.wifi_note || "";
   const localDrillState = localFireDrillState();
   const serverDrill = s.fire_drill || {};

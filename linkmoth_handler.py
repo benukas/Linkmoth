@@ -48,8 +48,8 @@ from linkmoth_engine import _set_meta, fire_drill_status, prometheus_metrics
 from linkmoth_probes import (
     _LOAD_TEST_LOCK, _count_phrase, _validate_load_url, bind_exposure_risk,
     classify_network_interfaces, default_route, isp_report_csv,
-    config_efficiency_notes, connection_score, quality_config,
-    quality_summary, run_load_test,
+    config_efficiency_notes, connection_score, network_misconfig_warnings,
+    quality_config, quality_summary, run_load_test,
     wifi_wired_differential,
 )
 
@@ -1087,6 +1087,11 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 print(f"connection score failed: {exc}", file=sys.stderr, flush=True)
                 payload["score"] = None
+            try:
+                payload["network_notes"] = network_misconfig_warnings()
+            except Exception as exc:
+                print(f"network notes failed: {exc}", file=sys.stderr, flush=True)
+                payload["network_notes"] = []
             payload["wifi_note"] = wifi_wired_differential(
                 linkmoth.ENGINE.last_run_checks()
             )

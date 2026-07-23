@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- Linkmoth now detects common local network misconfigurations that would
+  otherwise be misread as a router or internet fault, and names them on the
+  Today tab above the verdict: the same IP address on two interfaces, two
+  interfaces sharing a subnet, no default route, and the internet being
+  reachable via more than one interface. It is pure inspection of the host's
+  own addresses and routes, with no extra probing, and stays silent on a
+  healthy host.
+
 ## 0.4.12
 
 ### Changed
