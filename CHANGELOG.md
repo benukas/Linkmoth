@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.4.10
+
+### Fixed
+
+- The release workflow verified the quick-start documentation against a
+  download URL the README no longer uses, so its checks job failed and the
+  publish job never ran. The `v0.4.8` and `v0.4.9` tags were created but never
+  produced a GitHub release, which left the quick-start command pointing at
+  release archives that did not exist. The check now matches the documented
+  install command, and a test resolves every one of those patterns against the
+  real README and ADVANCED so the two cannot drift apart again.
+
+This is the first published release since 0.4.7; it also carries everything
+listed under 0.4.8 and 0.4.9 below.
+
 ## 0.4.9
 
 ### Fixed
