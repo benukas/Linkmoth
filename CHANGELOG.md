@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0
+
 ### Added
 
 - Linkmoth now detects common local network misconfigurations that would
