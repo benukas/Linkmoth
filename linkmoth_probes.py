@@ -34,12 +34,39 @@ def default_route():
     return (m.group(1), m.group(2)) if m else (None, None)
 
 
+# vcgencmd is unusable on plenty of hosts: not a Raspberry Pi at all, or the
+# service sandbox (PrivateDevices=true) hides /dev/vcio from it. Neither can
+# change without restarting the unit, so probe once and then stop spawning a
+# process per ladder run for an answer that cannot change. The hwmon fallback
+# in check_power still reports undervoltage on Pis that expose rpi_volt.
+_VCGENCMD_LOCK = threading.Lock()
+_VCGENCMD_UNAVAILABLE = False
+
+
+def _vcgencmd_throttled():
+    """Raw `vcgencmd get_throttled` output, or None once it is known unusable."""
+    global _VCGENCMD_UNAVAILABLE
+    with _VCGENCMD_LOCK:
+        if _VCGENCMD_UNAVAILABLE:
+            return None
+    rc, out = run_cmd(["vcgencmd", "get_throttled"])
+    if rc == 0:
+        return out
+    # Only latch on failures that cannot resolve while the process runs: a
+    # missing or unspawnable binary, or the VideoCore device being invisible.
+    # A different non-zero code may be transient, so keep probing for it.
+    if rc in (-2, -3) or "open device" in out.lower():
+        with _VCGENCMD_LOCK:
+            _VCGENCMD_UNAVAILABLE = True
+    return None
+
+
 def check_power():
     supply_ok, supply_detail, supply_bad = _read_power_supplies()
-    rc, out = run_cmd(["vcgencmd", "get_throttled"])
+    out = _vcgencmd_throttled()
     throttle_ok = None
     throttle_detail = ""
-    if rc == 0:
+    if out is not None:
         try:
             flags = int(out.split("=")[1], 16)
         except (IndexError, ValueError):
@@ -700,7 +727,20 @@ _LOCAL_DNS_DETECT_LOCK = threading.Lock()
 _LOCAL_DNS_DETECT_CACHE = {"expires": 0.0, "active": []}
 
 
-def _local_ipv4_addresses():
+_LOCAL_IPV4_LOCK = threading.Lock()
+_LOCAL_IPV4_CACHE = {"expires": 0.0, "addresses": frozenset()}
+# A host's own addresses change on the order of reboots and cable moves, not
+# seconds. Without this, local_dns_is_same_host() ran `ip` on every
+# /api/status poll, so an open dashboard spawned a process every few seconds
+# for an answer that had not changed.
+LOCAL_IPV4_CACHE_SECONDS = 30
+
+
+def _local_ipv4_addresses(refresh=False):
+    now = time.monotonic()
+    with _LOCAL_IPV4_LOCK:
+        if not refresh and now < _LOCAL_IPV4_CACHE["expires"]:
+            return set(_LOCAL_IPV4_CACHE["addresses"])
     addresses = {"127.0.0.1"}
     try:
         for info in socket.getaddrinfo(
@@ -713,6 +753,9 @@ def _local_ipv4_addresses():
     if rc == 0:
         for match in re.finditer(r"\binet\s+(\d+\.\d+\.\d+\.\d+)/", out):
             addresses.add(match.group(1))
+    with _LOCAL_IPV4_LOCK:
+        _LOCAL_IPV4_CACHE["addresses"] = frozenset(addresses)
+        _LOCAL_IPV4_CACHE["expires"] = time.monotonic() + LOCAL_IPV4_CACHE_SECONDS
     return addresses
 
 
