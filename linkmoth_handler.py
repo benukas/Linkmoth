@@ -1762,15 +1762,22 @@ def doctor(json_output=False):
             print(f"[--] {name}" + (f" – {detail}" if detail else ""))
 
     report("python >= 3.9", sys.version_info >= (3, 9), sys.version.split()[0])
-    provenance = linkmoth.installation_provenance()
-    provenance_label = {
-        "checksum-verified": "Checksum-verified release",
-        "sigstore-verified": "Sigstore-verified release",
-        "unverified-manual": "Unverified/manual installation",
-        "legacy-unavailable": "Legacy installation – provenance unavailable",
-        "invalid": "Installation record invalid",
-    }.get(provenance.get("state"), "Installation record invalid")
-    info("installation provenance", provenance_label)
+    if os.environ.get("LINKMOTH_INSTALL_PREFLIGHT") == "1":
+        # The installer runs this after swapping in the new code but before the
+        # bootstrap writes the new record, so the record on disk still names the
+        # previous release. Reporting it here claimed a verification state that
+        # did not describe this install at all.
+        info("installation provenance", "recorded when the installer finishes")
+    else:
+        provenance = linkmoth.installation_provenance()
+        provenance_label = {
+            "checksum-verified": "Checksum-verified release",
+            "sigstore-verified": "Sigstore-verified release",
+            "unverified-manual": "Unverified/manual installation",
+            "legacy-unavailable": "Legacy installation – provenance unavailable",
+            "invalid": "Installation record invalid",
+        }.get(provenance.get("state"), "Installation record invalid")
+        info("installation provenance", provenance_label)
     # DNS is resolved with a stdlib socket now – no `dig` binary required.
     for tool in ("ping", "ip", "systemctl"):
         path = shutil.which(tool)

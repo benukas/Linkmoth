@@ -728,8 +728,11 @@ cp "$SRC/linkmoth-cert-renew.timer" "$RENEW_TIMER"
 UNITS_COPIED=1
 
 step "running preflight doctor..."
+# LINKMOTH_INSTALL_PREFLIGHT stops the report claiming a provenance state from
+# the previous release: the new code is already swapped in, the old record is
+# cleared below, and the bootstrap writes the real one after this finishes.
 runuser -u linkmoth -- env -u PYTHONPATH -u PYTHONHOME LINKMOTH_CONFIG="$ETC/config.json" \
-  LINKMOTH_STATE_DIR="$STATE" python3 "$APP/linkmoth.py" --doctor \
+  LINKMOTH_STATE_DIR="$STATE" LINKMOTH_INSTALL_PREFLIGHT=1 python3 "$APP/linkmoth.py" --doctor \
   || die "doctor found problems - fix them and re-run"
 ok "preflight checks passed"
 
