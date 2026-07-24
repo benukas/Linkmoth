@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.2
+
 ### Added
 
 - Linkmoth now warns when its own targets are configured so that a check can
