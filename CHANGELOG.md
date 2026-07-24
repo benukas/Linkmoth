@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Linkmoth now warns when its own targets are configured so that a check can
+  never fail. A private address among the internet ping targets is the worst
+  case: that rung passes when any single target replies, so one LAN address
+  reports the internet as healthy throughout a real outage. A private upstream
+  DNS server is flagged more softly for the same reason.
+
 ### Fixed
 
 - Installing or updating no longer reports the previous release's verification
