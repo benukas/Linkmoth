@@ -1284,6 +1284,39 @@ class DoctorJsonTests(unittest.TestCase):
         linkmoth_core = importlib.import_module("linkmoth_core")
         global linkmoth_probes
         linkmoth_probes = importlib.import_module("linkmoth_probes")
+    def _provenance_line(self, preflight):
+        import contextlib
+        import io
+        from unittest import mock
+        if preflight:
+            os.environ["LINKMOTH_INSTALL_PREFLIGHT"] = "1"
+        else:
+            os.environ.pop("LINKMOTH_INSTALL_PREFLIGHT", None)
+        buf = io.StringIO()
+        try:
+            with mock.patch.object(self.linkmoth, "installation_provenance",
+                                   return_value={"state": "sigstore-verified"}), \
+                    contextlib.redirect_stdout(buf):
+                self.linkmoth.doctor()
+        except SystemExit:
+            pass
+        finally:
+            os.environ.pop("LINKMOTH_INSTALL_PREFLIGHT", None)
+        return next(l for l in buf.getvalue().splitlines() if "provenance" in l)
+
+    def test_preflight_doctor_does_not_claim_the_previous_release_provenance(self):
+        """The installer runs doctor after swapping in new code but before the
+        bootstrap writes the new record, so the record on disk still describes
+        the previous release. Reporting it there claimed a verification state
+        that did not apply to the install being performed."""
+        self.assertIn("recorded when the installer finishes",
+                      self._provenance_line(preflight=True))
+        self.assertNotIn("Sigstore-verified", self._provenance_line(preflight=True))
+
+    def test_a_normal_doctor_run_still_reports_real_provenance(self):
+        self.assertIn("Sigstore-verified release",
+                      self._provenance_line(preflight=False))
+
     def test_doctor_json_emits_machine_readable_checks(self):
         import contextlib
         import io

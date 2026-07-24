@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- Installing or updating no longer reports the previous release's verification
+  state. The installer's preflight check ran after the new code was in place
+  but before the new provenance record was written, so it echoed the old
+  record: a checksum-verified update could claim **Sigstore-verified**. It now
+  says the provenance is recorded when the installer finishes, and the final
+  reported state is the real one.
+- The update command shown in Settings is readable on every theme. It is a
+  textarea, which does not inherit colour, so without an explicit rule it fell
+  back to black text and was unreadable on the dark themes.
 - Warnings in the History list are laid out like the incidents they sit beside
   instead of as tall cards, so one list reads consistently. Expanding a warning
   no longer triggers an incident-evidence request that could never succeed.

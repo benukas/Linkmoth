@@ -644,7 +644,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .sec-qr { margin: 6px 0 14px; }
 .sec-qr svg { width: 200px; height: 200px; background: #fff; padding: 10px; border-radius: 9px; display: block; }
 .sec-codes { font-family: ui-monospace, monospace; font-size: 15px; line-height: 1.7; background: var(--surface-1); padding: 12px 14px; border-radius: 9px; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
-.update-command { display: block; box-sizing: border-box; width: 100%; margin: 10px 0 8px; font: 14px ui-monospace, monospace; line-height: 1.6; white-space: pre-wrap; background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; resize: vertical; }
+/* A textarea does not inherit colour: without an explicit rule it falls back
+   to the browser default (black), which is unreadable on the dark themes. */
+.update-command { display: block; box-sizing: border-box; width: 100%; margin: 10px 0 8px; font: 14px ui-monospace, monospace; line-height: 1.6; white-space: pre-wrap; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; resize: vertical; }
 .update-sigstore { margin-top: 12px; }
 .update-sigstore > summary { cursor: pointer; font-weight: 600; }
 .update-release-link { display: block; margin-top: 4px; }
