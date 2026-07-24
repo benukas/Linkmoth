@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1
+
 ### Added
 
 - Warnings and incidents now share one History list that can be sorted by
