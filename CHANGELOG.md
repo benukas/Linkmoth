@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Warnings in the History list are laid out like the incidents they sit beside
+  instead of as tall cards, so one list reads consistently. Expanding a warning
+  no longer triggers an incident-evidence request that could never succeed.
+
 ## 0.6.1
 
 ### Added

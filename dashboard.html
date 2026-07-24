@@ -509,25 +509,18 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   background: var(--warn-bg); color: var(--warn-text);
   font-size: 14px; font-weight: 700; vertical-align: middle;
 }
-.warn-row {
-  border-left: 5px solid var(--warn-text); background: var(--card);
-  border-radius: 10px; margin: 0 0 10px; padding: 0;
-}
-.warn-row > summary {
-  cursor: pointer; list-style: none; padding: 12px 15px;
-  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
-}
+/* A warning is a row in the incident list, so it inherits details.inc layout
+   and only adds a small badge. Anything heavier made warnings tower over the
+   incidents they sit next to. */
 .wbadge {
-  flex: none; padding: 2px 9px; border-radius: 999px;
-  background: var(--warn-bg); color: var(--warn-text);
+  display: inline-block; padding: 1px 8px; margin-right: 8px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-text); vertical-align: 2px;
   font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
 }
-.warn-dismiss { width: auto; margin-top: 10px; padding: 8px 16px; font-size: 14px; min-height: 0; }
-.warn-row > summary::-webkit-details-marker { display: none; }
-.warn-row .wtitle { font-weight: 700; font-size: 16px; }
-.warn-row .wmeta { color: var(--muted); font-size: 14px; margin-left: auto; }
-.warn-row .wtimes { color: var(--muted); font-size: 14px; }
-.warn-body { padding: 0 15px 14px; font-size: 15px; line-height: 1.5; }
+.pill.warn { background: var(--warn-bg); color: var(--warn-text); }
+.warn-body { padding: 6px 0 2px; font-size: 15px; line-height: 1.5; }
+.warn-when { margin: 0 0 6px; color: var(--muted); font-size: 14px; }
+.warn-dismiss { width: auto; margin-top: 10px; padding: 7px 14px; font-size: 14px; min-height: 0; }
 .warn-body .ev {
   margin-top: 8px; padding: 10px 12px; background: var(--bg); border-radius: 8px;
   font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.6;
@@ -3134,12 +3127,13 @@ function warningRowHtml(w) {
     ? `seen ${w.count}× · ${fmtFullTs(w.first_ts)} → ${fmtFullTs(w.last_ts)}`
     : fmtFullTs(w.last_ts);
   const evidence = renderRunEvidence(w);
+  // Same summary structure as an incident, so both read as one compact row.
+  // A small badge is enough to tell them apart without tripling the height.
+  const count = w.count > 1 ? `<span class="pill warn">${w.count}×</span>` : "";
   return `<details class="inc warn-row" data-warn-code="${esc(w.code)}" data-warn-until="${esc(String(w.last_ts))}">`
-    + `<summary><span class="wbadge">Warning</span>`
-    + `<span class="wtitle">${esc(w.title)}</span>`
-    + `<span class="wtimes">${esc(repeated)}</span>`
-    + `<span class="wmeta">${esc(w.code)}</span></summary>`
-    + `<div class="warn-body">${esc(w.explain || "")}`
+    + `<summary><span class="inc-summary-title"><span class="wbadge">Warning</span>${esc(w.title)}</span>`
+    + `<span class="inc-summary-meta"><span class="when">${fmtTs(w.last_ts)}</span>${count ? " · " + count : ""}</span></summary>`
+    + `<div class="warn-body"><p class="warn-when">${esc(repeated)} · ${esc(w.code)}</p>${esc(w.explain || "")}`
     + (w.hint ? `<div class="hint">${esc(w.hint)}</div>` : "")
     + (evidence ? `<div class="ev">${evidence}</div>` : "")
     + `<button type="button" class="action-btn warn-dismiss">Dismiss</button>`
@@ -3305,7 +3299,7 @@ function renderPacketSlot(slot, packet, savedOpenKeys) {
 async function refreshOpenIncidentPackets() {
   // Refresh changing evidence in place while retaining nested sections the
   // reader expanded. Resolved packets are final and need no further fetches.
-  const openDetails = document.querySelectorAll("details.inc[open]");
+  const openDetails = document.querySelectorAll("details.inc[open]:not(.warn-row)");
   for (const el of openDetails) {
     const id = el.dataset.id;
     const cached = packetCache[id];
@@ -3323,7 +3317,7 @@ async function refreshOpenIncidentPackets() {
 async function loadHistory(silent) {
   if (!authReady || historyLoading) return;
   const openPackets = new Map();
-  document.querySelectorAll("details.inc[open]").forEach((details) => {
+  document.querySelectorAll("details.inc[open]:not(.warn-row)").forEach((details) => {
     const slot = details.querySelector(".packet-slot");
     openPackets.set(details.dataset.id, slot ? openDetailKeys(slot) : new Set());
   });
@@ -3382,7 +3376,7 @@ async function loadHistory(silent) {
       : `<details class="inc" data-id="${e.item.id}"${e.item.ref ? ` data-ref="${esc(e.item.ref)}"` : ""}>${incidentSummaryHtml(e.item)}
         <div class="packet-slot"><p class="empty">Loading evidence…</p></div></details>`
     ).join("");
-    document.querySelectorAll("details.inc").forEach((el) => {
+    document.querySelectorAll("details.inc:not(.warn-row)").forEach((el) => {
       el.addEventListener("toggle", async () => {
         if (!el.open) return;
         const id = el.dataset.id;
