@@ -858,8 +858,25 @@ _NETWORK_NOTES_CACHE = {"expires": 0.0, "warnings": []}
 NETWORK_NOTES_CACHE_SECONDS = 30
 
 
+def _non_global_targets(values):
+    """Configured targets that are not on the public internet.
+
+    Hostnames are skipped: judging one would mean resolving it, and this
+    check must stay pure. Only literal addresses are decided here.
+    """
+    found = []
+    for item in values or []:
+        try:
+            address = ipaddress.ip_address(str(item).strip())
+        except ValueError:
+            continue
+        if not address.is_global:
+            found.append(str(address))
+    return found
+
+
 def network_misconfig_warnings(addr_output=None, route_output=None,
-                               route_ok=True, use_cache=True):
+                               route_ok=True, use_cache=True, cfg=None):
     """Detect local network misconfigurations that would otherwise make
     Linkmoth blame the network for the host's own mistake.
 
@@ -938,6 +955,35 @@ def network_misconfig_warnings(addr_output=None, route_output=None,
                             " loss. Put them on separate subnets, or leave only"
                             " one on this network."),
                     })
+
+        # Targets that never leave the LAN are the most dangerous kind of
+        # misconfiguration, because they fail silently in the safe-looking
+        # direction: the rung keeps passing and an outage is reported as
+        # healthy. A false all-clear is worse than a false alarm.
+        settings = CFG if cfg is None else cfg
+        local_pings = _non_global_targets(settings.get("ping_targets"))
+        if local_pings:
+            warnings.append({
+                "level": "bad", "code": "local_ping_target",
+                "title": "Internet check points inside your network",
+                "detail": (
+                    f"{_join_names(local_pings)} in the internet reachability"
+                    " targets are on your own network, not the internet. That"
+                    " rung passes when any single target replies, so one of"
+                    " these keeps it green through a real outage. Use public"
+                    " addresses such as 1.1.1.1 or 8.8.8.8."),
+            })
+        local_dns = _non_global_targets(settings.get("upstream_dns"))
+        if local_dns:
+            warnings.append({
+                "level": "warn", "code": "local_upstream_dns",
+                "title": "Upstream DNS check points inside your network",
+                "detail": (
+                    f"{_join_names(local_dns)} in the upstream DNS servers are"
+                    " on your own network. That rung exists to test DNS beyond"
+                    " the LAN, so it cannot tell you a provider resolver has"
+                    " failed. Use a public resolver such as 1.1.1.1."),
+            })
 
         if route_ok:
             devices = _parse_default_route_devices(route_output or "")

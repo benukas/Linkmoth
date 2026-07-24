@@ -1027,6 +1027,13 @@ so it is not misread as a router or internet outage:
   problem, not necessarily an outage.
 - **Internet reachable via multiple interfaces** – more than one default route,
   so replies may return asymmetrically.
+- **Internet check points inside your network** – a configured ping target is a
+  private address. The internet rung passes when any single target replies, so
+  one LAN address keeps it green through a real outage: Linkmoth would report
+  healthy while the line is down. Use public addresses such as `1.1.1.1`.
+- **Upstream DNS check points inside your network** – a configured upstream DNS
+  server is a private address, so that rung cannot detect a provider resolver
+  failing.
 
 Each warning names the exact interfaces and the fix. For a single-appliance
 install (for example a Pi-hole on Ethernet) the simplest fix is usually to

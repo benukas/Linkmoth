@@ -91,6 +91,45 @@ class NetworkMisconfigTests(unittest.TestCase):
         self.assertIn("multiple_default_routes", codes)
         self.assertEqual(codes["multiple_default_routes"]["level"], "warn")
 
+    # ---- config that would cause a false all-clear -------------------------
+    def _cfg_warn(self, cfg):
+        return {w["code"]: w for w in self.probes.network_misconfig_warnings(
+            HEALTHY_ADDR, HEALTHY_ROUTE, use_cache=False, cfg=cfg)}
+
+    def test_a_lan_ping_target_is_flagged_as_a_bad_issue(self):
+        """The internet rung passes when any target replies, so one LAN
+        address keeps it green through a real outage. A monitor reporting
+        healthy while the line is down is the worst failure it can have."""
+        codes = self._cfg_warn({"ping_targets": ["1.1.1.1", "192.168.1.1"]})
+        self.assertIn("local_ping_target", codes)
+        self.assertEqual(codes["local_ping_target"]["level"], "bad")
+        self.assertIn("192.168.1.1", codes["local_ping_target"]["detail"])
+
+    def test_loopback_and_link_local_ping_targets_are_flagged_too(self):
+        for target in ("127.0.0.1", "169.254.1.1", "10.0.0.5"):
+            codes = self._cfg_warn({"ping_targets": [target]})
+            self.assertIn("local_ping_target", codes, target)
+
+    def test_a_lan_upstream_dns_is_flagged_more_softly(self):
+        codes = self._cfg_warn({"upstream_dns": ["192.168.1.1"]})
+        self.assertIn("local_upstream_dns", codes)
+        self.assertEqual(codes["local_upstream_dns"]["level"], "warn")
+
+    def test_public_targets_are_silent(self):
+        self.assertEqual(self._cfg_warn(
+            {"ping_targets": ["1.1.1.1", "8.8.8.8"],
+             "upstream_dns": ["1.1.1.1"]}), {})
+
+    def test_hostname_targets_are_not_judged(self):
+        """Deciding a hostname would mean resolving it, and this check must
+        stay pure, so only literal addresses are judged."""
+        self.assertEqual(self._cfg_warn(
+            {"ping_targets": ["cloudflare.com", "one.one.one.one"]}), {})
+
+    def test_missing_or_empty_target_config_is_silent(self):
+        for cfg in ({}, {"ping_targets": []}, {"ping_targets": None}):
+            self.assertEqual(self._cfg_warn(cfg), {})
+
     # ---- must stay silent (false positives are worse than nothing) ---------
     def test_a_healthy_wired_host_is_silent(self):
         self.assertEqual(self._warn(HEALTHY_ADDR, HEALTHY_ROUTE), {})
