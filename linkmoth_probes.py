@@ -1908,10 +1908,18 @@ _LOADED_MAX_SAMPLES = 60
 _LOADED_SAMPLE_PAUSE = 0.05
 
 
-def _measure_loaded_quality(target, stats, deadline):
-    """Measure only pings that overlap active download byte progress."""
+def _measure_loaded_quality(target, stats, deadline, local_target=None):
+    """Measure only pings that overlap active download byte progress.
+
+    When a probe is lost, the local gateway is probed once as well. A packet
+    to your own router never reaches the ISP, so losing one cannot be the
+    line's doing: it points at this host or the LAN. Saturating a small board
+    is exactly the condition that starves its own probes, and without this the
+    result invites the reader to blame their connection for it.
+    """
     active = []
     lost = 0
+    local_probes = local_lost = 0
     first_at = last_at = None
     # Progress is judged from one probe to the next, not across the few
     # milliseconds a ping is in flight. read() blocks until it has a whole
@@ -1938,6 +1946,13 @@ def _measure_loaded_quality(target, stats, deadline):
                 # dropping packets once it is busy is exactly what this test
                 # exists to catch, so the misses are counted.
                 lost += 1
+                if local_target:
+                    # Only on a loss: a probe costs time and CPU, and with
+                    # nothing lost there is nothing to attribute.
+                    local_probes += 1
+                    nearby = measure_quality([local_target], count=1)
+                    if not nearby or nearby.get("latency_ms") is None:
+                        local_lost += 1
             if len(active) >= _LOADED_MIN_SAMPLES:
                 remaining = deadline - time.monotonic()
                 if remaining > 0:
@@ -1966,6 +1981,12 @@ def _measure_loaded_quality(target, stats, deadline):
         "latency_ms": average,
         "jitter_ms": jitter,
         "loss_pct": round(100.0 * lost / attempted, 1) if attempted else 0.0,
+        # How often the gateway was unreachable at the same moments. Any value
+        # above zero means this host could not reach its own router, which no
+        # upstream network can be responsible for.
+        "local_loss_pct": (
+            round(100.0 * local_lost / local_probes, 1) if local_probes else 0.0
+        ),
         "target": str(target),
         "active_samples": len(active),
         # How long the link was actually saturated. A grade drawn from a third
@@ -2021,7 +2042,9 @@ def run_load_test(store=True):
         daemon=True,
     )
     worker.start()
-    loaded = _measure_loaded_quality(idle["target"], stats, deadline)
+    gateway, _iface = default_route()
+    loaded = _measure_loaded_quality(
+        idle["target"], stats, deadline, local_target=gateway)
     stop.set()
     worker.join(timeout=seconds + 10)
     moved = int(stats.get("bytes") or 0)
@@ -2064,6 +2087,10 @@ def run_load_test(store=True):
         # is the headline, but a link that starts dropping packets once it is
         # busy is the same fault showing itself a different way.
         "loaded_loss_pct": round(float((loaded or {}).get("loss_pct") or 0.0), 1),
+        # Above zero means the same probes could not reach this host's own
+        # router, so the loss says something about the host, not the line.
+        "loaded_local_loss_pct": round(
+            float((loaded or {}).get("local_loss_pct") or 0.0), 1),
         "load_seconds": round(float(loaded.get("load_seconds") or 0.0), 2),
         # The byte budget, not the clock, ended the transfer well before the
         # window was up, so the link was only loaded briefly. The grade stands,
@@ -2077,14 +2104,16 @@ def run_load_test(store=True):
                 conn.execute(
                     "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms,"
                     " grade, throughput_mbps, bytes, seconds, error,"
-                    " load_seconds, budget_limited, loaded_loss_pct)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " load_seconds, budget_limited, loaded_loss_pct,"
+                    " loaded_local_loss_pct)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (result["ts"], result["idle_ms"], result["loaded_ms"],
                      result["bloat_ms"], result["grade"],
                      result["throughput_mbps"], result["bytes"],
                      result["seconds"], result["error"],
                      result["load_seconds"], int(result["budget_limited"]),
-                     result["loaded_loss_pct"]),
+                     result["loaded_loss_pct"],
+                     result["loaded_local_loss_pct"]),
                 )
         except sqlite3.Error as e:
             print(f"load test store failed: {e}", file=sys.stderr, flush=True)

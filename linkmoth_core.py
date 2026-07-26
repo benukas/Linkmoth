@@ -1071,7 +1071,8 @@ def init_db(path=None):
                 error TEXT,
                 load_seconds REAL,
                 budget_limited INTEGER DEFAULT 0,
-                loaded_loss_pct REAL
+                loaded_loss_pct REAL,
+                loaded_local_loss_pct REAL
             );
             CREATE TABLE IF NOT EXISTS incident_outage_segments(
                 id INTEGER PRIMARY KEY,
@@ -1134,6 +1135,7 @@ def init_db(path=None):
             ("load_seconds", "REAL"),
             ("budget_limited", "INTEGER DEFAULT 0"),
             ("loaded_loss_pct", "REAL"),
+            ("loaded_local_loss_pct", "REAL"),
         ):
             try:
                 conn.execute(

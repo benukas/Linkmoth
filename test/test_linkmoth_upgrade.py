@@ -147,7 +147,7 @@ conn.execute("""CREATE TABLE load_tests(
   id INTEGER PRIMARY KEY, ts REAL NOT NULL, idle_ms REAL, loaded_ms REAL,
   bloat_ms REAL, grade TEXT, throughput_mbps REAL, bytes INTEGER,
   seconds REAL, error TEXT, load_seconds REAL,
-  budget_limited INTEGER DEFAULT 0)""")
+  budget_limited INTEGER DEFAULT 0, loaded_loss_pct REAL)""")
 conn.execute("INSERT INTO load_tests(ts,idle_ms,loaded_ms,bloat_ms,grade,"
              "throughput_mbps,bytes,seconds,error)"
              " VALUES(1,7,9,2,'A',500,100,1,NULL)")
@@ -156,14 +156,14 @@ import linkmoth_core as core
 core.init_db()
 with core.db() as c:
     cols = [r[1] for r in c.execute("PRAGMA table_info(load_tests)")]
-    row = c.execute("SELECT grade, load_seconds, loaded_loss_pct"
+    row = c.execute("SELECT grade, loaded_loss_pct, loaded_local_loss_pct"
                     " FROM load_tests").fetchone()
     c.execute("INSERT INTO load_tests(ts,idle_ms,loaded_ms,bloat_ms,grade,"
               "throughput_mbps,bytes,seconds,error,load_seconds,"
-              "budget_limited,loaded_loss_pct)"
-              " VALUES(2,7,9,2,'A',500,100,1,NULL,0.31,1,25.0)")
-    fresh = c.execute("SELECT load_seconds, loaded_loss_pct FROM load_tests"
-                      " ORDER BY id DESC LIMIT 1").fetchone()
+              "budget_limited,loaded_loss_pct,loaded_local_loss_pct)"
+              " VALUES(2,7,9,2,'A',500,100,1,NULL,0.31,1,25.0,50.0)")
+    fresh = c.execute("SELECT loaded_loss_pct, loaded_local_loss_pct"
+                      " FROM load_tests ORDER BY id DESC LIMIT 1").fetchone()
 print("COLS", ",".join(cols))
 print("OLD", tuple(row))
 print("NEW", tuple(fresh))
@@ -199,12 +199,12 @@ class LoadTestsColumnMigrationTests(unittest.TestCase):
         self.assertEqual(
             sorted(out), ["COLS", "NEW", "OLD"],
             f"migration script produced unexpected output:\n{proc.stdout}")
-        self.assertIn("loaded_loss_pct", out["COLS"])
+        self.assertIn("loaded_local_loss_pct", out["COLS"])
         self.assertIn("budget_limited", out["COLS"])
         # The pre-upgrade row keeps its grade and takes the defaults rather
         # than being dropped or rewritten with invented values.
         self.assertEqual(out["OLD"], "('A', None, None)")
-        self.assertEqual(out["NEW"], "(0.31, 25.0)")
+        self.assertEqual(out["NEW"], "(25.0, 50.0)")
 
 
 if __name__ == "__main__":

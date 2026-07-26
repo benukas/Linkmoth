@@ -2574,12 +2574,17 @@ function renderLoadTest(lt) {
     loadResults.classList.remove("hidden");
     $("q-load-grade").textContent = lt.grade;
     $("q-load-bloat").textContent = `+${Math.round(lt.bloat_ms)} ms`;
-    // Loss under load is the same fault as latency inflation showing itself
-    // a different way, and it is worth saying out loud when it happens. A
-    // clean run says nothing extra.
-    const loss = Number(lt.loaded_loss_pct) > 0
-      ? ` ${Number(lt.loaded_loss_pct).toFixed(0)}% of probes got no reply while loaded.`
-      : "";
+    // Loss under load is worth saying out loud, but only once it is clear
+    // what lost it. If the same probes could not reach this machine's own
+    // router, no upstream network can be responsible: saturating a small
+    // board starves its own pings, and blaming the line for that would send
+    // someone to their ISP with a fault that is not theirs.
+    const lossPct = Number(lt.loaded_loss_pct) || 0;
+    const localPct = Number(lt.loaded_local_loss_pct) || 0;
+    const loss = lossPct <= 0 ? ""
+      : localPct > 0
+        ? ` ${lossPct.toFixed(0)}% of probes got no reply, but this machine could not reach its own router either, so that reflects the host under load and not the line.`
+        : ` ${lossPct.toFixed(0)}% of probes got no reply while loaded, and the router stayed reachable throughout.`;
     $("q-load").textContent =
       `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.${loss}`;
   } else {
