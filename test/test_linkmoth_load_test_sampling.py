@@ -49,7 +49,8 @@ class FakeClock:
 
 
 class LoadedSamplingTests(unittest.TestCase):
-    def sample_loaded(self, transfer_seconds, window=10.0, starts_at=0.0):
+    def sample_loaded(self, transfer_seconds, window=10.0, starts_at=0.0,
+                      lose_every=0):
         """Run the real loop against a transfer that stops after N seconds.
 
         `starts_at` models the gap before the first byte arrives: the
@@ -58,6 +59,8 @@ class LoadedSamplingTests(unittest.TestCase):
         """
         clock = FakeClock()
         stats = {"bytes": 0}
+
+        probes_sent = {"n": 0}
 
         def fake_measure(targets, count=1):
             # A ping costs time; bytes only grow once the transfer has
@@ -70,6 +73,10 @@ class LoadedSamplingTests(unittest.TestCase):
                 # The downloader thread sets this in its finally block once
                 # the transfer is genuinely over.
                 stats["done"] = True
+            probes_sent["n"] += 1
+            if lose_every and probes_sent["n"] % lose_every == 0:
+                # measure_quality returns None when the ping gets no reply.
+                return None
             return {
                 "latency_ms": 20.0, "jitter_ms": 1.0, "loss_pct": 0.0,
                 "target": "1.1.1.1",
@@ -135,6 +142,29 @@ class LoadedSamplingTests(unittest.TestCase):
         """No bytes ever move, so every ping measures an idle network. A grade
         built from those would be a fabricated result."""
         result, _, _ = self.sample_loaded(transfer_seconds=0.0)
+        self.assertIsNone(result)
+
+    def test_packets_dropped_under_load_are_reported_as_loss(self):
+        """A connection that starts dropping packets when it is busy is a
+        classic symptom, sometimes plainer than latency inflation. The loaded
+        result hardcoded zero loss, so a probe that got no reply was dropped
+        from the sample set and the run reported a clean 0%."""
+        result, _, _ = self.sample_loaded(transfer_seconds=3.0, lose_every=4)
+        self.assertIsNotNone(result)
+        self.assertGreater(
+            result["loss_pct"], 0.0,
+            "packets were lost under load and the result claimed none")
+        # One in four probes got no reply.
+        self.assertAlmostEqual(result["loss_pct"], 25.0, delta=6.0)
+
+    def test_a_clean_run_reports_no_loss(self):
+        result, _, _ = self.sample_loaded(transfer_seconds=3.0)
+        self.assertEqual(result["loss_pct"], 0.0)
+
+    def test_losing_every_probe_cannot_be_graded(self):
+        """Nothing replied, so there is no latency to compare. A grade built
+        from no measurements would be invented."""
+        result, _, _ = self.sample_loaded(transfer_seconds=3.0, lose_every=1)
         self.assertIsNone(result)
 
     def test_the_measured_load_window_is_reported(self):

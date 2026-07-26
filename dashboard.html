@@ -2574,8 +2574,14 @@ function renderLoadTest(lt) {
     loadResults.classList.remove("hidden");
     $("q-load-grade").textContent = lt.grade;
     $("q-load-bloat").textContent = `+${Math.round(lt.bloat_ms)} ms`;
+    // Loss under load is the same fault as latency inflation showing itself
+    // a different way, and it is worth saying out loud when it happens. A
+    // clean run says nothing extra.
+    const loss = Number(lt.loaded_loss_pct) > 0
+      ? ` ${Number(lt.loaded_loss_pct).toFixed(0)}% of probes got no reply while loaded.`
+      : "";
     $("q-load").textContent =
-      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.`;
+      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.${loss}`;
   } else {
     loadResults.classList.add("hidden");
     $("q-load").textContent = "Bufferbloat not tested yet – a load test grades how latency holds up while the line is busy.";
