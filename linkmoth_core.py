@@ -394,7 +394,12 @@ DEFAULT_CONFIG = {
         # limit first and never gets near it. It was 25 MB, which a gigabit
         # link spends in a third of a second, leaving nothing to sample
         # latency against, so the test could not complete at all.
-        "load_test_url": "https://speed.cloudflare.com/__down?bytes=100000000",
+        # The size asked for per request is not the budget: the downloader
+        # re-requests until the budget or the time limit is reached, so a
+        # smaller response only means more of them. It has to be a size the
+        # endpoint will actually serve – 100000000 is refused with HTTP 403
+        # while 99000000 succeeds, so this stays well clear of that edge.
+        "load_test_url": "https://speed.cloudflare.com/__down?bytes=50000000",
         "load_test_hours": 0,
         "load_test_seconds": 10,
         "load_test_max_mb": 100,
@@ -1516,6 +1521,19 @@ def command_log(since=0):
 def clear_command_log():
     with _COMMAND_LOG_LOCK:
         _COMMAND_LOG.clear()
+
+
+def record_http(method, url, rc, detail, started, duration_ms):
+    """Record one outbound HTTP request in the debug command log.
+
+    Every other probe is a subprocess and lands in the log through run_cmd.
+    The bufferbloat transfer is the exception: it speaks HTTP directly, so a
+    load test that failed showed nothing at all in a log whose entire purpose
+    is to show what Linkmoth just did. Same ring buffer, same toggle.
+    """
+    if not CFG.get("debug_command_log", False):
+        return
+    _record_command([method, url], rc, detail, started, duration_ms)
 
 
 def run_cmd(args, timeout=10):
