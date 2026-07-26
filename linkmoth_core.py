@@ -1248,18 +1248,38 @@ def _incident_outage_segments(conn, incident):
 
 
 def _outage_seconds(segments, window_start=None, window_end=None, now=None):
-    """Sum non-overlapping observed outage segments inside an optional window."""
+    """Observed outage time inside an optional window, overlaps merged.
+
+    Overlap should not arise: one incident is open at a time, one segment is
+    open per incident, and segments are sequential within an incident. But
+    this produces the figure a user puts in front of their ISP, and adding
+    overlapping intervals would silently inflate it if any of those invariants
+    ever slipped. Merging costs a sort and can only ever turn a wrong number
+    into the right one.
+    """
     now = time.time() if now is None else float(now)
     start_limit = float(window_start) if window_start is not None else None
     end_limit = float(window_end) if window_end is not None else now
-    total = 0.0
+    clipped = []
     for segment in segments:
         started = float(segment["started"])
         ended = float(segment["ended"]) if segment.get("ended") is not None else now
         if start_limit is not None:
             started = max(started, start_limit)
         ended = min(ended, end_limit)
-        total += max(0.0, ended - started)
+        if ended > started:
+            clipped.append((started, ended))
+    total = 0.0
+    open_start = open_end = None
+    for started, ended in sorted(clipped):
+        if open_end is None or started > open_end:
+            if open_end is not None:
+                total += open_end - open_start
+            open_start, open_end = started, ended
+        else:
+            open_end = max(open_end, ended)
+    if open_end is not None:
+        total += open_end - open_start
     return total
 
 
