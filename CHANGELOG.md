@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.6.6
+
+### Fixed
+
+- The load test no longer reports that the transfer never started. The sampler
+  stopped after a few probes saw no download progress, but before the first
+  byte there is never any progress: the downloader is still completing its TCP
+  connect, TLS handshake and certificate validation, which on a small board
+  outlasts several probes. The sampler then cancelled the transfer and blamed
+  it for not starting. The downloader now states when it has finished, so the
+  sampler stops on fact rather than inference.
+- A slow connection is measured properly. Progress was judged only across the
+  few milliseconds a ping was in flight, but a download reads whole chunks at a
+  time, so on a slow line the byte counter moves in steps hundreds of
+  milliseconds apart and that window almost never contained one. The ordinary
+  gap between chunks also looked identical to a finished transfer, ending runs
+  early. Progress is now measured from one probe to the next: a 0.5 Mbps line
+  yields nine usable samples where it previously scraped two, and 1 Mbps yields
+  eighteen where it managed three.
+
+
 ## 0.6.5
 
 ### Fixed

@@ -49,17 +49,27 @@ class FakeClock:
 
 
 class LoadedSamplingTests(unittest.TestCase):
-    def sample_loaded(self, transfer_seconds, window=10.0):
-        """Run the real loop against a transfer that stops after N seconds."""
+    def sample_loaded(self, transfer_seconds, window=10.0, starts_at=0.0):
+        """Run the real loop against a transfer that stops after N seconds.
+
+        `starts_at` models the gap before the first byte arrives: the
+        downloader has to complete a TCP connect, a TLS handshake and
+        certificate validation first, which on a small board is not instant.
+        """
         clock = FakeClock()
         stats = {"bytes": 0}
 
         def fake_measure(targets, count=1):
-            # A ping costs time; bytes only keep growing while the transfer
-            # is still running, exactly as the downloader thread behaves.
+            # A ping costs time; bytes only grow once the transfer has
+            # actually begun and while it is still running, exactly as the
+            # downloader thread behaves.
             clock.t += PING_SECONDS
-            if clock.t <= transfer_seconds:
+            if starts_at <= clock.t <= transfer_seconds:
                 stats["bytes"] += CHUNK
+            elif clock.t > transfer_seconds:
+                # The downloader thread sets this in its finally block once
+                # the transfer is genuinely over.
+                stats["done"] = True
             return {
                 "latency_ms": 20.0, "jitter_ms": 1.0, "loss_pct": 0.0,
                 "target": "1.1.1.1",
@@ -103,6 +113,23 @@ class LoadedSamplingTests(unittest.TestCase):
         self.assertLess(
             clock.t, 5.0,
             "kept sampling long after the transfer ended")
+
+    def test_a_slow_handshake_does_not_kill_the_transfer(self):
+        """The reported failure: "the transfer never started, so there was no
+        load to measure". The early exit counts probes that saw no byte
+        progress, but before the first byte there is never any progress, so a
+        TLS handshake slower than three probes made the sampler give up and
+        stop the download before it had read anything."""
+        result, _, _ = self.sample_loaded(
+            transfer_seconds=3.0, starts_at=0.4)
+        self.assertIsNotNone(
+            result, "gave up before the transfer produced its first byte")
+        self.assertGreaterEqual(result["active_samples"], 2)
+
+    def test_a_very_slow_handshake_is_still_waited_out(self):
+        result, _, _ = self.sample_loaded(
+            transfer_seconds=6.0, starts_at=2.5)
+        self.assertIsNotNone(result)
 
     def test_a_transfer_that_never_starts_yields_nothing(self):
         """No bytes ever move, so every ping measures an idle network. A grade
@@ -392,3 +419,190 @@ class DebugLogVisibilityTests(unittest.TestCase):
                                     8 * 1024 * 1024, stats,
                                     probes.threading.Event())
         self.assertEqual(core["command_log"]()["entries"], [])
+
+
+class SlowStartIntegrationTests(unittest.TestCase):
+    """The sampler and the downloader thread, driven together.
+
+    The failure that produced "the transfer never started, so there was no
+    load to measure" lived in the interaction, not in either half: the sampler
+    gave up while the downloader was still completing its TLS handshake, then
+    set the stop flag, so the transfer was cancelled before it read a byte and
+    the run blamed the transfer for never starting. Real threads and a real
+    delay, with the sample limits shrunk so it stays quick.
+    """
+
+    URL = "https://speed.example.com/file"
+
+    def test_a_download_that_takes_time_to_begin_is_not_cancelled(self):
+        import threading
+        import time as real_time
+
+        started_producing = threading.Event()
+
+        def slow_downloader(url, addresses, seconds, max_bytes, stats, stop):
+            # Stand in for connect + TLS + certificate validation.
+            real_time.sleep(0.30)
+            began = real_time.monotonic()
+            while not stop.is_set() and stats["bytes"] < max_bytes:
+                stats["bytes"] += 65536
+                started_producing.set()
+                real_time.sleep(0.005)
+            stats["elapsed"] = real_time.monotonic() - began
+            stats["error"] = None
+            stats["done"] = True
+
+        cfg = {"targets": ["1.1.1.1"], "load_test_url": self.URL,
+               "load_test_seconds": 5, "load_test_max_mb": 100}
+        sample = {"latency_ms": 12.0, "jitter_ms": 1.0, "loss_pct": 0.0,
+                  "target": "1.1.1.1"}
+
+        def timed_ping(targets, count=1):
+            # A real reply takes milliseconds, which is the window the
+            # sampler compares byte counts across. An instant mock would
+            # never observe progress and would test nothing.
+            real_time.sleep(0.01)
+            return sample
+
+        with mock.patch.object(probes, "quality_config", return_value=cfg), \
+                mock.patch.object(probes, "measure_quality",
+                                  side_effect=timed_ping), \
+                mock.patch.object(probes, "_load_downloader",
+                                  side_effect=slow_downloader), \
+                mock.patch.object(probes, "_resolve_load_target",
+                                  return_value=(probes.urlparse(self.URL),
+                                                ["104.16.0.1"])), \
+                mock.patch.object(probes, "_LOADED_MAX_SAMPLES", 6), \
+                mock.patch.object(probes, "_LOADED_SAMPLE_PAUSE", 0.01):
+            result = probes.run_load_test(store=False)
+
+        self.assertTrue(
+            started_producing.is_set(),
+            "the transfer was cancelled before it produced any bytes")
+        self.assertIsNotNone(result)
+        self.assertGreater(result["bytes"], 0)
+        self.assertGreaterEqual(result["active_samples"], 2)
+
+
+class TimedByteCounter:
+    """A download counter that advances on the transfer's schedule.
+
+    http.client's read(n) blocks until it has n bytes, so on a slow line the
+    counter jumps by a whole chunk every few hundred milliseconds rather than
+    creeping up continuously. Modelling that matters: whether a jump happens
+    to land inside the milliseconds a ping is in flight is not something the
+    measurement should depend on.
+    """
+
+    def __init__(self, clock, starts_at, ends_at, jump_every):
+        self.clock = clock
+        self.starts_at = starts_at
+        self.ends_at = ends_at
+        self.jump_every = jump_every
+
+    def get(self, key, default=None):
+        if key == "done":
+            return self.clock.t > self.ends_at
+        if key != "bytes":
+            return default
+        moment = min(self.clock.t, self.ends_at)
+        if moment < self.starts_at:
+            return 0
+        return CHUNK * int((moment - self.starts_at) / self.jump_every)
+
+
+class SlowLinkSamplingTests(unittest.TestCase):
+    """A slow line is the case this product exists for.
+
+    Progress was judged only across the milliseconds a ping was in flight. At
+    1 Mbps the byte counter moves roughly every half second, so that window
+    catches a jump about one time in ninety, and the run could report that
+    nothing was downloading while the transfer was running perfectly.
+    """
+
+    def sample_at(self, mbps, window=10.0):
+        clock = FakeClock()
+        jump_every = CHUNK / (mbps * 1e6 / 8)
+        stats = TimedByteCounter(clock, 0.2, window, jump_every)
+
+        def fake_measure(targets, count=1):
+            clock.t += PING_SECONDS
+            return {"latency_ms": 20.0, "jitter_ms": 1.0, "loss_pct": 0.0,
+                    "target": "1.1.1.1"}
+
+        with mock.patch.object(probes, "time", clock), \
+                mock.patch.object(probes, "measure_quality", fake_measure):
+            return probes._measure_loaded_quality("1.1.1.1", stats, window)
+
+    def assert_stable(self, mbps):
+        """Enough samples for an average worth publishing, not the bare two.
+
+        The code sets _LOADED_MIN_SAMPLES as its own definition of enough
+        evidence, so that is the bar. Judging progress only across a ping
+        scrapes exactly two samples at 0.5 Mbps and three at 1 Mbps: one
+        unlucky reply short of no result, and far too few to average.
+        """
+        result = self.sample_at(mbps)
+        self.assertIsNotNone(
+            result, f"a {mbps} Mbps transfer looked like no transfer at all")
+        self.assertGreaterEqual(
+            result["active_samples"], probes._LOADED_MIN_SAMPLES,
+            f"only {result['active_samples']} samples at {mbps} Mbps")
+        return result
+
+    def test_a_half_megabit_line_is_still_measured(self):
+        self.assert_stable(0.5)
+
+    def test_a_one_megabit_line_is_still_measured(self):
+        self.assert_stable(1)
+
+    def test_a_five_megabit_line_is_still_measured(self):
+        self.assert_stable(5)
+
+    def test_a_fast_line_is_unaffected(self):
+        result = self.sample_at(650)
+        self.assertIsNotNone(result)
+        self.assertGreaterEqual(result["active_samples"], 2)
+
+
+class DownloaderCompletionTests(unittest.TestCase):
+    """The real downloader has to announce that it finished.
+
+    The sampler stops on that signal. Nothing else can tell the ordinary gap
+    between chunk arrivals on a slow line from a transfer that is genuinely
+    over, and guessing cut those runs short mid-transfer.
+    """
+
+    URL = "https://speed.example.com/file"
+
+    def drive(self, status=200, raises=None):
+        response = mock.MagicMock()
+        response.status = status
+        response.read.side_effect = [b"x" * 4096, b""]
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
+        if raises is not None:
+            conn.request.side_effect = raises
+        stats = {"bytes": 0, "elapsed": 0.0, "error": None, "done": False,
+                 "deadline": probes.time.monotonic() + 5}
+        with mock.patch.object(probes, "_PinnedHTTPSConnection",
+                               return_value=conn):
+            probes._load_downloader(self.URL, ["104.16.0.1"], 5,
+                                    8 * 1024 * 1024, stats,
+                                    probes.threading.Event())
+        return stats
+
+    def test_a_completed_transfer_is_marked_done(self):
+        self.assertTrue(self.drive()["done"])
+
+    def test_a_refused_transfer_is_marked_done(self):
+        """Otherwise the sampler waits out the whole window for a transfer
+        that will never send a byte."""
+        stats = self.drive(status=403)
+        self.assertTrue(stats["done"])
+        self.assertEqual(stats["error"], "HTTP 403")
+
+    def test_a_transfer_that_raised_is_marked_done(self):
+        stats = self.drive(raises=OSError("boom"))
+        self.assertTrue(stats["done"])
+        self.assertEqual(stats["error"], "OSError")
