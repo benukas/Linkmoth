@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.8
+
+### Changed
+
+- The load test reports the latency it measured and when, and nothing else.
+  A note added in 0.6.4 tried to grade how much each result was worth by
+  reporting how long the line had been saturated. It misreported that window
+  twice, and its advice pointed at a setting with no control on the dashboard,
+  so it gave the reader nothing to act on. The measurement itself is unchanged;
+  the transfer duration and byte count are still recorded and still available
+  through the API for anyone who wants them.
+
+
 ## 0.6.7
 
 ### Fixed
