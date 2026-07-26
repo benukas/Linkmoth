@@ -132,13 +132,16 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertLess(
             body.index("if (!(sec > 0))"), body.index("if (sec < 90)"))
 
-    def test_the_brief_load_hint_names_the_setting_to_change(self):
-        """There is no control for the byte budget on the dashboard, so a hint
-        that only says "raise the data budget" cannot be acted on."""
+    def test_the_load_result_states_only_what_was_measured(self):
+        """The load test reports the latency it measured and when. A note
+        grading how much that result was worth, added in 0.6.4, misreported
+        its own observation window twice and told the reader nothing they
+        could act on, so it is gone."""
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
-        hint = dashboard.split("budget_limited && lt.load_seconds", 1)[1][:400]
-        self.assertIn("quality.load_test_max_mb", hint)
-        self.assertIn("/etc/linkmoth/config.json", hint)
+        render = dashboard.split("function renderLoadTest", 1)[1][:1200]
+        self.assertIn("ms under load", render)
+        self.assertNotIn("budget_limited", render)
+        self.assertNotIn("Line was loaded for only", dashboard)
 
     def test_network_misconfig_warnings_surface_above_the_verdict(self):
         """The whole value of the check is that a duplicate IP is seen before
@@ -442,9 +445,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.6.7-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.6.8-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.7/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.8/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -455,7 +458,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.7"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.8"))
+        self.assertLess(changelog.index("## 0.6.8"), changelog.index("## 0.6.7"))
         self.assertLess(changelog.index("## 0.6.7"), changelog.index("## 0.6.6"))
         self.assertLess(changelog.index("## 0.6.6"), changelog.index("## 0.6.5"))
         self.assertLess(changelog.index("## 0.6.5"), changelog.index("## 0.6.4"))
@@ -476,7 +480,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.6.7", advanced)
+        self.assertIn("VERSION=v0.6.8", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
