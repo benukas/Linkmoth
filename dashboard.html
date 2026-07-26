@@ -1630,6 +1630,11 @@ function playbookRungs(code) {
 }
 
 function fmtAge(sec) {
+  // Ages are a server timestamp subtracted from the browser's clock, and the
+  // two are not the same clock. A Raspberry Pi has no RTC, so a few seconds
+  // of skew is normal and a test finishing "-1s ago" was the visible result.
+  // Nothing here is ever legitimately in the future.
+  if (!(sec > 0)) return "just now";
   if (sec < 90) return Math.round(sec) + "s ago";
   if (sec < 5400) return Math.round(sec / 60) + " min ago";
   if (sec < 172800) return (sec / 3600).toFixed(1) + " h ago";
@@ -2572,8 +2577,11 @@ function renderLoadTest(lt) {
     // A grade measured while the line was only briefly saturated is real but
     // thinner evidence than one from a full run, so say which it was rather
     // than presenting both the same way.
+    // Naming the setting and the file matters: there is no control for this
+    // on the dashboard, so "raise the data budget" on its own leaves the
+    // reader with advice they cannot act on.
     const brief = lt.budget_limited && lt.load_seconds
-      ? ` Line was loaded for only ${Number(lt.load_seconds).toFixed(1)} s – raise the data budget to test for longer.`
+      ? ` Line was loaded for only ${Number(lt.load_seconds).toFixed(1)} s – raise quality.load_test_max_mb in /etc/linkmoth/config.json to load it for longer.`
       : "";
     $("q-load").textContent =
       `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.${brief}`;

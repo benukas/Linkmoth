@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.6.7
+
+### Fixed
+
+- A result that had just been produced no longer reports a negative age, such
+  as "tested -1s ago". Ages subtract a timestamp recorded on the host from the
+  clock in the browser, and those are two different clocks: a Raspberry Pi has
+  no RTC, so a few seconds of skew is ordinary. Nothing shown is ever
+  legitimately in the future, so an age that is not positive now reads "just
+  now".
+- The note shown when a bufferbloat run only briefly loaded the line now names
+  the setting and the file to change. There is no control for the byte budget
+  on the dashboard, so advice to "raise the data budget" could not be acted on.
+
+
 ## 0.6.6
 
 ### Fixed
