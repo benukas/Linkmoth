@@ -39,6 +39,15 @@ def default_route():
 # change without restarting the unit, so probe once and then stop spawning a
 # process per ladder run for an answer that cannot change. The hwmon fallback
 # in check_power still reports undervoltage on Pis that expose rpi_volt.
+class LoadTestError(RuntimeError):
+    """A bufferbloat run could not produce a trustworthy result.
+
+    Carries the reason in plain language. The route shows it to the operator
+    and logs it, so a failed test names what went wrong instead of falling
+    back to a generic "check connectivity".
+    """
+
+
 _VCGENCMD_LOCK = threading.Lock()
 _VCGENCMD_UNAVAILABLE = False
 
@@ -481,7 +490,7 @@ def config_efficiency_notes(cfg=None):
     notes = []
 
     hours = _int_setting(quality.get("load_test_hours"), 0)
-    max_mb = _int_setting(quality.get("load_test_max_mb"), 25)
+    max_mb = _int_setting(quality.get("load_test_max_mb"), 100)
     if hours > 0 and max_mb > 0:
         monthly_mb = (24.0 / hours) * 30 * max_mb
         if monthly_mb >= 2048:
@@ -1864,18 +1873,51 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
         stats["elapsed"] = max(0.0, time.monotonic() - start)
 
 
+# Sampling the loaded link is a balance. Pausing between probes stops a long
+# test becoming a ping flood, but the transfer is bounded by a total byte
+# budget, and on a fast line that budget is spent in a fraction of a second: a
+# fixed 0.3 s pause then outlasted the whole transfer, leaving one overlapping
+# sample and no result at all above roughly 400 Mbps. So probe back to back
+# until there is enough evidence for a stable average, then settle into a
+# slower cadence, and stop once the transfer is over instead of pinging an
+# idle network until the deadline.
+_LOADED_MIN_SAMPLES = 5
+_LOADED_MAX_SAMPLES = 60
+_LOADED_SAMPLE_PAUSE = 0.05
+_LOADED_IDLE_POLLS = 3
+
+
 def _measure_loaded_quality(target, stats, deadline):
     """Measure only pings that overlap active download byte progress."""
     active = []
-    while time.monotonic() < deadline:
+    first_at = last_at = None
+    idle_polls = 0
+    while time.monotonic() < deadline and len(active) < _LOADED_MAX_SAMPLES:
         before = int(stats.get("bytes") or 0)
         sample = measure_quality([target], count=1)
         after = int(stats.get("bytes") or 0)
-        if sample and sample.get("latency_ms") is not None and after > before:
-            active.append(sample)
+        now = time.monotonic()
+        if after > before:
+            idle_polls = 0
+            if sample and sample.get("latency_ms") is not None:
+                active.append(sample)
+                if first_at is None:
+                    first_at = now
+                last_at = now
+            if len(active) >= _LOADED_MIN_SAMPLES:
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    time.sleep(min(_LOADED_SAMPLE_PAUSE, remaining))
+            continue
+        # No bytes moved across that probe, so the transfer has finished,
+        # stalled, or never started. Continuing to the deadline would only
+        # average in idle-network latency and understate the bloat.
+        idle_polls += 1
+        if idle_polls >= _LOADED_IDLE_POLLS:
+            break
         remaining = deadline - time.monotonic()
         if remaining > 0:
-            time.sleep(min(0.3, remaining))
+            time.sleep(min(_LOADED_SAMPLE_PAUSE, remaining))
     # One coincidental overlap is not enough evidence for a confident grade.
     if len(active) < 2:
         return None
@@ -1891,6 +1933,13 @@ def _measure_loaded_quality(target, stats, deadline):
         "loss_pct": 0.0,
         "target": str(target),
         "active_samples": len(active),
+        # How long the link was actually saturated. A grade drawn from a third
+        # of a second is worth less than one drawn from ten, and the caller
+        # cannot say so unless this is reported.
+        "load_seconds": (
+            round(max(0.0, last_at - first_at), 3)
+            if first_at is not None and last_at is not None else 0.0
+        ),
     }
 
 
@@ -1912,20 +1961,21 @@ def run_load_test(store=True):
     url = parsed.geturl()
     targets = qcfg.get("targets") or CFG.get("ping_targets") or []
     if not targets:
-        return None
+        raise LoadTestError("no ping targets are configured")
     idle = measure_quality(targets, count=5)
     if not idle or idle.get("latency_ms") is None:
-        return None
+        raise LoadTestError(
+            "could not measure idle latency before loading the link")
     try:
         seconds = int(qcfg.get("load_test_seconds", 10))
     except (TypeError, ValueError):
         seconds = 10
     seconds = max(5, min(20, seconds))
     try:
-        max_mb = int(qcfg.get("load_test_max_mb", 25))
+        max_mb = int(qcfg.get("load_test_max_mb", 100))
     except (TypeError, ValueError):
-        max_mb = 25
-    max_bytes = max(1, min(100, max_mb)) * 1024 * 1024
+        max_mb = 100
+    max_bytes = max(1, min(500, max_mb)) * 1024 * 1024
     deadline = time.monotonic() + seconds
     stats = {"bytes": 0, "elapsed": 0.0, "error": None, "deadline": deadline}
     stop = threading.Event()
@@ -1938,8 +1988,21 @@ def run_load_test(store=True):
     loaded = _measure_loaded_quality(idle["target"], stats, deadline)
     stop.set()
     worker.join(timeout=seconds + 10)
+    moved = int(stats.get("bytes") or 0)
+    elapsed = float(stats.get("elapsed") or 0.0)
     if not loaded or loaded.get("latency_ms") is None:
-        return None
+        # Each of these used to be a bare `return None`, which left the route
+        # with nothing to report but "check connectivity" and nothing to log.
+        if stats.get("error"):
+            raise LoadTestError(
+                f"the test server could not be reached ({stats['error']})")
+        if moved <= 0:
+            raise LoadTestError(
+                "the transfer never started, so there was no load to measure")
+        raise LoadTestError(
+            "the transfer finished too quickly to sample latency under load "
+            f"({moved / (1024 * 1024):.0f} MB in {elapsed:.2f} s) – raise "
+            "load_test_max_mb so the link stays loaded for longer")
     bloat = max(0.0, loaded["latency_ms"] - idle["latency_ms"])
     grade = (
         "A" if bloat < 30 else "B" if bloat < 60
@@ -1961,18 +2024,26 @@ def run_load_test(store=True):
         "seconds": round(stats["elapsed"], 1),
         "error": stats["error"],
         "active_samples": int((loaded or {}).get("active_samples") or 0),
+        "load_seconds": round(float(loaded.get("load_seconds") or 0.0), 2),
+        # The byte budget, not the clock, ended the transfer well before the
+        # window was up, so the link was only loaded briefly. The grade stands,
+        # but it is drawn from less evidence and should not be shown as though
+        # it came from a full run.
+        "budget_limited": bool(moved >= max_bytes and elapsed < seconds * 0.5),
     }
     if store:
         try:
             with db() as conn:
                 conn.execute(
                     "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms,"
-                    " grade, throughput_mbps, bytes, seconds, error)"
-                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    " grade, throughput_mbps, bytes, seconds, error,"
+                    " load_seconds, budget_limited)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (result["ts"], result["idle_ms"], result["loaded_ms"],
                      result["bloat_ms"], result["grade"],
                      result["throughput_mbps"], result["bytes"],
-                     result["seconds"], result["error"]),
+                     result["seconds"], result["error"],
+                     result["load_seconds"], int(result["budget_limited"])),
                 )
         except sqlite3.Error as e:
             print(f"load test store failed: {e}", file=sys.stderr, flush=True)

@@ -138,5 +138,64 @@ class UpgradeFromOldestSchemaTests(unittest.TestCase):
                 1, "backfill duplicated rows on a second run")
 
 
+MIGRATE_LOAD_TESTS = r'''
+import os, sqlite3, sys
+sys.path.insert(0, sys.argv[1])
+path = os.path.join(os.environ["LINKMOTH_STATE_DIR"], "state.db")
+conn = sqlite3.connect(path)
+conn.execute("""CREATE TABLE load_tests(
+  id INTEGER PRIMARY KEY, ts REAL NOT NULL, idle_ms REAL, loaded_ms REAL,
+  bloat_ms REAL, grade TEXT, throughput_mbps REAL, bytes INTEGER,
+  seconds REAL, error TEXT)""")
+conn.execute("INSERT INTO load_tests(ts,idle_ms,loaded_ms,bloat_ms,grade,"
+             "throughput_mbps,bytes,seconds,error)"
+             " VALUES(1,7,9,2,'A',500,100,1,NULL)")
+conn.commit(); conn.close()
+import linkmoth_core as core
+core.init_db()
+with core.db() as c:
+    cols = [r[1] for r in c.execute("PRAGMA table_info(load_tests)")]
+    row = c.execute("SELECT grade, load_seconds, budget_limited"
+                    " FROM load_tests").fetchone()
+    c.execute("INSERT INTO load_tests(ts,idle_ms,loaded_ms,bloat_ms,grade,"
+              "throughput_mbps,bytes,seconds,error,load_seconds,budget_limited)"
+              " VALUES(2,7,9,2,'A',500,100,1,NULL,0.31,1)")
+    fresh = c.execute("SELECT load_seconds, budget_limited FROM load_tests"
+                      " ORDER BY id DESC LIMIT 1").fetchone()
+print("COLS", ",".join(cols))
+print("OLD", tuple(row))
+print("NEW", tuple(fresh))
+'''
+
+
+class LoadTestsColumnMigrationTests(unittest.TestCase):
+    """Upgrading an install that already has a load_tests table.
+
+    The schema fixture above predates load_tests entirely, so it exercises
+    CREATE, not the ALTER that a 0.6.3 install actually takes. Run in a
+    subprocess: this module's other class swaps sys.modules for the whole
+    process, and a second one doing the same would desync unrelated tests.
+    """
+
+    def test_a_previous_release_database_gains_the_new_columns(self):
+        import subprocess
+        state = tempfile.mkdtemp(prefix="linkmoth_lt_migrate_")
+        env = dict(os.environ, LINKMOTH_STATE_DIR=state)
+        env.pop("LINKMOTH_CONFIG", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", MIGRATE_LOAD_TESTS, str(BASE.parent)],
+            env=env, capture_output=True, text=True, cwd=str(BASE.parent))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = dict(
+            line.split(" ", 1) for line in proc.stdout.strip().splitlines()
+            if " " in line)
+        self.assertIn("load_seconds", out["COLS"])
+        self.assertIn("budget_limited", out["COLS"])
+        # The pre-upgrade row keeps its grade and takes the defaults rather
+        # than being dropped or rewritten with invented values.
+        self.assertEqual(out["OLD"], "('A', None, 0)")
+        self.assertEqual(out["NEW"], "(0.31, 1)")
+
+
 if __name__ == "__main__":
     unittest.main()

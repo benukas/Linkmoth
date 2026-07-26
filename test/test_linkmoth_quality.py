@@ -252,11 +252,12 @@ class LoadTestTests(unittest.TestCase):
         self.assertEqual(result["seconds"], 0.4)
         self.assertAlmostEqual(result["throughput_mbps"], 503.3, places=1)
 
-    def test_run_load_test_none_when_too_few_active_samples(self):
-        # The whole point of the fix: an extremely fast connection that
-        # exhausts its byte budget before enough pings can overlap active
-        # download progress must report NO result rather than a falsely
-        # confident grade built from idle-network pings.
+    def test_run_load_test_explains_too_few_active_samples(self):
+        # An extremely fast connection that exhausts its byte budget before
+        # enough pings can overlap active download progress must report no
+        # result rather than a falsely confident grade built from idle-network
+        # pings – and must name the setting that would fix it, because a
+        # failure nobody can act on is barely better than a wrong answer.
         idle = {"latency_ms": 8.0, "jitter_ms": 1.0, "loss_pct": 0.0,
                 "target": "1.1.1.1"}
 
@@ -277,10 +278,12 @@ class LoadTestTests(unittest.TestCase):
                 ["104.16.0.1"],
             ),
         ), mock.patch.object(self.lm.time, "sleep"):
-            self.assertIsNone(self.lm.run_load_test())
+            with self.assertRaises(linkmoth_probes.LoadTestError) as caught:
+                self.lm.run_load_test()
+        self.assertIn("load_test_max_mb", str(caught.exception))
         self.assertIsNone(self.lm.latest_load_test())
 
-    def test_run_load_test_none_when_idle_unmeasurable(self):
+    def test_run_load_test_explains_unmeasurable_idle_latency(self):
         with mock.patch.object(
             linkmoth_probes, "measure_quality", return_value=None,
         ), mock.patch.object(
@@ -290,7 +293,9 @@ class LoadTestTests(unittest.TestCase):
                 ["104.16.0.1"],
             ),
         ):
-            self.assertIsNone(self.lm.run_load_test())
+            with self.assertRaises(linkmoth_probes.LoadTestError) as caught:
+                self.lm.run_load_test()
+        self.assertIn("idle latency", str(caught.exception))
         self.assertIsNone(self.lm.latest_load_test())
 
     def test_downloader_pins_validated_address_and_caps_exactly(self):
@@ -440,7 +445,10 @@ class LoadTestTests(unittest.TestCase):
         summary = self.lm.quality_summary(limit=5)
         cfg = summary["load_test_config"]
         self.assertEqual(cfg["host"], "speed.cloudflare.com")
-        self.assertEqual(cfg["max_mb"], 25)
+        # 25 MB was spent in 0.31 s on a gigabit line, which left no loaded
+        # window to sample latency in. A slow line still stops at the time
+        # limit and never approaches this.
+        self.assertEqual(cfg["max_mb"], 100)
         self.assertEqual(cfg["seconds"], 10)
 
 
