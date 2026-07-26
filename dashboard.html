@@ -2569,8 +2569,14 @@ function renderLoadTest(lt) {
     loadResults.classList.remove("hidden");
     $("q-load-grade").textContent = lt.grade;
     $("q-load-bloat").textContent = `+${Math.round(lt.bloat_ms)} ms`;
+    // A grade measured while the line was only briefly saturated is real but
+    // thinner evidence than one from a full run, so say which it was rather
+    // than presenting both the same way.
+    const brief = lt.budget_limited && lt.load_seconds
+      ? ` Line was loaded for only ${Number(lt.load_seconds).toFixed(1)} s – raise the data budget to test for longer.`
+      : "";
     $("q-load").textContent =
-      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.`;
+      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.${brief}`;
   } else {
     loadResults.classList.add("hidden");
     $("q-load").textContent = "Bufferbloat not tested yet – a load test grades how latency holds up while the line is busy.";
@@ -2580,7 +2586,7 @@ function renderLoadTest(lt) {
 function renderLoadTestInfo(q) {
   const cfg = q && q.load_test_config;
   $("q-load-info").textContent = cfg && cfg.host
-    ? `Downloads up to ${cfg.max_mb || 25} MB from ${cfg.host} over up to ${cfg.seconds || 10} s to measure your line under load – normal data usage for one test.`
+    ? `Downloads up to ${cfg.max_mb || 100} MB from ${cfg.host} over up to ${cfg.seconds || 10} s to measure your line under load – a slow line stops at the time limit and uses far less.`
     : "Downloads a bounded test file from a public server to measure your line under real load.";
 }
 

@@ -129,6 +129,35 @@ class HouseStyleTests(unittest.TestCase):
             "instead:\n" + "\n".join(offenders[:40]),
         )
 
+    def test_shell_output_has_no_octal_escapes_that_print_literally(self):
+        """An installer line read `incidents \\342\\200\\223 no other service`
+        and printed those sixteen characters to every user, because the helper
+        is `printf '    %s' "$*"` and printf expands escapes in the format, not
+        in an argument. The en dash has to be the actual character, the way the
+        neighbouring lines already write it."""
+        offenders = []
+        # Only escapes in the UTF-8 lead-byte range, which is what an escaped
+        # text character looks like. ANSI colour uses $'\033[1m', where the
+        # $'...' form does expand the escape, and is not the same mistake.
+        octal = re.compile(r"\\([0-3][0-7][0-7])")
+        for path in _tracked_files():
+            if path.suffix != ".sh":
+                continue
+            text = path.read_text(encoding="utf-8")
+            for number, line in enumerate(text.splitlines(), 1):
+                stripped = line.strip()
+                # sed and awk backreferences are a different thing entirely.
+                if stripped.startswith("#") or "sed" in line or "awk" in line:
+                    continue
+                if any(int(m, 8) >= 0o302 for m in octal.findall(line)):
+                    offenders.append(
+                        f"{path.relative_to(ROOT)}:{number}: {stripped[:90]}")
+        self.assertEqual(
+            offenders, [],
+            "an octal escape in a shell string prints literally; use the "
+            "character itself:\n" + "\n".join(offenders[:20]),
+        )
+
     def test_the_check_actually_scans_the_files_that_matter(self):
         """A guard whose file list silently went empty would pass forever."""
         names = {p.name for p in _tracked_files()}

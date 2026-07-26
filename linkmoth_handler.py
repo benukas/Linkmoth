@@ -49,7 +49,7 @@ from linkmoth_probes import (
     _LOAD_TEST_LOCK, _count_phrase, _validate_load_url, bind_exposure_risk,
     classify_network_interfaces, default_route, isp_report_csv,
     config_efficiency_notes, connection_score, network_misconfig_warnings,
-    quality_config, quality_summary, run_load_test,
+    LoadTestError, quality_config, quality_summary, run_load_test,
     wifi_wired_differential,
 )
 
@@ -1439,8 +1439,17 @@ class Handler(BaseHTTPRequestHandler):
             # clicking the button. Blocking this one request (capped at 20s,
             # and only one load test can run at a time via the lock above)
             # lets the response carry the real outcome, success or failure.
+            reason = None
             try:
                 result = run_load_test()
+            except LoadTestError as exc:
+                # A reason the operator can act on: which precondition failed,
+                # or that the transfer was over before latency could be
+                # sampled. The generic "check connectivity" it replaced was
+                # true of every failure and therefore useful for none.
+                reason = str(exc)
+                print(f"load test failed: {reason}", file=sys.stderr, flush=True)
+                result = None
             except Exception as exc:
                 print(f"load test failed: {exc}", file=sys.stderr, flush=True)
                 result = None
@@ -1448,8 +1457,8 @@ class Handler(BaseHTTPRequestHandler):
                 _LOAD_TEST_LOCK.release()
             if result is None:
                 self._send(502, {
-                    "error": "load test could not complete – check connectivity"
-                             " to the test server and try again",
+                    "error": reason or "load test could not complete – check"
+                             " connectivity to the test server and try again",
                 })
                 return
             self._send(200, {"result": result})

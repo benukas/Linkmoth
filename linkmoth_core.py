@@ -390,10 +390,14 @@ DEFAULT_CONFIG = {
         # load_test_seconds AND load_test_max_mb, whichever ends first.
         # Scheduled runs are off by default (load_test_hours = 0) because
         # they consume real data; the dashboard button always works.
-        "load_test_url": "https://speed.cloudflare.com/__down?bytes=25000000",
+        # The budget only binds on a fast line: a slow one hits the time
+        # limit first and never gets near it. It was 25 MB, which a gigabit
+        # link spends in a third of a second, leaving nothing to sample
+        # latency against, so the test could not complete at all.
+        "load_test_url": "https://speed.cloudflare.com/__down?bytes=100000000",
         "load_test_hours": 0,
         "load_test_seconds": 10,
-        "load_test_max_mb": 25,
+        "load_test_max_mb": 100,
     },
 }
 
@@ -1059,7 +1063,9 @@ def init_db(path=None):
                 throughput_mbps REAL,
                 bytes INTEGER,
                 seconds REAL,
-                error TEXT
+                error TEXT,
+                load_seconds REAL,
+                budget_limited INTEGER DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS incident_outage_segments(
                 id INTEGER PRIMARY KEY,
@@ -1112,6 +1118,19 @@ def init_db(path=None):
         ):
             try:
                 conn.execute(f"ALTER TABLE incidents ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError:
+                pass
+        # How long the line was actually saturated, and whether the byte
+        # budget rather than the clock ended the transfer. A grade drawn from
+        # a fraction of a second is worth less than one drawn from a full run,
+        # and without these the stored record cannot say which it was.
+        for column, definition in (
+            ("load_seconds", "REAL"),
+            ("budget_limited", "INTEGER DEFAULT 0"),
+        ):
+            try:
+                conn.execute(
+                    f"ALTER TABLE load_tests ADD COLUMN {column} {definition}")
             except sqlite3.OperationalError:
                 pass
         # Existing records predate separate historical diagnosis fields. Their
