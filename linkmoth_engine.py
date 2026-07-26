@@ -440,7 +440,10 @@ class Engine:
 
     def _discord_notify(self, inc_id, status_type, verdict, prior_fault=None):
         try:
-            from linkmoth_kuma_proxy import flush_suppression_digest, is_effective_global_outage
+            from linkmoth_kuma_proxy import (
+                clear_suppressed_alerts, is_effective_global_outage,
+                pending_suppression_digest,
+            )
             from linkmoth_notify import notify_fault, notify_recovery
             from linkmoth_outage import is_global_fault_code
             inc = self._incident_by_id(inc_id)
@@ -455,7 +458,8 @@ class Engine:
             if status_type == "recovery":
                 if is_global_fault_code((prior_fault or {}).get("code")):
                     return
-                digest = flush_suppression_digest(db, recovery_ts=time.time())
+                digest, digest_ids = pending_suppression_digest(
+                    db, recovery_ts=time.time())
                 with db() as conn:
                     downtime_s = _outage_seconds(
                         _incident_outage_segments(conn, inc), now=time.time()
@@ -471,6 +475,10 @@ class Engine:
                     source="incident-loop",
                     fault_checks=self._first_bad_run_checks(inc_id),
                 )
+                # Cleared only after delivery, so a failed send leaves the
+                # summary for the next recovery instead of destroying it.
+                if digest_ids:
+                    clear_suppressed_alerts(db, digest_ids)
         except Exception as e:
             print(f"notify error: {e}", file=sys.stderr, flush=True)
 
@@ -532,20 +540,72 @@ class Engine:
                 self.loop_thread.start()
         return inc_id
 
+    # A recorded span is measured between two wall-clock readings. If the host
+    # clock is stepped between them the span is wrong by the size of the
+    # correction, and it cannot be repaired: `started` was taken against a
+    # clock that no longer exists, and the true start was never observed.
+    # Rewriting either endpoint would store an instant the host never saw, so
+    # the numbers stand and the discrepancy is reported instead. Linkmoth's
+    # output is meant to be evidence in an ISP dispute; an impossible duration
+    # must not reach a report looking like a measurement.
+    CLOCK_STEP_REPORT_FLOOR_SECONDS = 300.0
+    # An incident this loop began watching within this many seconds of its
+    # recorded start is one it observed end to end. A fresh trigger writes
+    # `started` moments earlier from the same clock, so this stays near zero
+    # even when that clock is wrong, which makes it a reliable discriminator.
+    OBSERVED_FROM_START_SECONDS = 60.0
+
+    def _warn_if_span_spans_a_clock_step(self, inc_id, age_at_start, closed_at,
+                                         started, t0_mono):
+        try:
+            if started is None or age_at_start is None:
+                return
+            # Only an incident watched from its start proves anything about
+            # elapsed time. One resumed from a previous process legitimately
+            # predates t0, so its longer span is expected, not evidence.
+            if age_at_start > self.OBSERVED_FROM_START_SECONDS:
+                return
+            observed = max(0.0, time.monotonic() - t0_mono)
+            span = float(closed_at) - float(started)
+            if span - observed > max(self.CLOCK_STEP_REPORT_FLOOR_SECONDS, observed):
+                print(
+                    f"incident {inc_id}: recorded span {round(span)}s far"
+                    f" exceeds the {round(observed)}s actually observed, so the"
+                    " host clock was stepped during it and the stored duration"
+                    " is unreliable evidence",
+                    file=sys.stderr, flush=True,
+                )
+        except Exception:
+            pass  # a diagnostic must never affect closing the incident
+
     def _loop(self, inc_id):
         initial = self._incident_by_id(inc_id)
         consecutive_ok = 1 if initial and initial.get("recovered_at") else 0
         worst = None
         fault_notified = False
         last_emitted = None
-        deadline = time.time() + CFG["incident_max_hours"] * 3600
+        # Elapsed time and scheduling come from the monotonic clock, never the
+        # wall clock. A Raspberry Pi has no RTC and can run for minutes with a
+        # badly wrong clock before NTP steps it, and an incident open across
+        # that step used to get both directions wrong: a forward step pushed
+        # time.time() past the deadline, so the loop exited at once and
+        # finalised the incident as an incident_max_hours timeout (no recovery
+        # confirmation, and a stored resolved-minus-started of whatever the
+        # correction was), while a backward step left the next recheck
+        # scheduled a jump-sized sleep away. Stored timestamps stay wall-clock.
         schedule = list(CFG["recheck_seconds"])
         step = 0
-        t0 = time.time()
-        while time.time() < deadline:
+        t0 = time.monotonic()
+        deadline = t0 + CFG["incident_max_hours"] * 3600
+        incident_started = (initial or {}).get("started")
+        age_at_start = (
+            None if incident_started is None
+            else abs(time.time() - float(incident_started))
+        )
+        while time.monotonic() < deadline:
             target = t0 + schedule[step] if step < len(schedule) else None
             if target:
-                time.sleep(max(0.0, target - time.time()))
+                time.sleep(max(0.0, target - time.monotonic()))
                 step += 1
             else:
                 time.sleep(CFG["recheck_repeat"])
@@ -621,6 +681,8 @@ class Engine:
         final = worst or {"severity": "ok", "code": "all_clear",
                           "title": "Nothing wrong seen from the network side"}
         closed_at = time.time()
+        self._warn_if_span_spans_a_clock_step(
+            inc_id, age_at_start, closed_at, incident_started, t0)
         with db() as conn:
             _close_open_outage_segment(conn, inc_id, closed_at)
             cur = conn.execute(

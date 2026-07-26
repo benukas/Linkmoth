@@ -6,8 +6,9 @@ from typing import Callable, Optional
 
 from linkmoth_kuma_proxy import (
     GLOBAL_OUTAGE_CODES,
-    flush_suppression_digest,
+    clear_suppressed_alerts,
     is_effective_global_outage,
+    pending_suppression_digest,
     record_suppressed,
 )
 
@@ -126,7 +127,8 @@ class OutageTracker:
 
     def _recover(self, active, verdict, checks, cfg, db_connect, notify_recovery):
         recovery_ts = time.time()
-        digest = flush_suppression_digest(db_connect, recovery_ts=recovery_ts)
+        digest, digest_ids = pending_suppression_digest(
+            db_connect, recovery_ts=recovery_ts)
         prior = {
             "code": active.get("code"),
             "title": active.get("title"),
@@ -151,6 +153,10 @@ class OutageTracker:
             cfg=cfg,
             duration_s=max(0.0, recovery_ts - float(active.get("started") or recovery_ts)),
         )
+        # Only once the summary has actually gone out. A failure above leaves
+        # the records for the next recovery rather than losing them.
+        if digest_ids:
+            clear_suppressed_alerts(db_connect, digest_ids)
 
 
 def is_global_fault_code(code: Optional[str]) -> bool:

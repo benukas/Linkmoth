@@ -109,6 +109,18 @@ class PublicReleaseTests(unittest.TestCase):
             dashboard,
         )
 
+    def test_diagnose_button_reports_a_refused_run_instead_of_faking_one(self):
+        """/api/diagnose answers 409 when a diagnosis is already running and
+        503 when one could not start. The button discarded the response, so it
+        showed "Diagnosing…" and then refreshed as though a fresh run had
+        happened. An expired session was swallowed the same way."""
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        handler = dashboard.split('$("diagnose").addEventListener', 1)[1][:1400]
+        self.assertIn('r.status === 401', handler)
+        self.assertIn("ensureAuth()", handler)
+        self.assertIn("if (!r.ok)", handler)
+        self.assertIn("showVerdictNotice", handler)
+
     def test_network_misconfig_warnings_surface_above_the_verdict(self):
         """The whole value of the check is that a duplicate IP is seen before
         the verdict, so the block must render on Today, ahead of #verdict."""
@@ -411,9 +423,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.6.2-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.6.3-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.2/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.3/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -424,7 +436,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.2"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.3"))
+        self.assertLess(changelog.index("## 0.6.3"), changelog.index("## 0.6.2"))
         self.assertLess(changelog.index("## 0.6.2"), changelog.index("## 0.6.1"))
         self.assertLess(changelog.index("## 0.6.1"), changelog.index("## 0.6.0"))
         self.assertLess(changelog.index("## 0.6.0"), changelog.index("## 0.5.0"))
@@ -440,7 +453,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.6.2", advanced)
+        self.assertIn("VERSION=v0.6.3", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
@@ -480,6 +493,25 @@ class PublicReleaseTests(unittest.TestCase):
         # fresh failure undoes.
         self.assertIn("update failed - restoring the previous working version", installer)
         self.assertIn("fresh install failed - undoing changes made so far", installer)
+
+    def test_installer_clears_stale_build_metadata_on_a_source_install(self):
+        """linkmoth-build.json is only copied when the source tree ships one,
+        so installing from a git checkout over a previous release install
+        would leave the old release's metadata in place – and VERSION is read
+        straight out of that file. The dashboard, --doctor, support summaries
+        and the update check would all then name a release that is not what is
+        running. A source install must clear it."""
+        installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            '[ -f "$SRC/linkmoth-build.json" ] || rm -f -- "$APP/linkmoth-build.json"',
+            installer,
+        )
+        # It must only be cleared when the source genuinely has no metadata:
+        # the bootstrap always ships one and its version must survive.
+        self.assertIn(
+            '[ -f "$SRC/linkmoth-build.json" ] && APP_FILES="$APP_FILES linkmoth-build.json"',
+            installer,
+        )
 
     def test_installer_sets_ownership_without_following_symlinks(self):
         # A planted symlink at a managed path must not redirect chown/chmod onto

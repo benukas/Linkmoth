@@ -436,6 +436,44 @@ class DeviceManagerTests(unittest.TestCase):
         self.assertEqual(self.manager.history(device["id"])[0]["source"], "scheduled")
         self.assertGreater(current["next_run"], 10)
 
+    def test_a_backward_clock_step_does_not_park_devices_in_the_future(self):
+        """next_run is a stored wall-clock time. When NTP corrects a Pi's
+        clock backwards, every device is left scheduled beyond the new now and
+        goes unchecked until wall time catches up – which for a day-sized
+        correction means a day of silently skipped device monitoring. A
+        next_run further out than its own interval cannot be legitimate, so it
+        is rebased instead of stalling."""
+        device = self.create(interval=300)
+        now = time.time()
+        with self.connect() as conn:
+            # What a one-day backward step leaves behind: scheduled far past
+            # anything this interval could ever produce.
+            conn.execute(
+                "UPDATE devices SET next_run=? WHERE id=?",
+                (now + 86400, device["id"]),
+            )
+        self.manager.process_due(now=now)
+        rebased = self.manager.get_device(device["id"])["next_run"]
+        self.assertLessEqual(
+            rebased, now + 300,
+            "device stayed parked in the future after a backward clock step",
+        )
+
+    def test_a_normal_pending_schedule_is_left_alone(self):
+        """The rebase must only touch impossible schedules, never nudge a
+        device that is simply not due yet."""
+        device = self.create(interval=300)
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE devices SET next_run=? WHERE id=?",
+                (now + 120, device["id"]),
+            )
+        self.manager.process_due(now=now)
+        self.assertAlmostEqual(
+            self.manager.get_device(device["id"])["next_run"], now + 120, places=3,
+        )
+
     def test_four_check_concurrency_limit_includes_manual_runs(self):
         release = threading.Event()
         started = threading.Event()

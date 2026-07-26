@@ -120,9 +120,20 @@ def fetch_suppressed_alerts(db_connect):
     return [dict(r) for r in rows]
 
 
-def clear_suppressed_alerts(db_connect):
+def clear_suppressed_alerts(db_connect, ids=None):
+    """Clear suppressed alerts, or only the given ids.
+
+    Clearing by id matters on the recovery path: anything suppressed while the
+    summary was being delivered belongs to the next one, not this.
+    """
     with db_connect() as conn:
-        conn.execute("DELETE FROM suppressed_alerts")
+        if ids is None:
+            conn.execute("DELETE FROM suppressed_alerts")
+        else:
+            conn.executemany(
+                "DELETE FROM suppressed_alerts WHERE id=?",
+                [(int(item),) for item in ids],
+            )
 
 
 def _format_outage_duration(seconds: float) -> str:
@@ -172,14 +183,22 @@ def build_outage_digest_lines(rows, recovery_ts: Optional[float] = None) -> list
     return lines
 
 
-def flush_suppression_digest(db_connect, recovery_ts: Optional[float] = None):
-    """Build digest lines from suppressed alerts and clear the queue."""
+def pending_suppression_digest(db_connect, recovery_ts: Optional[float] = None):
+    """Digest lines for the alerts suppressed so far, and the ids behind them.
+
+    Deliberately does not clear anything. Suppressing per-service alerts during
+    a global outage and summarising them once on recovery is the point of this
+    integration, and the records used to be deleted before that summary was
+    actually sent: a transient failure then destroyed the only account of
+    which services were affected. Callers clear via clear_suppressed_alerts()
+    once delivery has succeeded, so a failure retries on the next recovery
+    instead of losing the summary.
+    """
     rows = fetch_suppressed_alerts(db_connect)
     if not rows:
-        return []
+        return [], []
     lines = build_outage_digest_lines(rows, recovery_ts)
-    clear_suppressed_alerts(db_connect)
-    return lines
+    return lines, [int(row["id"]) for row in rows]
 
 
 def parse_inbound_payload(body: bytes):
@@ -267,7 +286,8 @@ def handle_inbound_alert(status, detail, raw, engine, cfg: dict, db_connect,
             )
 
     if status == 1:
-        digest = flush_suppression_digest(db_connect, recovery_ts=time.time())
+        digest, digest_ids = pending_suppression_digest(
+            db_connect, recovery_ts=time.time())
         if digest:
             from linkmoth_notify import notify_recovery
             notify_recovery(
@@ -291,6 +311,9 @@ def handle_inbound_alert(status, detail, raw, engine, cfg: dict, db_connect,
                 duration_s=0,
                 source=f"{source_prefix}-recovery",
             )
+            # Cleared only after the summary was delivered, so a failed send
+            # retries on the next recovery instead of losing it.
+            clear_suppressed_alerts(db_connect, digest_ids)
         inc = engine.open_incident()
         if inc:
             engine.trigger(f"{source_prefix}-up", detail)

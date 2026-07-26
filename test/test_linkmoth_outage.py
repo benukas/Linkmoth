@@ -129,6 +129,54 @@ class OutageTrackerTests(unittest.TestCase):
         fault_checks = self.recoveries[0]["fault_checks"]
         self.assertTrue(any(c["id"] == "raw_ping" and c["ok"] is False for c in fault_checks))
 
+    def _drive_to_recovery(self, notify):
+        """Enter a global outage, suppress an alert, then clear it."""
+        wan = {"severity": "bad", "code": "wan_down", "title": "WAN down",
+               "explain": "outside dead", "hint": "check cable"}
+        ok = {"severity": "ok", "code": "all_clear", "title": "All clear",
+              "explain": "fine", "hint": ""}
+        checks = [
+            {"id": "gateway", "ok": True, "label": "Router (LAN)", "detail": "ok"},
+            {"id": "upstream_dns", "ok": False, "label": "Upstream DNS", "detail": "dead"},
+            {"id": "raw_ping", "ok": False, "label": "Raw internet (ping)", "detail": "dead"},
+        ]
+        self.tracker.observe(wan, checks, self.linkmoth.CFG, self.linkmoth.db, notify)
+        proxy.record_suppressed(
+            self.linkmoth.db, 0, "Plex: down", {"code": "wan_down"},
+            {"monitor": {"name": "Plex"}}, "global network outage",
+        )
+        self.tracker.observe(ok, checks, self.linkmoth.CFG, self.linkmoth.db, notify)
+        self.tracker.observe(ok, checks, self.linkmoth.CFG, self.linkmoth.db, notify)
+
+    def _suppressed_count(self):
+        with self.linkmoth.db() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) AS c FROM suppressed_alerts").fetchone()["c"]
+
+    def test_a_failed_recovery_notification_keeps_the_suppressed_summary(self):
+        """Suppressing per-service alerts during an outage and summarising
+        them once on recovery is the whole point of the Kuma integration. The
+        records were cleared before that summary was sent, so a transient
+        failure destroyed the only account of which services were affected."""
+        def failing_notify(**kwargs):
+            raise RuntimeError("discord unreachable")
+
+        with self.assertRaises(RuntimeError):
+            self._drive_to_recovery(failing_notify)
+        self.assertGreaterEqual(
+            self._suppressed_count(), 1,
+            "the suppressed-alert summary was discarded when its send failed",
+        )
+
+    def test_a_delivered_recovery_notification_clears_the_summary(self):
+        self._drive_to_recovery(self._notify)
+        self.assertEqual(len(self.recoveries), 1)
+        self.assertTrue(self.recoveries[0]["digest"])
+        self.assertEqual(
+            self._suppressed_count(), 0,
+            "a delivered summary must not be repeated on the next recovery",
+        )
+
     def test_touch_updates_fault_checks_to_latest_bad_state(self):
         wan = {"severity": "bad", "code": "wan_down", "title": "WAN down",
                "explain": "outside dead", "hint": "check cable"}

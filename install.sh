@@ -721,6 +721,13 @@ systemctl stop linkmoth >/dev/null 2>&1 || true
 for f in $APP_FILES; do
   cp "$STAGE/$f" "$APP/$f"
 done
+# A source/git install ships no build metadata, so it is not in APP_FILES and
+# nothing above would overwrite it. Left behind, a previous release install's
+# linkmoth-build.json keeps naming that release: VERSION is read straight out
+# of this file, so the dashboard, --doctor, support summaries and the update
+# check would all report a version that is not what is running. The bootstrap
+# always ships one, so this only clears genuinely stale metadata.
+[ -f "$SRC/linkmoth-build.json" ] || rm -f -- "$APP/linkmoth-build.json"
 
 cp "$SRC/linkmoth.service" "$UNIT"
 cp "$SRC/linkmoth-cert-renew.service" "$RENEW_UNIT"

@@ -3178,7 +3178,7 @@ function incidentSummaryHtml(inc) {
     : inc.lifecycle === "false-alarm" ? "False alarm"
     : open ? "Active – diagnosing" : (inc.diagnosis_title || inc.verdict_title || inc.verdict_code || "Closed");
   const ref = inc.ref ? `<span class="inc-ref">${esc(inc.ref)}</span>` : "";
-  return `<summary><span class="inc-summary-title">${ref}${esc(title)}</span><span class="inc-summary-meta"><span class="when">${fmtTs(inc.started)} · </span>${pill}</span></summary>`;
+  return `<summary>${pill}<span class="inc-summary-title">${ref}${esc(title)}</span><span class="inc-summary-meta"><span class="when">${fmtTs(inc.started)}</span></span></summary>`;
 }
 
 let lastReport = null;
@@ -4729,15 +4729,39 @@ $("history-modal").addEventListener("click", (ev) => {
 $("diagnose").addEventListener("click", async () => {
   verifyHighlight = null;
   $("verify-result").classList.add("hidden");
-  $("diagnose").disabled = true;
-  $("diagnose").textContent = "Diagnosing…";
-  await fetch("/api/diagnose", { method: "POST", headers: authHeaders({}) });
-  setTimeout(() => {
-    $("diagnose").disabled = false;
-    $("diagnose").textContent = "Diagnose now";
-    refresh();
-  }, 4000);
+  const btn = $("diagnose");
+  btn.disabled = true;
+  btn.textContent = "Diagnosing…";
+  const ready = () => { btn.disabled = false; btn.textContent = "Diagnose now"; };
+  // The response used to be discarded. The server refuses when a diagnosis is
+  // already running (409) or could not be started (503), so the button showed
+  // "Diagnosing…" for four seconds and then refreshed as though a fresh run
+  // had happened – reporting a diagnosis that never took place. An expired
+  // session (401) was swallowed the same way.
+  let r;
+  try {
+    r = await fetch("/api/diagnose", { method: "POST", headers: authHeaders({}) });
+  } catch (e) {
+    ready();
+    showVerdictNotice("Could not reach Linkmoth to start a diagnosis.");
+    return;
+  }
+  if (r.status === 401) { ready(); await ensureAuth(); return; }
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    ready();
+    showVerdictNotice(body.error || "Could not start a diagnosis.");
+    return;
+  }
+  setTimeout(() => { ready(); refresh(); }, 4000);
 });
+
+function showVerdictNotice(text) {
+  const el = $("verify-result");
+  el.textContent = text;
+  el.className = "verify-result bad";
+  el.classList.remove("hidden");
+}
 
 async function rediagnoseAfterIncidentAction() {
   // After a close / false-alarm the incident is gone server-side, but the last
@@ -5014,7 +5038,18 @@ $("q-load-btn").addEventListener("click", async () => {
   const btn = $("q-load-btn");
   btn.disabled = true;
   btn.textContent = "Testing…";
-  loadTestRunningUntil = Date.now() + 22000;
+  $("q-load").textContent = "Testing under load – takes about 20 seconds…";
+  // The request now blocks until the test actually finishes and answers with
+  // the real outcome, success or failure. The old version returned
+  // {"started": true} immediately and the client just guessed a fixed 22s
+  // before re-reading /api/status – if the test silently failed to gather
+  // enough samples (a transient DNS/network hiccup) nothing new was stored,
+  // and the client redisplayed whatever the *previous* successful test had
+  // left in the database as if it were the one just run: "tested 2 d ago"
+  // right after clicking the button. loadTestRunningUntil is kept only as a
+  // safety margin in case the request hangs without ever resolving, so a
+  // periodic refresh() tick can't clobber "Testing…" mid-request.
+  loadTestRunningUntil = Date.now() + 30000;
   const stopRunning = () => {
     loadTestRunningUntil = 0;
     btn.disabled = false;
@@ -5025,19 +5060,13 @@ $("q-load-btn").addEventListener("click", async () => {
       method: "POST", headers: authHeaders(),
     });
     const body = await r.json().catch(() => ({}));
-    if (r.status === 401) { stopRunning(); await ensureAuth(); return; }
-    if (!r.ok) {
-      stopRunning();
-      $("q-load").textContent = body.error || "Load test could not start.";
+    stopRunning();
+    if (r.status === 401) { await ensureAuth(); return; }
+    if (!r.ok || !body.result) {
+      $("q-load").textContent = body.error || "Load test could not complete.";
       return;
     }
-    $("q-load").textContent = "Testing under load – takes about 20 seconds…";
-    // The test runs server-side; this is just the fast path for updating
-    // the button/result the moment it's likely done instead of waiting for
-    // the next periodic tick. If the tab is backgrounded and this timer
-    // never fires, loadTestRunningUntil above expires on its own regardless
-    // once real time passes, so the next tick that does run still recovers.
-    setTimeout(() => { stopRunning(); refresh(); }, 22000);
+    renderLoadTest(body.result);
   } catch (e) {
     stopRunning();
     $("q-load").textContent = "Load test could not start.";
