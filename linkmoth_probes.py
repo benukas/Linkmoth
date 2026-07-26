@@ -1911,6 +1911,7 @@ _LOADED_SAMPLE_PAUSE = 0.05
 def _measure_loaded_quality(target, stats, deadline):
     """Measure only pings that overlap active download byte progress."""
     active = []
+    lost = 0
     first_at = last_at = None
     # Progress is judged from one probe to the next, not across the few
     # milliseconds a ping is in flight. read() blocks until it has a whole
@@ -1930,6 +1931,13 @@ def _measure_loaded_quality(target, stats, deadline):
                 if first_at is None:
                     first_at = now
                 last_at = now
+            else:
+                # measure_quality returns None when a probe gets no reply.
+                # These were simply discarded, and the result then stated a
+                # clean 0% loss it had never measured. A link that starts
+                # dropping packets once it is busy is exactly what this test
+                # exists to catch, so the misses are counted.
+                lost += 1
             if len(active) >= _LOADED_MIN_SAMPLES:
                 remaining = deadline - time.monotonic()
                 if remaining > 0:
@@ -1953,10 +1961,11 @@ def _measure_loaded_quality(target, stats, deadline):
         (sum((value - average) ** 2 for value in latencies) / len(latencies)) ** 0.5
         if len(latencies) > 1 else 0.0
     )
+    attempted = len(active) + lost
     return {
         "latency_ms": average,
         "jitter_ms": jitter,
-        "loss_pct": 0.0,
+        "loss_pct": round(100.0 * lost / attempted, 1) if attempted else 0.0,
         "target": str(target),
         "active_samples": len(active),
         # How long the link was actually saturated. A grade drawn from a third
@@ -2051,6 +2060,10 @@ def run_load_test(store=True):
         "seconds": round(stats["elapsed"], 1),
         "error": stats["error"],
         "active_samples": int((loaded or {}).get("active_samples") or 0),
+        # Loss measured while the link was actually loaded. Latency inflation
+        # is the headline, but a link that starts dropping packets once it is
+        # busy is the same fault showing itself a different way.
+        "loaded_loss_pct": round(float((loaded or {}).get("loss_pct") or 0.0), 1),
         "load_seconds": round(float(loaded.get("load_seconds") or 0.0), 2),
         # The byte budget, not the clock, ended the transfer well before the
         # window was up, so the link was only loaded briefly. The grade stands,
@@ -2064,13 +2077,14 @@ def run_load_test(store=True):
                 conn.execute(
                     "INSERT INTO load_tests(ts, idle_ms, loaded_ms, bloat_ms,"
                     " grade, throughput_mbps, bytes, seconds, error,"
-                    " load_seconds, budget_limited)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    " load_seconds, budget_limited, loaded_loss_pct)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                     (result["ts"], result["idle_ms"], result["loaded_ms"],
                      result["bloat_ms"], result["grade"],
                      result["throughput_mbps"], result["bytes"],
                      result["seconds"], result["error"],
-                     result["load_seconds"], int(result["budget_limited"])),
+                     result["load_seconds"], int(result["budget_limited"]),
+                     result["loaded_loss_pct"]),
                 )
         except sqlite3.Error as e:
             print(f"load test store failed: {e}", file=sys.stderr, flush=True)

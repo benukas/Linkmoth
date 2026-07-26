@@ -143,6 +143,14 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertNotIn("budget_limited", render)
         self.assertNotIn("Line was loaded for only", dashboard)
 
+    def test_loss_under_load_is_surfaced_when_it_happens(self):
+        """The loaded result used to hardcode zero loss, so a link that
+        dropped packets when busy still read as clean."""
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        render = dashboard.split("function renderLoadTest", 1)[1][:1600]
+        self.assertIn("loaded_loss_pct", render)
+        self.assertIn("got no reply while loaded", render)
+
     def test_network_misconfig_warnings_surface_above_the_verdict(self):
         """The whole value of the check is that a duplicate IP is seen before
         the verdict, so the block must render on Today, ahead of #verdict."""
@@ -445,9 +453,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.6.8-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.6.9-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.8/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.9/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -458,7 +466,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.8"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.9"))
+        self.assertLess(changelog.index("## 0.6.9"), changelog.index("## 0.6.8"))
         self.assertLess(changelog.index("## 0.6.8"), changelog.index("## 0.6.7"))
         self.assertLess(changelog.index("## 0.6.7"), changelog.index("## 0.6.6"))
         self.assertLess(changelog.index("## 0.6.6"), changelog.index("## 0.6.5"))
@@ -480,7 +489,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.6.8", advanced)
+        self.assertIn("VERSION=v0.6.9", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)

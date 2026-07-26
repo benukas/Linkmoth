@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.9
+
+### Fixed
+
+- The load test now reports packet loss it actually measured. The loaded
+  result stated a flat 0%, and a probe that got no reply while the link was
+  busy was discarded rather than counted, so a connection that starts dropping
+  packets under load still read as clean. Latency inflation is the headline
+  symptom, but loss is the same fault showing itself a different way, and
+  stating a figure that was never measured is the one thing this report cannot
+  do. Loss is recorded with each result and shown when there is any.
+
+
 ## 0.6.8
 
 ### Changed
