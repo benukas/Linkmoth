@@ -121,6 +121,25 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("if (!r.ok)", handler)
         self.assertIn("showVerdictNotice", handler)
 
+    def test_an_age_is_never_rendered_as_negative(self):
+        """Ages subtract a server timestamp from the browser's clock, and a
+        Raspberry Pi has no RTC, so a few seconds of skew is ordinary. A load
+        test that had just finished rendered as "tested -1s ago"."""
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        body = dashboard.split("function fmtAge(sec) {", 1)[1][:600]
+        self.assertIn("if (!(sec > 0)) return \"just now\";", body)
+        # The guard has to come before the first branch that would format it.
+        self.assertLess(
+            body.index("if (!(sec > 0))"), body.index("if (sec < 90)"))
+
+    def test_the_brief_load_hint_names_the_setting_to_change(self):
+        """There is no control for the byte budget on the dashboard, so a hint
+        that only says "raise the data budget" cannot be acted on."""
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        hint = dashboard.split("budget_limited && lt.load_seconds", 1)[1][:400]
+        self.assertIn("quality.load_test_max_mb", hint)
+        self.assertIn("/etc/linkmoth/config.json", hint)
+
     def test_network_misconfig_warnings_surface_above_the_verdict(self):
         """The whole value of the check is that a duplicate IP is seen before
         the verdict, so the block must render on Today, ahead of #verdict."""
@@ -423,9 +442,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.6.6-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.6.7-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.6/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.7/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -436,7 +455,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.6"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.7"))
+        self.assertLess(changelog.index("## 0.6.7"), changelog.index("## 0.6.6"))
         self.assertLess(changelog.index("## 0.6.6"), changelog.index("## 0.6.5"))
         self.assertLess(changelog.index("## 0.6.5"), changelog.index("## 0.6.4"))
         self.assertLess(changelog.index("## 0.6.4"), changelog.index("## 0.6.3"))
@@ -456,7 +476,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.6.6", advanced)
+        self.assertIn("VERSION=v0.6.7", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
