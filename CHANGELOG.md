@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.6.10
+
+### Fixed
+
+- Packet loss seen during a load test is now attributed before it is
+  reported. When a probe gets no reply the local gateway is probed once as
+  well: a packet that never reaches your own router cannot be the line's
+  doing, so any loss there points at this host or the LAN rather than the
+  connection. Measured on a Raspberry Pi saturating a 2 Gbps line, a run lost
+  8% of probes to the internet and 4% to its own router while latency did not
+  move at all – the board was starving its own pings, which is exactly what a
+  load test provokes. Reporting that as loss on the line would send someone to
+  their ISP with a fault that is not theirs, and this report is meant to be
+  usable as evidence.
+
+
 ## 0.6.9
 
 ### Fixed
