@@ -1888,6 +1888,11 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
                 return
     finally:
         stats["elapsed"] = max(0.0, time.monotonic() - start)
+        # Say plainly that the transfer is over. The sampler used to infer it
+        # from a few probes seeing no byte growth, which is indistinguishable
+        # from the ordinary gap between chunk arrivals on a slow line and cut
+        # those runs short mid-transfer.
+        stats["done"] = True
 
 
 # Sampling the loaded link is a balance. Pausing between probes stops a long
@@ -1901,21 +1906,25 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
 _LOADED_MIN_SAMPLES = 5
 _LOADED_MAX_SAMPLES = 60
 _LOADED_SAMPLE_PAUSE = 0.05
-_LOADED_IDLE_POLLS = 3
 
 
 def _measure_loaded_quality(target, stats, deadline):
     """Measure only pings that overlap active download byte progress."""
     active = []
     first_at = last_at = None
-    idle_polls = 0
+    # Progress is judged from one probe to the next, not across the few
+    # milliseconds a ping is in flight. read() blocks until it has a whole
+    # chunk, so on a slow line the counter jumps every few hundred
+    # milliseconds: at 1 Mbps a ping-width window contains a jump about one
+    # time in ninety, and a running transfer looked like no transfer at all.
+    before = int(stats.get("bytes") or 0)
     while time.monotonic() < deadline and len(active) < _LOADED_MAX_SAMPLES:
-        before = int(stats.get("bytes") or 0)
         sample = measure_quality([target], count=1)
         after = int(stats.get("bytes") or 0)
         now = time.monotonic()
-        if after > before:
-            idle_polls = 0
+        progressed = after > before
+        before = after
+        if progressed:
             if sample and sample.get("latency_ms") is not None:
                 active.append(sample)
                 if first_at is None:
@@ -1926,11 +1935,11 @@ def _measure_loaded_quality(target, stats, deadline):
                 if remaining > 0:
                     time.sleep(min(_LOADED_SAMPLE_PAUSE, remaining))
             continue
-        # No bytes moved across that probe, so the transfer has finished,
-        # stalled, or never started. Continuing to the deadline would only
-        # average in idle-network latency and understate the bloat.
-        idle_polls += 1
-        if idle_polls >= _LOADED_IDLE_POLLS:
+        # No bytes moved between these two probes. That is only a reason to
+        # stop once the downloader says it has finished: before the first
+        # byte it is still completing its TLS handshake, and mid-transfer on
+        # a slow line it is simply between chunks.
+        if stats.get("done"):
             break
         remaining = deadline - time.monotonic()
         if remaining > 0:
@@ -1994,7 +2003,8 @@ def run_load_test(store=True):
         max_mb = 100
     max_bytes = max(1, min(500, max_mb)) * 1024 * 1024
     deadline = time.monotonic() + seconds
-    stats = {"bytes": 0, "elapsed": 0.0, "error": None, "deadline": deadline}
+    stats = {"bytes": 0, "elapsed": 0.0, "error": None, "deadline": deadline,
+             "done": False}
     stop = threading.Event()
     worker = threading.Thread(
         target=_load_downloader,
