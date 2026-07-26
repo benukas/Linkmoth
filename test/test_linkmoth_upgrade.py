@@ -186,9 +186,17 @@ class LoadTestsColumnMigrationTests(unittest.TestCase):
             [sys.executable, "-c", MIGRATE_LOAD_TESTS, str(BASE.parent)],
             env=env, capture_output=True, text=True, cwd=str(BASE.parent))
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        out = dict(
-            line.split(" ", 1) for line in proc.stdout.strip().splitlines()
-            if " " in line)
+        # Take only the lines this script prints. A stray interpreter notice
+        # on stdout would otherwise turn a passing check into a parse error,
+        # which reads as a flaky test rather than the environment noise it is.
+        out = {}
+        for line in proc.stdout.splitlines():
+            key, _, rest = line.partition(" ")
+            if key in ("COLS", "OLD", "NEW"):
+                out[key] = rest
+        self.assertEqual(
+            sorted(out), ["COLS", "NEW", "OLD"],
+            f"migration script produced unexpected output:\n{proc.stdout}")
         self.assertIn("load_seconds", out["COLS"])
         self.assertIn("budget_limited", out["COLS"])
         # The pre-upgrade row keeps its grade and takes the defaults rather

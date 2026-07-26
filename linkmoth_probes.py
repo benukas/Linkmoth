@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 from linkmoth_core import (
     CFG, DEFAULT_CONFIG, _PinnedHTTPSConnection, _dns_domain,
     _incident_outage_segments, _network_targets, _outage_seconds, db,
-    normalize_local_dns_config, run_cmd,
+    normalize_local_dns_config, record_http, run_cmd,
 )
 
 def default_route():
@@ -1846,6 +1846,12 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
                     parsed.hostname, address, port=parsed.port or 443,
                     timeout=10, context=context,
                 )
+                request_started = time.time()
+                request_from = stats["bytes"]
+
+                def elapsed_ms():
+                    return int((time.time() - request_started) * 1000)
+
                 try:
                     conn.request("GET", path, headers=headers)
                     resp = conn.getresponse()
@@ -1854,6 +1860,9 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
                     # error page or trusting an unvalidated Location.
                     if not 200 <= resp.status < 300:
                         stats["error"] = f"HTTP {resp.status}"
+                        record_http("GET", url, resp.status,
+                                    f"HTTP {resp.status} from {address}",
+                                    request_started, elapsed_ms())
                         return
                     while still_going():
                         chunk = resp.read(min(65536, max_bytes - stats["bytes"]))
@@ -1861,10 +1870,18 @@ def _load_downloader(url, addresses, seconds, max_bytes, stats, stop):
                             break
                         stats["bytes"] += len(chunk)
                     stats["error"] = None
+                    record_http(
+                        "GET", url, 0,
+                        f"HTTP {resp.status} from {address}, "
+                        f"{(stats['bytes'] - request_from) / 1048576:.1f} MB",
+                        request_started, elapsed_ms())
                     completed_request = True
                     break
                 except Exception as exc:
                     stats["error"] = exc.__class__.__name__
+                    record_http("GET", url, -1,
+                                f"{exc.__class__.__name__} from {address}",
+                                request_started, elapsed_ms())
                 finally:
                     conn.close()
             if not completed_request:

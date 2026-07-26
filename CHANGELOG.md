@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.6.5
+
+### Fixed
+
+- The load test no longer fails with "the test server could not be reached
+  (HTTP 403)". Raising the byte budget in 0.6.4 also raised the size asked of
+  the public test endpoint to exactly 100000000 bytes, which it refuses;
+  99000000 is served. The size asked for per request never needed to match the
+  budget, because the transfer already re-requests until the budget or the time
+  limit is reached, so it is now well clear of that edge.
+- The bufferbloat transfer now appears in the debug command log. Every other
+  probe is a subprocess and is recorded through the same path, but this one
+  speaks HTTP directly and so was invisible: a load test that failed left the
+  one place an operator would look completely empty. Each request is recorded
+  with its URL, status, transferred size and duration, under the existing
+  toggle.
+
+
 ## 0.6.4
 
 ### Fixed

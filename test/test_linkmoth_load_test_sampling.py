@@ -279,3 +279,116 @@ class ByteBudgetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DefaultLoadUrlTests(unittest.TestCase):
+    """The shipped test URL has to be one the endpoint will actually serve.
+
+    Raising the byte budget in 0.6.4 also raised the size requested from
+    speed.cloudflare.com to exactly 100000000, which that endpoint refuses
+    with HTTP 403 – measured: 99000000 returns 200, 100000000 returns 403. The
+    load test then failed on every install with "the test server could not be
+    reached (HTTP 403)".
+
+    The per-request size does not need to equal the budget: the downloader
+    already re-requests until the budget or the time limit is reached, so a
+    smaller response simply means more of them.
+    """
+
+    # Below the endpoint's documented refusal point, with room to spare.
+    SAFE_MAX_BYTES = 90_000_000
+
+    def default_url(self):
+        from linkmoth_core import DEFAULT_CONFIG
+        return DEFAULT_CONFIG["quality"]["load_test_url"]
+
+    def test_the_default_request_size_is_one_the_endpoint_serves(self):
+        from urllib.parse import urlparse, parse_qs
+        requested = parse_qs(urlparse(self.default_url()).query).get("bytes")
+        self.assertTrue(requested, "the default URL no longer requests a size")
+        self.assertLessEqual(
+            int(requested[0]), self.SAFE_MAX_BYTES,
+            "the default asks for more than the test server will serve")
+
+    def test_the_default_url_is_still_the_pinned_https_endpoint(self):
+        self.assertTrue(self.default_url().startswith("https://"))
+
+
+class DebugLogVisibilityTests(unittest.TestCase):
+    """A failed load test must leave a trace in the debug command log.
+
+    The log exists so an operator can see what Linkmoth just did. Every other
+    probe is a subprocess and lands there through run_cmd, but the bufferbloat
+    transfer speaks HTTP directly, so a load test that failed with HTTP 403
+    showed nothing whatsoever – the one place someone would look was empty.
+    """
+
+    URL = "https://speed.example.com/file"
+
+    @staticmethod
+    def core_globals():
+        """The namespace record_http actually reads, not one that shares a name.
+
+        Another test module reloads the linkmoth package, so both
+        `import linkmoth_core` and sys.modules can hand back a second,
+        unrelated instance whose CFG and ring buffer nothing reads. Patching
+        that one silently tests nothing, which is how these passed alone and
+        failed in the full suite. The function's own globals cannot be wrong.
+        """
+        return probes.record_http.__globals__
+
+    def drive_downloader(self, status=200, body=b"x" * 4096, raises=None):
+        core = self.core_globals()
+        core["clear_command_log"]()
+        response = mock.MagicMock()
+        response.status = status
+        response.read.side_effect = [body, b""]
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
+        if raises is not None:
+            conn.request.side_effect = raises
+        stats = {"bytes": 0, "elapsed": 0.0, "error": None,
+                 "deadline": probes.time.monotonic() + 5}
+        stop = probes.threading.Event()
+        with mock.patch.dict(core["CFG"], {"debug_command_log": True}), \
+                mock.patch.object(probes, "_PinnedHTTPSConnection",
+                                  return_value=conn):
+            probes._load_downloader(self.URL, ["104.16.0.1"], 5,
+                                    8 * 1024 * 1024, stats, stop)
+        return core["command_log"]()["entries"], stats
+
+    def test_a_refused_request_is_recorded_with_its_status(self):
+        entries, stats = self.drive_downloader(status=403)
+        self.assertEqual(stats["error"], "HTTP 403")
+        self.assertTrue(entries, "the refusal left no trace in the debug log")
+        joined = " ".join(e["command"] + " " + e["output"] for e in entries)
+        self.assertIn("403", joined)
+        self.assertIn(self.URL, joined)
+
+    def test_a_successful_transfer_is_recorded_with_its_size(self):
+        entries, _ = self.drive_downloader(status=200)
+        self.assertTrue(entries)
+        self.assertIn("MB", " ".join(e["output"] for e in entries))
+
+    def test_a_transport_failure_is_recorded(self):
+        entries, stats = self.drive_downloader(raises=OSError("boom"))
+        self.assertEqual(stats["error"], "OSError")
+        self.assertIn("OSError", " ".join(e["output"] for e in entries))
+
+    def test_nothing_is_recorded_while_the_toggle_is_off(self):
+        """The log is opt-in and must stay silent otherwise."""
+        core = self.core_globals()
+        core["clear_command_log"]()
+        response = mock.MagicMock()
+        response.status = 403
+        conn = mock.MagicMock()
+        conn.getresponse.return_value = response
+        stats = {"bytes": 0, "elapsed": 0.0, "error": None,
+                 "deadline": probes.time.monotonic() + 5}
+        with mock.patch.dict(core["CFG"], {"debug_command_log": False}), \
+                mock.patch.object(probes, "_PinnedHTTPSConnection",
+                                  return_value=conn):
+            probes._load_downloader(self.URL, ["104.16.0.1"], 5,
+                                    8 * 1024 * 1024, stats,
+                                    probes.threading.Event())
+        self.assertEqual(core["command_log"]()["entries"], [])

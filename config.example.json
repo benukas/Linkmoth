@@ -51,7 +51,7 @@
     "jitter_bad_ms": 60,
     "loss_warn_pct": 2,
     "loss_bad_pct": 10,
-    "load_test_url": "https://speed.cloudflare.com/__down?bytes=100000000",
+    "load_test_url": "https://speed.cloudflare.com/__down?bytes=50000000",
     "load_test_hours": 0,
     "load_test_seconds": 10,
     "load_test_max_mb": 25
