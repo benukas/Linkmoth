@@ -2574,17 +2574,8 @@ function renderLoadTest(lt) {
     loadResults.classList.remove("hidden");
     $("q-load-grade").textContent = lt.grade;
     $("q-load-bloat").textContent = `+${Math.round(lt.bloat_ms)} ms`;
-    // A grade measured while the line was only briefly saturated is real but
-    // thinner evidence than one from a full run, so say which it was rather
-    // than presenting both the same way.
-    // Naming the setting and the file matters: there is no control for this
-    // on the dashboard, so "raise the data budget" on its own leaves the
-    // reader with advice they cannot act on.
-    const brief = lt.budget_limited && lt.load_seconds
-      ? ` Line was loaded for only ${Number(lt.load_seconds).toFixed(1)} s – raise quality.load_test_max_mb in /etc/linkmoth/config.json to load it for longer.`
-      : "";
     $("q-load").textContent =
-      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.${brief}`;
+      `Latency ${Math.round(lt.idle_ms)} → ${Math.round(lt.loaded_ms)} ms under load${age ? ` · tested ${age}` : ""}.`;
   } else {
     loadResults.classList.add("hidden");
     $("q-load").textContent = "Bufferbloat not tested yet – a load test grades how latency holds up while the line is busy.";
