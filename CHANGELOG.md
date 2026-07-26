@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.6.4
+
+### Fixed
+
+- The latency-under-load test now works on a fast connection. The transfer is
+  bounded by a total byte budget, and the sampling loop paused a fixed 0.3 s
+  between pings, so on a quick line the budget was spent before a second ping
+  could overlap it and the run was rejected for having too little evidence.
+  Above roughly 400 Mbps the test could never produce a result at all: a real
+  650 Mbps link spent the 25 MB budget in 0.31 s. Sampling now probes back to
+  back until it has enough evidence and stops once the transfer is over, and
+  the default budget is large enough to keep a gigabit line loaded. A slow
+  line is unaffected, reaching the time limit long before the budget.
+- A load test that cannot run now says which part failed – no targets
+  configured, idle latency unmeasurable, the test server unreachable and why,
+  the transfer never starting, or the transfer ending too quickly to sample,
+  naming the setting to raise. Those cases previously shared one generic
+  "check connectivity" message and wrote nothing to the journal, so a failure
+  was reported honestly and left undiagnosable.
+- A result measured while the line was only briefly saturated is now recorded
+  and shown as such, instead of being presented like one from a full run.
+- The installer's closing summary printed `â` instead of a dash.
+  The escape sat in a printf argument rather than its format string, so it was
+  never expanded and every install showed it.
+
+
 ## 0.6.3
 
 ### Fixed

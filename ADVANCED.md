@@ -14,7 +14,7 @@ The normal quick-start path needs no Cosign. It downloads the bootstrap source
 directly from the exact protected Linkmoth version tag and refuses redirects:
 
 ```bash
-VERSION=v0.6.3; NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME"
+VERSION=v0.6.4; NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME"
 ```
 
 The tagged bootstrap derives `$VERSION` only from the strict local filename.
@@ -40,7 +40,7 @@ download the same pinned bootstrap and its bundle, verify the bootstrap before
 using `sudo`, and explicitly select `--sigstore-verified`:
 
 ```bash
-VERSION=v0.6.3
+VERSION=v0.6.4
 BASE="https://github.com/benukas/Linkmoth/releases/download/$VERSION"
 download_linkmoth_asset() {
   local name="$1" source="$BASE/$1" target
@@ -292,7 +292,7 @@ script (the quick-start path), the installer isn't left on the host, so
 re-run the versioned bootstrap – it forwards the flag through:
 
 ```bash
-VERSION=v0.6.3   # use your installed version (shown in the dashboard footer)
+VERSION=v0.6.4   # use your installed version (shown in the dashboard footer)
 NAME="linkmoth-$VERSION-bootstrap.sh"; curl -fsSLo "$NAME" --proto '=https' --noproxy '*' --max-redirs 0 "https://raw.githubusercontent.com/benukas/Linkmoth/$VERSION/bootstrap.sh" && sudo bash "$NAME" --with-push
 ```
 
@@ -422,7 +422,7 @@ into one **Generic JSON** webhook subscribed to the events it used to receive.
 | `quiet_hours_end` | `07:00` | Quiet-hours end and morning-digest time in 24-hour Linkmoth host local time |
 | `quality.load_test_url` | Cloudflare speed endpoint | Public HTTPS URL downloaded during a bufferbloat test; must resolve to public addresses |
 | `quality.load_test_hours` | `0` | Scheduled bufferbloat test interval in hours (`0` = manual button only – scheduled runs consume real data) |
-| `quality.load_test_seconds`, `quality.load_test_max_mb` | `10`, `25` | Bounds on one bufferbloat test; the transfer stops at whichever is hit first |
+| `quality.load_test_seconds`, `quality.load_test_max_mb` | `10`, `100` | Bounds on one bufferbloat test; the transfer stops at whichever is hit first |
 | `notify_webhook_url` | `""` | Legacy single-webhook URL – migrated once into Settings → Outbound webhooks, then unused |
 | `notify_webhook_enabled` | `false` | Legacy flag for the above (kept so old configs stay valid) |
 
