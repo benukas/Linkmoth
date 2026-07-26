@@ -50,7 +50,7 @@ class FakeClock:
 
 class LoadedSamplingTests(unittest.TestCase):
     def sample_loaded(self, transfer_seconds, window=10.0, starts_at=0.0,
-                      lose_every=0):
+                      lose_every=0, gateway=None, gateway_replies=True):
         """Run the real loop against a transfer that stops after N seconds.
 
         `starts_at` models the gap before the first byte arrives: the
@@ -73,6 +73,12 @@ class LoadedSamplingTests(unittest.TestCase):
                 # The downloader thread sets this in its finally block once
                 # the transfer is genuinely over.
                 stats["done"] = True
+            if gateway is not None and list(targets) == [gateway]:
+                # The follow-up probe to the local gateway.
+                return {
+                    "latency_ms": 0.4, "jitter_ms": 0.1, "loss_pct": 0.0,
+                    "target": gateway,
+                } if gateway_replies else None
             probes_sent["n"] += 1
             if lose_every and probes_sent["n"] % lose_every == 0:
                 # measure_quality returns None when the ping gets no reply.
@@ -84,7 +90,8 @@ class LoadedSamplingTests(unittest.TestCase):
 
         with mock.patch.object(probes, "time", clock), \
                 mock.patch.object(probes, "measure_quality", fake_measure):
-            result = probes._measure_loaded_quality("1.1.1.1", stats, window)
+            result = probes._measure_loaded_quality(
+                "1.1.1.1", stats, window, local_target=gateway)
         return result, clock, stats
 
     def test_a_fast_line_that_spends_its_budget_quickly_still_measures(self):
@@ -156,6 +163,43 @@ class LoadedSamplingTests(unittest.TestCase):
             "packets were lost under load and the result claimed none")
         # One in four probes got no reply.
         self.assertAlmostEqual(result["loss_pct"], 25.0, delta=6.0)
+
+    def test_loss_that_also_hits_the_local_gateway_is_recorded_as_such(self):
+        """A packet to your own router never reaches the ISP, so losing one
+        cannot be the line's doing. Measured on real hardware: a load test
+        saturating a Pi lost 8% to the internet and 4% to the router on the
+        same run, while latency did not move at all. Reporting that as loss
+        under load invites exactly the wrong conclusion."""
+        result, _, _ = self.sample_loaded(
+            transfer_seconds=3.0, lose_every=4,
+            gateway="192.168.1.1", gateway_replies=False)
+        self.assertGreater(result["loss_pct"], 0.0)
+        self.assertGreater(
+            result["local_loss_pct"], 0.0,
+            "the gateway was unreachable too and the result did not say so")
+
+    def test_loss_that_spares_the_local_gateway_is_recorded_as_such(self):
+        """The gateway answers throughout, so the loss is beyond it."""
+        result, _, _ = self.sample_loaded(
+            transfer_seconds=3.0, lose_every=4,
+            gateway="192.168.1.1", gateway_replies=True)
+        self.assertGreater(result["loss_pct"], 0.0)
+        self.assertEqual(result["local_loss_pct"], 0.0)
+
+    def test_a_clean_run_never_probes_the_gateway(self):
+        """The follow-up probe exists to attribute a loss. With nothing lost
+        there is nothing to attribute, and spending probes during a
+        measurement is not free."""
+        result, _, _ = self.sample_loaded(
+            transfer_seconds=3.0, gateway="192.168.1.1",
+            gateway_replies=False)
+        self.assertEqual(result["loss_pct"], 0.0)
+        self.assertEqual(result["local_loss_pct"], 0.0)
+
+    def test_no_known_gateway_leaves_the_loss_unattributed(self):
+        result, _, _ = self.sample_loaded(transfer_seconds=3.0, lose_every=4)
+        self.assertGreater(result["loss_pct"], 0.0)
+        self.assertEqual(result["local_loss_pct"], 0.0)
 
     def test_a_clean_run_reports_no_loss(self):
         result, _, _ = self.sample_loaded(transfer_seconds=3.0)
@@ -636,3 +680,55 @@ class DownloaderCompletionTests(unittest.TestCase):
         stats = self.drive(raises=OSError("boom"))
         self.assertTrue(stats["done"])
         self.assertEqual(stats["error"], "OSError")
+
+
+class GatewayWiringTests(unittest.TestCase):
+    """The attribution is only worth anything if the gateway reaches it.
+
+    The sampling tests call _measure_loaded_quality directly and pass a
+    gateway themselves, so they cannot notice run_load_test failing to look
+    one up or forgetting to hand it over. A mutation that dropped the argument
+    left every one of them green.
+    """
+
+    URL = "https://speed.example.com/file"
+
+    def run_with(self, route):
+        seen = {}
+
+        def capture(target, stats, deadline, local_target=None):
+            seen["local_target"] = local_target
+            return {"latency_ms": 9.0, "jitter_ms": 1.0, "loss_pct": 0.0,
+                    "local_loss_pct": 0.0, "target": target,
+                    "active_samples": 6, "load_seconds": 2.0}
+
+        def fake_downloader(url, addresses, seconds, max_bytes, stats, stop):
+            stats.update({"bytes": 1024, "elapsed": 1.0, "error": None,
+                          "done": True})
+
+        cfg = {"targets": ["1.1.1.1"], "load_test_url": self.URL,
+               "load_test_seconds": 10, "load_test_max_mb": 100}
+        with mock.patch.object(probes, "quality_config", return_value=cfg), \
+                mock.patch.object(probes, "default_route", return_value=route), \
+                mock.patch.object(probes, "measure_quality",
+                                  return_value={"latency_ms": 8.0,
+                                                "jitter_ms": 1.0,
+                                                "loss_pct": 0.0,
+                                                "target": "1.1.1.1"}), \
+                mock.patch.object(probes, "_measure_loaded_quality", capture), \
+                mock.patch.object(probes, "_load_downloader",
+                                  side_effect=fake_downloader), \
+                mock.patch.object(probes, "_resolve_load_target",
+                                  return_value=(probes.urlparse(self.URL),
+                                                ["104.16.0.1"])), \
+                mock.patch.object(probes.time, "sleep"):
+            probes.run_load_test(store=False)
+        return seen.get("local_target")
+
+    def test_the_default_gateway_is_handed_to_the_sampler(self):
+        self.assertEqual(self.run_with(("192.168.1.1", "eth0")), "192.168.1.1")
+
+    def test_no_default_route_is_handled(self):
+        """A host with no default route has nothing to attribute against, and
+        that must not break the run."""
+        self.assertIsNone(self.run_with((None, None)))

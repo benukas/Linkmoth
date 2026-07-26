@@ -138,7 +138,7 @@ class PublicReleaseTests(unittest.TestCase):
         its own observation window twice and told the reader nothing they
         could act on, so it is gone."""
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
-        render = dashboard.split("function renderLoadTest", 1)[1][:1200]
+        render = dashboard.split("function renderLoadTest", 1)[1][:2600]
         self.assertIn("ms under load", render)
         self.assertNotIn("budget_limited", render)
         self.assertNotIn("Line was loaded for only", dashboard)
@@ -149,7 +149,18 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         render = dashboard.split("function renderLoadTest", 1)[1][:1600]
         self.assertIn("loaded_loss_pct", render)
-        self.assertIn("got no reply while loaded", render)
+        self.assertIn("got no reply", render)
+
+    def test_loss_is_attributed_before_it_is_blamed_on_the_line(self):
+        """Measured on real hardware: a load test saturating a Pi lost 8% to
+        the internet and 4% to its own router on the same run, with latency
+        flat. A packet that never reaches the router cannot be the ISP's
+        doing, and a report used as evidence must not imply that it is."""
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        render = dashboard.split("function renderLoadTest", 1)[1][:2000]
+        self.assertIn("loaded_local_loss_pct", render)
+        self.assertIn("could not reach its own router", render)
+        self.assertIn("not the line", render)
 
     def test_network_misconfig_warnings_surface_above_the_verdict(self):
         """The whole value of the check is that a duplicate IP is seen before
@@ -453,9 +464,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.6.9-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.6.10-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.9/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.10/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -466,30 +477,31 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.9"))
-        self.assertLess(changelog.index("## 0.6.9"), changelog.index("## 0.6.8"))
-        self.assertLess(changelog.index("## 0.6.8"), changelog.index("## 0.6.7"))
-        self.assertLess(changelog.index("## 0.6.7"), changelog.index("## 0.6.6"))
-        self.assertLess(changelog.index("## 0.6.6"), changelog.index("## 0.6.5"))
-        self.assertLess(changelog.index("## 0.6.5"), changelog.index("## 0.6.4"))
-        self.assertLess(changelog.index("## 0.6.4"), changelog.index("## 0.6.3"))
-        self.assertLess(changelog.index("## 0.6.3"), changelog.index("## 0.6.2"))
-        self.assertLess(changelog.index("## 0.6.2"), changelog.index("## 0.6.1"))
-        self.assertLess(changelog.index("## 0.6.1"), changelog.index("## 0.6.0"))
-        self.assertLess(changelog.index("## 0.6.0"), changelog.index("## 0.5.0"))
-        self.assertLess(changelog.index("## 0.5.0"), changelog.index("## 0.4.12"))
-        self.assertLess(changelog.index("## 0.4.12"), changelog.index("## 0.4.11"))
-        self.assertLess(changelog.index("## 0.4.11"), changelog.index("## 0.4.10"))
-        self.assertLess(changelog.index("## 0.4.10"), changelog.index("## 0.4.9"))
-        self.assertLess(changelog.index("## 0.4.9"), changelog.index("## 0.4.8"))
-        self.assertLess(changelog.index("## 0.4.8"), changelog.index("## 0.4.7"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.10\n"))
+        self.assertLess(changelog.index("## 0.6.10\n"), changelog.index("## 0.6.9\n"))
+        self.assertLess(changelog.index("## 0.6.9\n"), changelog.index("## 0.6.8\n"))
+        self.assertLess(changelog.index("## 0.6.8\n"), changelog.index("## 0.6.7\n"))
+        self.assertLess(changelog.index("## 0.6.7\n"), changelog.index("## 0.6.6\n"))
+        self.assertLess(changelog.index("## 0.6.6\n"), changelog.index("## 0.6.5\n"))
+        self.assertLess(changelog.index("## 0.6.5\n"), changelog.index("## 0.6.4\n"))
+        self.assertLess(changelog.index("## 0.6.4\n"), changelog.index("## 0.6.3\n"))
+        self.assertLess(changelog.index("## 0.6.3\n"), changelog.index("## 0.6.2\n"))
+        self.assertLess(changelog.index("## 0.6.2\n"), changelog.index("## 0.6.1\n"))
+        self.assertLess(changelog.index("## 0.6.1\n"), changelog.index("## 0.6.0\n"))
+        self.assertLess(changelog.index("## 0.6.0\n"), changelog.index("## 0.5.0\n"))
+        self.assertLess(changelog.index("## 0.5.0\n"), changelog.index("## 0.4.12\n"))
+        self.assertLess(changelog.index("## 0.4.12\n"), changelog.index("## 0.4.11\n"))
+        self.assertLess(changelog.index("## 0.4.11\n"), changelog.index("## 0.4.10\n"))
+        self.assertLess(changelog.index("## 0.4.10\n"), changelog.index("## 0.4.9\n"))
+        self.assertLess(changelog.index("## 0.4.9\n"), changelog.index("## 0.4.8\n"))
+        self.assertLess(changelog.index("## 0.4.8\n"), changelog.index("## 0.4.7\n"))
         self.assertIn('"checksum-verified": "Checksum-verified release"', dashboard)
         self.assertIn("Optional Sigstore-verified command", dashboard)
         self.assertIn("data.sigstore_update_command", dashboard)
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.6.9", advanced)
+        self.assertIn("VERSION=v0.6.10", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
