@@ -77,8 +77,16 @@ class KumaProxyLogicTests(unittest.TestCase):
                 linkmoth.db, 0, "Plex: down", {"code": "wan_down"},
                 payload, "test",
             )
-            lines = proxy.flush_suppression_digest(linkmoth.db, recovery_ts=time.time())
+            # Building the digest must leave the records in place: they are
+            # only cleared once the summary has actually been delivered.
+            lines, ids = proxy.pending_suppression_digest(
+                linkmoth.db, recovery_ts=time.time())
             self.assertEqual(len(lines), 1)
+            self.assertEqual(len(ids), 1)
+            with linkmoth.db() as conn:
+                n = conn.execute("SELECT COUNT(*) AS c FROM suppressed_alerts").fetchone()["c"]
+            self.assertEqual(n, 1, "records were cleared before delivery")
+            proxy.clear_suppressed_alerts(linkmoth.db, ids)
             with linkmoth.db() as conn:
                 n = conn.execute("SELECT COUNT(*) AS c FROM suppressed_alerts").fetchone()["c"]
             self.assertEqual(n, 0)

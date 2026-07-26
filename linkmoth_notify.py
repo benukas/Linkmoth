@@ -169,11 +169,6 @@ def flush_quiet_hours_digest(
             ).fetchall()
             if not rows:
                 return False
-            ids = [int(row["id"]) for row in rows]
-            conn.executemany(
-                "DELETE FROM quiet_hour_events WHERE id=?",
-                [(item_id,) for item_id in ids],
-            )
     except sqlite3.Error as exc:
         print(f"quiet-hours digest error: {exc}", flush=True)
         return False
@@ -182,20 +177,45 @@ def flush_quiet_hours_digest(
     count = len(rows)
     send_discord = any(bool(row["send_discord"]) for row in rows)
     send_push = any(bool(row["send_push"]) for row in rows)
-    if send_discord:
-        from linkmoth_discord import send_quiet_hours_digest_alert
-        send_quiet_hours_digest_alert(lines, count, cfg)
-    if send_push and cfg.get("push_notifications_enabled", True):
-        from linkmoth_push import send_push_async
-        preview = "; ".join(line[2:] for line in lines[:3])
-        body = f"{count} alert(s) arrived overnight."
-        if preview:
-            body += f" {preview}"
-        send_push_async(
-            state_dir, db_connect, cfg,
-            "Quiet-hours summary", body,
-            tag="linkmoth-quiet-hours",
+    # Dispatch before clearing. These events were cleared first, so a
+    # transient failure at the moment of the morning flush discarded the whole
+    # overnight digest permanently. Keeping them until the summary has gone
+    # out means the next scheduler pass retries instead.
+    try:
+        if send_discord:
+            from linkmoth_discord import send_quiet_hours_digest_alert
+            send_quiet_hours_digest_alert(lines, count, cfg)
+        if send_push and cfg.get("push_notifications_enabled", True):
+            from linkmoth_push import send_push_async
+            preview = "; ".join(line[2:] for line in lines[:3])
+            body = f"{count} alert(s) arrived overnight."
+            if preview:
+                body += f" {preview}"
+            send_push_async(
+                state_dir, db_connect, cfg,
+                "Quiet-hours summary", body,
+                tag="linkmoth-quiet-hours",
+            )
+    except Exception as exc:
+        print(
+            f"quiet-hours digest send failed, keeping {count} event(s)"
+            f" to retry: {exc.__class__.__name__}",
+            flush=True,
         )
+        return False
+
+    # Delete exactly the rows that were summarised, by id: anything deferred
+    # while the summary was being sent belongs to the next digest. A failure
+    # here re-sends rather than loses, which is the right way round.
+    try:
+        with db_connect() as conn:
+            conn.executemany(
+                "DELETE FROM quiet_hour_events WHERE id=?",
+                [(int(row["id"]),) for row in rows],
+            )
+    except sqlite3.Error as exc:
+        print(f"quiet-hours digest cleanup error: {exc}", flush=True)
+        return False
     return True
 
 

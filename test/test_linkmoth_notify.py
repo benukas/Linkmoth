@@ -94,6 +94,45 @@ class QuietHoursTests(unittest.TestCase):
             0,
         )
 
+    def test_a_failed_send_keeps_the_digest_for_the_next_attempt(self):
+        """The held events were cleared before the summary was actually sent,
+        so a transient failure at the moment of the morning flush lost the
+        whole overnight digest permanently. They must survive to be retried."""
+        self.assertTrue(linkmoth_notify.defer_notification_if_quiet(
+            self.cfg, self.db, "Printer is down", push=True, now=local_stamp(23),
+        ))
+        with mock.patch(
+            "linkmoth_push.send_push_async", side_effect=RuntimeError("push down"),
+        ):
+            linkmoth_notify.flush_quiet_hours_digest(
+                self.cfg, Path(self.tmp), self.db, local_stamp(8),
+            )
+        self.assertEqual(
+            linkmoth_notify.quiet_hours_status(self.cfg, self.db)["pending"], 1,
+            "the overnight digest was discarded when its send failed",
+        )
+
+    def test_a_retried_digest_is_delivered_and_then_cleared(self):
+        """After a failed attempt the next flush must actually deliver it,
+        and only then clear the held events."""
+        self.assertTrue(linkmoth_notify.defer_notification_if_quiet(
+            self.cfg, self.db, "Printer is down", push=True, now=local_stamp(23),
+        ))
+        with mock.patch(
+            "linkmoth_push.send_push_async", side_effect=RuntimeError("push down"),
+        ):
+            linkmoth_notify.flush_quiet_hours_digest(
+                self.cfg, Path(self.tmp), self.db, local_stamp(8),
+            )
+        with mock.patch("linkmoth_push.send_push_async") as push:
+            self.assertTrue(linkmoth_notify.flush_quiet_hours_digest(
+                self.cfg, Path(self.tmp), self.db, local_stamp(8),
+            ))
+        push.assert_called_once()
+        self.assertEqual(
+            linkmoth_notify.quiet_hours_status(self.cfg, self.db)["pending"], 0,
+        )
+
     def test_global_outage_keeps_morning_digest_queued(self):
         self.assertTrue(linkmoth_notify.defer_notification_if_quiet(
             self.cfg, self.db, "WAN down", push=True, now=local_stamp(23),

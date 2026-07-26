@@ -1429,17 +1429,30 @@ class Handler(BaseHTTPRequestHandler):
             if not _LOAD_TEST_LOCK.acquire(blocking=False):
                 self._send(409, {"error": "a load test is already running"})
                 return
-
-            def run_and_release():
-                try:
-                    run_load_test()
-                except Exception as exc:
-                    print(f"load test failed: {exc}", file=sys.stderr, flush=True)
-                finally:
-                    _LOAD_TEST_LOCK.release()
-
-            threading.Thread(target=run_and_release, daemon=True).start()
-            self._send(200, {"started": True})
+            # Deliberately synchronous: the previous fire-and-forget version
+            # returned {"started": true} immediately and the client guessed a
+            # fixed 22s before re-reading /api/status. If run_load_test()
+            # failed to gather enough samples (a transient DNS/network hiccup)
+            # it stored nothing, and the client silently redisplayed whatever
+            # the *previous* successful test had left in the database as if
+            # it were the one just requested – "tested 2 d ago" right after
+            # clicking the button. Blocking this one request (capped at 20s,
+            # and only one load test can run at a time via the lock above)
+            # lets the response carry the real outcome, success or failure.
+            try:
+                result = run_load_test()
+            except Exception as exc:
+                print(f"load test failed: {exc}", file=sys.stderr, flush=True)
+                result = None
+            finally:
+                _LOAD_TEST_LOCK.release()
+            if result is None:
+                self._send(502, {
+                    "error": "load test could not complete – check connectivity"
+                             " to the test server and try again",
+                })
+                return
+            self._send(200, {"result": result})
         elif path == "/api/update/check":
             try:
                 result = manual_update_check()

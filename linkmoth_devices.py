@@ -753,6 +753,19 @@ class DeviceManager:
     def process_due(self, now=None):
         now = time.time() if now is None else float(now)
         with self.db_connect() as conn:
+            # next_run is stored wall-clock. A backward clock step (NTP
+            # correcting a Pi that booted without a working RTC) leaves every
+            # device scheduled past the new now, so none are due and device
+            # monitoring silently stops until wall time catches up. A next_run
+            # further out than the device's own interval cannot be legitimate,
+            # so rebase it rather than stall. Rebasing rather than firing
+            # immediately avoids a spurious probe for a check that just ran.
+            conn.execute(
+                "UPDATE devices SET next_run=? + interval_seconds"
+                " WHERE enabled=1 AND interval_seconds>0"
+                " AND next_run IS NOT NULL AND next_run > ? + interval_seconds",
+                (now, now),
+            )
             rows = conn.execute(
                 """
                 SELECT id, interval_seconds FROM devices
