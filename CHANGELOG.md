@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+## 0.6.3
+
+### Fixed
+
+- An incident open while the host clock was corrected is no longer mishandled.
+  The recheck loop scheduled itself on wall-clock time, so an NTP step (a
+  Raspberry Pi has no RTC and can boot with a badly wrong clock) either ended
+  the incident immediately as though its maximum duration had elapsed, leaving
+  a still-faulting network unchecked and closing without the two consecutive
+  all-clears that mean recovery, or, for a backward step, delayed the next
+  recheck by the size of the jump. Elapsed time and scheduling now use the
+  monotonic clock; recorded timestamps are unchanged.
+- The summary of alerts suppressed during a global outage is no longer lost
+  when its delivery fails. Suppressing per-service alerts and summarising them
+  once on recovery is the point of the monitor integration, and the records
+  were cleared before that summary was sent, so a transient failure destroyed
+  the only account of which services were affected. They are now cleared only
+  after delivery.
+- "Diagnose now" no longer reports a diagnosis that never ran. The button
+  discarded the server's response, so a refusal – one already running, or one
+  that could not start – still showed "Diagnosing…" and then refreshed as
+  though it had happened. It now shows the reason, and an expired session
+  prompts a sign-in instead of being swallowed.
+- The overnight quiet-hours summary is no longer lost when its delivery fails.
+  The held alerts were cleared before the summary was actually sent, so a
+  transient failure at the moment of the morning flush discarded the whole
+  night permanently. They are now cleared only once the summary has gone out,
+  and retried on the next pass otherwise.
+- An incident whose recorded duration was inflated by a host clock correction
+  now says so in the log. The span cannot be repaired, because its start was
+  measured against a clock that no longer exists, so rewriting either end
+  would store an instant the host never observed. Linkmoth's output is meant
+  to be evidence, so an impossible duration is reported as unreliable rather
+  than presented as a measurement.
+- Installing from a source checkout over a previous release install no longer
+  keeps reporting that release's version. Build metadata is only copied when
+  the source tree ships it, so the old file survived and `VERSION` is read
+  straight out of it: the dashboard, `--doctor`, support summaries and the
+  update check all named a release that was not what was running. A source
+  install now clears it and reports `development`.
+- Scheduled device checks no longer stop after the host clock is corrected
+  backwards. Each device's next check is a stored wall-clock time, so a
+  backward step left every device scheduled beyond the new now and silently
+  unchecked until wall time caught up. A check scheduled further out than its
+  own interval is now rebased instead of stalling.
+- A bufferbloat test that could not complete now reports that explicitly
+  instead of leaving the previous result on screen as though it were the one
+  just requested. The dashboard no longer assumes a fixed 20 seconds and then
+  re-reads whatever is stored; the request returns the real outcome.
+
 ## 0.6.2
 
 ### Added
