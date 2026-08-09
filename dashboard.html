@@ -1681,6 +1681,23 @@ function countPhrase(count, singular, plural) {
   return `${count} ${count === 1 ? singular : (plural || singular + "s")}`;
 }
 
+/* What the uptime percentage was measured over.
+   This read "720.0 h monitored" on any install older than a month, which is
+   the reporting window rather than a running total, so it looked like a
+   counter that had jammed. It is capped on purpose: the downtime above it is
+   clipped to the same window, and dividing by anything longer would report an
+   uptime the connection never had. Once the server says it is at the cap,
+   naming the window is clearer than printing a figure that cannot move. */
+function uptimeBasis(st) {
+  const s = st.monitoring_interval_s;
+  if (!s) return "no recorded interval";
+  if (st.monitoring_capped) return "over the last 30 days";
+  // fmtDur tops out at hours, so a young install read "240.0 h of records"
+  // where "10 d" is the same fact in a form people can picture.
+  const span = s >= 172800 ? Math.round(s / 86400) + " d" : fmtDur(s);
+  return "over " + span + " of records";
+}
+
 function spark(svgId, hist, key, color, label, detailId) {
   const svg = $(svgId);
   const detail = $(detailId);
@@ -3000,7 +3017,7 @@ async function refresh() {
     const blameEntries = Object.entries(st.blame || {});
     const top = blameEntries.sort((a, b) => b[1] - a[1])[0];
     $("stats").innerHTML = `
-      <div class="stat"><div class="k">Uptime, recorded interval</div><div class="v">${st.uptime_pct === null ? "–" : st.uptime_pct + "%"}</div><small>${st.monitoring_interval_s ? fmtDur(st.monitoring_interval_s) + " monitored" : "no recorded interval"}</small></div>
+      <div class="stat"><div class="k">Uptime</div><div class="v">${st.uptime_pct === null ? "–" : st.uptime_pct + "%"}</div><small>${uptimeBasis(st)}</small></div>
       <div class="stat"><div class="k">Incidents</div><div class="v">${st.incidents_30d}</div><small>${st.false_alarms_30d} false alarm${st.false_alarms_30d === 1 ? "" : "s"}</small></div>
       <div class="stat"><div class="k">Downtime</div><div class="v">${st.downtime_s ? fmtDur(st.downtime_s) : "0"}</div><small>last 30 days</small></div>
       <div class="stat"><div class="k">Top offender</div><div class="v v-compact" title="${top ? esc(BLAME_NAMES[top[0]] || top[0]) : ""}">${top ? esc(BLAME_NAMES[top[0]] || top[0]) : "–"}</div></div>`;
