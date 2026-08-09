@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.6.11
+
+### Fixed
+
+- The uptime figure no longer reads as a counter that has stopped. Any
+  installation older than a month reported "720.0 h monitored" and kept
+  reporting it, because that is the width of the thirty day reporting window
+  rather than a running total. The cap itself is deliberate and stays: the
+  downtime the percentage is built from is clipped to the same window, and
+  dividing it by a longer history would state an uptime the connection never
+  had. What was wrong was the wording, which described a window as though it
+  were an odometer. The figure now names the window it covers, and a younger
+  installation says how much history it actually has, since a percentage drawn
+  from nine days rests on less evidence than one drawn from thirty.
+
+
 ## 0.6.10
 
 ### Fixed

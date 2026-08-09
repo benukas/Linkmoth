@@ -787,7 +787,8 @@ class Engine:
 
     def stats(self):
         now = time.time()
-        cutoff = now - 30 * 86400
+        window = 30 * 86400
+        cutoff = now - window
         with db() as conn:
             first_run = conn.execute("SELECT MIN(ts) AS t FROM runs").fetchone()["t"]
             # Any incident overlapping the window counts – including ones
@@ -829,6 +830,14 @@ class Engine:
             "false_alarms_30d": false_alarms,
             "downtime_s": round(downtime),
             "monitoring_interval_s": round(period),
+            # Downtime above is clipped to the window, so the divisor has to
+            # be the window too: dividing a month of downtime by a year of
+            # history would report an uptime this connection never had. The
+            # consequence is that the interval stops growing once an install
+            # is older than the window, and a figure that never moves again
+            # looks broken unless it says why. Stating the cap here keeps the
+            # dashboard from having to recognise a magic number.
+            "monitoring_capped": bool(first_run and float(first_run) <= cutoff),
             "uptime_pct": (
                 round(max(0.0, 100.0 * (1 - downtime / period)), 2)
                 if period > 0 else None
