@@ -133,10 +133,6 @@ secret; reprint it with `sudo -u linkmoth python3 /opt/linkmoth/linkmoth.py
 --auth-show-webhook`). If the installer printed `127.0.0.1`, only software on
 the Linkmoth host itself can reach it.
 
-The richer integration – including a dedicated Uptime Kuma endpoint that
-understands its native payload and forwards clean alerts to Discord – is in
-[ADVANCED.md](ADVANCED.md#connecting-a-monitor-uptime-kuma-or-anything-else).
-
 ## What makes it different
 
 Most tools answer "is it down?" Your ISP's app answers "have you tried
