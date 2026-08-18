@@ -480,7 +480,7 @@ never fingerprints or probes a remote resolver beyond the configured DNS
 query. Legacy `"local_dns": "auto"` and `false` values remain accepted.
 
 **Most settings don't need the file at all**: the dashboard **Settings** tab
-covers the Uptime Kuma link, auto-refresh vs history sampling, baseline
+covers the links, auto-refresh vs history sampling, baseline
 interval, retention, Local DNS, upstream targets, Wi-Fi client IPs, Discord integration, and
 quiet hours, and **database maintenance** (file size, `AUTO_VACUUM` mode, manual **VACUUM**
 button). Changes save privately (`0600`) to `/var/lib/linkmoth/settings.json`, override the config
@@ -819,7 +819,7 @@ not recognize your Linkmoth instance.
   own Authorities import.
 
 Native tools on the Linkmoth host trust the CA system-wide once the installer
-runs. Uptime Kuma, containers, and other hosts may use a separate runtime
+runs. Other tools, containers, and other hosts may use a separate runtime
 trust store; add the same CA there (for Node.js, `NODE_EXTRA_CA_CERTS` is one
 option). Avoid disabling certificate verification except for a strictly
 same-host loopback webhook. If you already operate a trusted certificate, set
