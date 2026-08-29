@@ -24,6 +24,79 @@ def local_stamp(hour, minute=0):
     return time.mktime((2026, 7, 14, hour, minute, 0, -1, -1, -1))
 
 
+class InAppNotificationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="linkmoth_in_app_")
+        self.path = Path(self.tmp) / "state.db"
+        with self.db() as conn:
+            linkmoth_notify.init_notification_db(conn)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @contextmanager
+    def db(self):
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+    def record(self, key, created=1):
+        return linkmoth_notify.record_in_app_notification(
+            self.db,
+            event_key=key,
+            event_type="device_fault",
+            severity="bad",
+            title="Printer is down",
+            detail="192.168.1.40 did not answer",
+            source_kind="device",
+            source_id="device-id",
+            created=created,
+        )
+
+    def test_records_lists_and_deduplicates_by_event_key(self):
+        self.assertTrue(self.record("device:1:fault:1"))
+        self.assertFalse(self.record("device:1:fault:1"))
+        out = linkmoth_notify.list_in_app_notifications(self.db)
+        self.assertEqual(out["unread_count"], 1)
+        self.assertEqual(len(out["notifications"]), 1)
+        self.assertEqual(out["notifications"][0]["source_id"], "device-id")
+
+    def test_marks_selected_or_all_notifications_read(self):
+        self.record("one", 1)
+        self.record("two", 2)
+        rows = linkmoth_notify.list_in_app_notifications(self.db)["notifications"]
+        result = linkmoth_notify.read_in_app_notifications(
+            self.db, ids=[rows[0]["id"]], now=3,
+        )
+        self.assertEqual(result, {"marked": 1, "unread_count": 1})
+        result = linkmoth_notify.read_in_app_notifications(
+            self.db, all_notifications=True, now=4,
+        )
+        self.assertEqual(result, {"marked": 1, "unread_count": 0})
+
+    def test_read_validation_rejects_ambiguous_or_invalid_ids(self):
+        with self.assertRaises(ValueError):
+            linkmoth_notify.read_in_app_notifications(
+                self.db, ids=[1], all_notifications=True,
+            )
+        for ids in (None, [], [True], [0], ["bad"]):
+            with self.subTest(ids=ids):
+                with self.assertRaises(ValueError):
+                    linkmoth_notify.read_in_app_notifications(self.db, ids=ids)
+
+    def test_notification_history_is_bounded(self):
+        with mock.patch.object(linkmoth_notify, "MAX_IN_APP_NOTIFICATIONS", 3):
+            for number in range(5):
+                self.record(f"event-{number}", number)
+        out = linkmoth_notify.list_in_app_notifications(self.db, 100)
+        self.assertEqual(len(out["notifications"]), 3)
+        self.assertEqual([row["created"] for row in out["notifications"]], [4, 3, 2])
+
+
 class QuietHoursTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="linkmoth_quiet_")

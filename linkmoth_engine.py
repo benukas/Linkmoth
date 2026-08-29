@@ -450,6 +450,40 @@ class Engine:
             if not inc:
                 return
             checks = self._latest_run_checks(inc_id)
+            if status_type == "fault" or prior_fault:
+                try:
+                    from linkmoth_notify import record_in_app_notification
+                    recovery = status_type == "recovery"
+                    detail = (
+                        (prior_fault or {}).get("title")
+                        or verdict.get("explain")
+                        or verdict.get("hint")
+                        or ""
+                    )
+                    record_in_app_notification(
+                        db,
+                        event_key=f"incident:{inc_id}:{status_type}",
+                        event_type=(
+                            "network_recovery" if recovery else "network_fault"
+                        ),
+                        severity="ok" if recovery else verdict.get("severity", "bad"),
+                        title=(
+                            "Network recovered"
+                            if recovery
+                            else verdict.get("title") or "Network fault"
+                        ),
+                        detail=detail,
+                        source_kind="incident",
+                        source_id=str(inc_id),
+                        source_ref=inc.get("ref"),
+                    )
+                except Exception as exc:
+                    print(
+                        "in-app incident notification error: "
+                        f"{exc.__class__.__name__}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
             if status_type == "fault":
                 if is_effective_global_outage(verdict, checks):
                     return
@@ -1782,4 +1816,3 @@ def janitor_loop():
     while True:
         janitor_sweep()
         time.sleep(86400)
-
