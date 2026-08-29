@@ -12,6 +12,8 @@ from typing import List, Optional
 
 RECOVERY_DEDUPE_SECONDS = 45
 MAX_QUIET_EVENTS = 500
+MAX_IN_APP_NOTIFICATIONS = 500
+MAX_IN_APP_NOTIFICATION_PAGE = 100
 QUIET_SCHEDULER_SECONDS = 30
 _lock = threading.Lock()
 # Recovery dedupe is keyed per incident/fault so two *different* recoveries
@@ -33,8 +35,145 @@ def init_notification_db(conn) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_quiet_hour_events_ts
             ON quiet_hour_events(ts);
+        CREATE TABLE IF NOT EXISTS in_app_notifications(
+            id INTEGER PRIMARY KEY,
+            event_key TEXT NOT NULL UNIQUE,
+            created REAL NOT NULL,
+            event_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            source_ref TEXT,
+            read_at REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_in_app_notifications_created
+            ON in_app_notifications(id DESC);
+        CREATE INDEX IF NOT EXISTS idx_in_app_notifications_unread
+            ON in_app_notifications(read_at, id DESC);
         """
     )
+
+
+def record_in_app_notification(
+    db_connect,
+    *,
+    event_key: str,
+    event_type: str,
+    severity: str,
+    title: str,
+    detail: str = "",
+    source_kind: str,
+    source_id: str,
+    source_ref: Optional[str] = None,
+    created: Optional[float] = None,
+) -> bool:
+    """Store one authenticated-dashboard event without affecting delivery.
+
+    The unique event key makes incident transitions safe to replay after a
+    process restart. The table is deliberately bounded like the other local
+    queues so a forgotten dashboard can never grow state.db without limit.
+    """
+    event_key = str(event_key or "").strip()[:300]
+    event_type = str(event_type or "").strip()[:80]
+    severity = str(severity or "unknown").strip()[:20]
+    title = str(title or "Linkmoth alert").strip()[:200]
+    detail = str(detail or "").strip()[:500]
+    source_kind = str(source_kind or "linkmoth").strip()[:40]
+    source_id = str(source_id or "linkmoth").strip()[:200]
+    source_ref = str(source_ref or "").strip()[:100] or None
+    if not event_key or not event_type:
+        raise ValueError("event_key and event_type are required")
+    stamp = time.time() if created is None else float(created)
+    with db_connect() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO in_app_notifications("
+            "event_key, created, event_type, severity, title, detail, "
+            "source_kind, source_id, source_ref) VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                event_key, stamp, event_type, severity, title, detail,
+                source_kind, source_id, source_ref,
+            ),
+        )
+        inserted = bool(cur.rowcount)
+        if inserted:
+            conn.execute(
+                "DELETE FROM in_app_notifications WHERE id NOT IN "
+                "(SELECT id FROM in_app_notifications ORDER BY id DESC LIMIT ?)",
+                (MAX_IN_APP_NOTIFICATIONS,),
+            )
+    return inserted
+
+
+def list_in_app_notifications(db_connect, limit: int = 50) -> dict:
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer") from None
+    limit = max(1, min(MAX_IN_APP_NOTIFICATION_PAGE, limit))
+    with db_connect() as conn:
+        rows = conn.execute(
+            "SELECT id, created, event_type, severity, title, detail, "
+            "source_kind, source_id, source_ref, read_at "
+            "FROM in_app_notifications ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        unread = int(conn.execute(
+            "SELECT COUNT(*) FROM in_app_notifications WHERE read_at IS NULL"
+        ).fetchone()[0])
+    return {
+        "notifications": [dict(row) for row in rows],
+        "unread_count": unread,
+    }
+
+
+def read_in_app_notifications(
+    db_connect,
+    *,
+    ids: Optional[List[int]] = None,
+    all_notifications: bool = False,
+    now: Optional[float] = None,
+) -> dict:
+    if all_notifications and ids:
+        raise ValueError("choose ids or all, not both")
+    if not all_notifications:
+        if not isinstance(ids, list) or not ids:
+            raise ValueError("ids must be a non-empty array")
+        if len(ids) > MAX_IN_APP_NOTIFICATION_PAGE:
+            raise ValueError("too many notification ids")
+        clean_ids = []
+        for value in ids:
+            if isinstance(value, bool):
+                raise ValueError("notification ids must be positive integers")
+            try:
+                item_id = int(value)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "notification ids must be positive integers"
+                ) from None
+            if item_id <= 0:
+                raise ValueError("notification ids must be positive integers")
+            clean_ids.append(item_id)
+        ids = sorted(set(clean_ids))
+    stamp = time.time() if now is None else float(now)
+    with db_connect() as conn:
+        if all_notifications:
+            cur = conn.execute(
+                "UPDATE in_app_notifications SET read_at=? WHERE read_at IS NULL",
+                (stamp,),
+            )
+        else:
+            placeholders = ",".join("?" for _ in ids)
+            cur = conn.execute(
+                f"UPDATE in_app_notifications SET read_at=? "
+                f"WHERE read_at IS NULL AND id IN ({placeholders})",
+                (stamp, *ids),
+            )
+        unread = int(conn.execute(
+            "SELECT COUNT(*) FROM in_app_notifications WHERE read_at IS NULL"
+        ).fetchone()[0])
+    return {"marked": int(cur.rowcount), "unread_count": unread}
 
 
 def validate_quiet_time(value) -> str:

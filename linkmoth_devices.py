@@ -406,11 +406,42 @@ def execute_device(device, ping_func):
 
 
 def notify_device_event(cfg, state_dir, db_connect, device, result, event):
+    recovery = event == "recovery"
+    state = result.get("state") or "unknown"
+    event_ts = float(result.get("event_ts") or time.time())
+    try:
+        from linkmoth_notify import record_in_app_notification
+        record_in_app_notification(
+            db_connect,
+            event_key=(
+                f"device:{device['id']}:{event}:{event_ts:.6f}"
+            ),
+            event_type="device_recovery" if recovery else "device_fault",
+            severity=(
+                "ok" if recovery else "warn" if state == "degraded" else "bad"
+            ),
+            title=(
+                f"{device['name']} recovered"
+                if recovery
+                else f"{device['name']} is {'down' if state == 'error' else state}"
+            ),
+            detail=(
+                f"{device['address']} · {result.get('summary') or state}"
+            ),
+            source_kind="device",
+            source_id=device["id"],
+            created=event_ts,
+        )
+    except Exception as exc:
+        print(
+            f"in-app device notification error: {exc.__class__.__name__}",
+            file=sys.stderr,
+            flush=True,
+        )
+
     alerts = device.get("alerts") or {}
     if not any(alerts.values()):
         return
-    recovery = event == "recovery"
-    state = result.get("state") or "unknown"
     title = (
         f"✅ {device['name']} recovered"
         if recovery
@@ -697,6 +728,8 @@ class DeviceManager:
                         if stable not in ("degraded", "down"):
                             event = "fault"
                         stable = "down"
+            if event:
+                result["event_ts"] = now
             last_success = now if state == "up" else device.get("last_success")
             last_failure = (
                 now if state in ("degraded", "down") else device.get("last_failure")

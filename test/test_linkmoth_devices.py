@@ -142,6 +142,30 @@ class DeviceStateTests(unittest.TestCase):
 
 
 class DeviceNotificationTests(unittest.TestCase):
+    def test_in_app_event_is_recorded_without_external_channels(self):
+        import linkmoth_notify
+        with tempfile.TemporaryDirectory() as tmp:
+            db = connector(Path(tmp) / "state.db")
+            with db() as conn:
+                linkmoth_notify.init_notification_db(conn)
+            device = {
+                "id": "device-id",
+                "name": "Printer",
+                "address": "192.168.1.40",
+                "preset": "printer",
+                "alerts": {"discord": False, "push": False, "webhook": False},
+            }
+            result = {
+                "state": "down", "summary": "no response", "results": [],
+                "event_ts": 10,
+            }
+            linkmoth_devices.notify_device_event(
+                {}, Path(tmp), db, device, result, "fault",
+            )
+            out = linkmoth_notify.list_in_app_notifications(db)
+        self.assertEqual(out["unread_count"], 1)
+        self.assertEqual(out["notifications"][0]["event_type"], "device_fault")
+
     def test_only_opted_in_channels_are_called(self):
         device = {
             "id": "device-id",
@@ -157,7 +181,9 @@ class DeviceNotificationTests(unittest.TestCase):
             with mock.patch("linkmoth_push.send_push_async") as push:
                 with mock.patch(
                     "linkmoth_webhooks.emit_event"
-                ) as webhook:
+                ) as webhook, mock.patch(
+                    "linkmoth_notify.record_in_app_notification"
+                ):
                     linkmoth_devices.notify_device_event(
                         {}, Path("."), lambda: None,
                         device, result, "fault",
@@ -183,7 +209,9 @@ class DeviceNotificationTests(unittest.TestCase):
             "linkmoth_push.send_push_async",
         ) as push, mock.patch(
             "linkmoth_webhooks.emit_event",
-        ) as webhook:
+        ) as webhook, mock.patch(
+            "linkmoth_notify.record_in_app_notification",
+        ):
             linkmoth_devices.notify_device_event(
                 {}, Path("."), lambda: None, device, result, "fault",
             )
@@ -201,7 +229,11 @@ class DeviceNotificationTests(unittest.TestCase):
             "alerts": {"discord": False, "push": False, "webhook": True},
         }
         result = {"state": "down", "summary": "no response", "results": []}
-        with mock.patch("linkmoth_webhooks.emit_event") as webhook:
+        with mock.patch(
+            "linkmoth_webhooks.emit_event",
+        ) as webhook, mock.patch(
+            "linkmoth_notify.record_in_app_notification",
+        ):
             linkmoth_devices.notify_device_event(
                 {}, Path("."), lambda: None, device, result, "fault",
             )

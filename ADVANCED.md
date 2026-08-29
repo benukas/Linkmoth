@@ -162,8 +162,8 @@ why it is limited**, the first failed dependency, what Linkmoth ruled out, a
 plain-English diff vs the last healthy check, and repeat-fault evidence
 (typical duration and recurrence timing), and every diagnosis run with raw
 per-rung timings – plus the **accountability report** with its "evidence for
-ISP support" letter and CSV export), **Devices** (independent LAN device
-status), **Settings** (including Discord webhooks, Wi-Fi client IPs, and
+ISP support" letter and CSV export), **Devices** (an independent LAN device
+map and list), **Settings** (including Discord webhooks, Wi-Fi client IPs, and
 SQLite maintenance), and **Security** (password, 2FA, read-only API tokens,
 audit log). The compact Internet/router latency sparklines on Today, and each
 device's latency sparkline on Devices, have an **Expand** button that opens a
@@ -187,6 +187,21 @@ ladder:
 - **Printer** – ping plus TCP port 9100.
 - **Web UI** – ping plus an HTTP or HTTPS status and optional body check.
 - **TCP service** – ping plus one configured TCP port.
+
+The default **Map** view places the router/LAN at the center with color-coded
+Internet, Linkmoth, and device icons around it. Drag any icon to arrange the
+map; Linkmoth remembers that layout in the browser. Its lines describe
+Linkmoth's monitoring path rather than discovered physical cabling. Select a
+device to see its latest result and run, edit, history, or delete actions;
+choose **List** to use the original device cards instead.
+
+The dashboard bell records confirmed device faults and recoveries, plus
+confirmed network incident faults and recoveries, in Linkmoth's local SQLite
+database. These in-app notifications work without enabling Discord, browser
+push, or outbound webhooks. New events appear as dismissible dashboard toasts;
+the bell keeps the latest 500 events, shows the unread total, and links an
+event to the related device or incident evidence. Reading an event only marks
+the local in-app copy as read.
 
 Targets must be literal RFC1918 IPv4 addresses in `10.0.0.0/8`,
 `172.16.0.0/12`, or `192.168.0.0/16`. Linkmoth rejects hostnames, IPv6,
@@ -558,6 +573,9 @@ python3 linkmoth.py --restore file.zip    # restore history/settings from one
   (for any LAN watchdog to poll).
 - Devices: `GET/POST /api/devices`, `PUT/DELETE /api/devices/{id}`,
   `POST /api/devices/{id}/run`, and `GET /api/devices/{id}/history`.
+- In-app notifications: `GET /api/notifications` and authenticated,
+  CSRF-protected `POST /api/notifications/read` for selected events or all
+  events.
 - Outbound webhooks: `GET/POST /api/webhooks`, `PUT/DELETE /api/webhooks/{id}`,
   `POST /api/webhooks/{id}/test`, `GET /api/webhooks/inbound-info`, and
   `POST /api/incident/false-alarm`.

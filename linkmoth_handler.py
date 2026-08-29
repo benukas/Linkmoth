@@ -1157,6 +1157,13 @@ class Handler(BaseHTTPRequestHandler):
                 "devices": linkmoth.DEVICES.list_devices(),
                 **linkmoth.DEVICES.api_metadata(),
             })
+        elif url.path == "/api/notifications":
+            from linkmoth_notify import list_in_app_notifications
+            try:
+                limit = int(qs.get("limit", ["50"])[0])
+                self._send(200, list_in_app_notifications(db, limit))
+            except ValueError as exc:
+                self._send(400, {"error": str(exc)})
         elif re.fullmatch(
             r"/api/devices/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
             r"[0-9a-f]{4}-[0-9a-f]{12}/history",
@@ -1342,6 +1349,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(201, {"device": created})
             except Exception as exc:
                 self._send_device_exception(exc)
+        elif path == "/api/notifications/read":
+            from linkmoth_notify import read_in_app_notifications
+            try:
+                payload = self._json_object(body)
+                unknown = set(payload) - {"ids", "all"}
+                if unknown:
+                    raise ValueError("notification request contains an unknown field")
+                all_value = payload.get("all", False)
+                if not isinstance(all_value, bool):
+                    raise ValueError("all must be true or false")
+                result = read_in_app_notifications(
+                    db,
+                    ids=payload.get("ids"),
+                    all_notifications=all_value,
+                )
+                self._send(200, result)
+            except ValueError as exc:
+                self._send(400, {"error": str(exc)})
         elif path == "/api/webhooks":
             from linkmoth_webhooks import create_webhook
             try:

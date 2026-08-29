@@ -51,6 +51,25 @@ DIST_FILES = {
 
 
 class PublicReleaseTests(unittest.TestCase):
+    def test_device_topology_and_in_app_notification_controls_are_wired(self):
+        dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
+        handler = (ROOT / "linkmoth_handler.py").read_text(encoding="utf-8")
+        notify = (ROOT / "linkmoth_notify.py").read_text(encoding="utf-8")
+        for control in (
+            'id="notification-toggle"', 'id="notification-panel"',
+            'id="device-view-map"', 'id="device-view-list"',
+            'id="device-map-stage"', 'id="device-map-inspector"',
+        ):
+            self.assertIn(control, dashboard)
+        self.assertIn('fetch("/api/notifications?limit=50")', dashboard)
+        self.assertIn('fetch("/api/notifications/read"', dashboard)
+        self.assertIn('{ "system:router": { x: 50, y: 50 } }', dashboard)
+        self.assertIn('node.addEventListener("pointerdown"', dashboard)
+        self.assertIn('localStorage.setItem("linkmoth-topology-layout-v1"', dashboard)
+        self.assertIn('url.path == "/api/notifications"', handler)
+        self.assertIn('path == "/api/notifications/read"', handler)
+        self.assertIn("CREATE TABLE IF NOT EXISTS in_app_notifications", notify)
+
     def test_retention_reduction_warns_before_irreversible_cleanup(self):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn(

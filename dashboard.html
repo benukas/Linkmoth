@@ -58,6 +58,86 @@ h1 { font-size: 26px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 #age { color: var(--muted); font-size: 16px; flex: 1; font-variant-numeric: tabular-nums; }
 header a { color: var(--muted); font-size: 16px; transition: color 150ms ease; }
 header a:hover { color: var(--text); }
+.notification-shell { position: relative; flex: none; }
+.notification-toggle {
+  position: relative; display: grid; place-items: center; width: 44px; height: 44px;
+  padding: 0; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--card); color: var(--text); cursor: pointer;
+  transition: border-color 150ms ease, transform 80ms ease;
+}
+.notification-toggle:hover { border-color: var(--text); }
+.notification-toggle:active { transform: scale(0.98); }
+.notification-toggle:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+.notification-toggle svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.notification-count {
+  position: absolute; top: -7px; right: -7px; min-width: 21px; height: 21px;
+  padding: 0 5px; display: inline-grid; place-items: center;
+  border: 2px solid var(--bg); border-radius: 999px;
+  background: var(--bad-text); color: var(--bg); font-size: 11px; font-weight: 800;
+  line-height: 1; font-variant-numeric: tabular-nums;
+}
+.notification-panel {
+  position: absolute; top: calc(100% + 9px); right: 0; z-index: 120;
+  width: min(390px, calc(100vw - 32px)); max-height: min(620px, 75vh);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--card); box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42);
+}
+:root[data-theme="white"] .notification-panel { box-shadow: 0 16px 44px rgba(30, 26, 16, 0.15); }
+.notification-panel.hidden { display: none; }
+.notification-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 15px 16px; border-bottom: 1px solid var(--border);
+}
+.notification-panel-head h2 { margin: 0; font-size: 18px; }
+.notification-mark-all {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font: 600 14px/1.2 system-ui, sans-serif; padding: 7px 4px;
+}
+.notification-mark-all:hover { color: var(--text); }
+.notification-mark-all:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+.notification-list { overflow-y: auto; overscroll-behavior: contain; }
+.notification-empty { margin: 0; padding: 26px 18px; color: var(--muted); font-size: 16px; text-align: center; }
+.notification-item {
+  width: 100%; display: grid; grid-template-columns: 4px 1fr; gap: 12px;
+  padding: 14px 16px; border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--text); text-align: left; cursor: pointer;
+}
+.notification-item:last-child { border-bottom: 0; }
+.notification-item:hover { background: var(--bg); }
+.notification-item:focus-visible { outline: 2px solid var(--line); outline-offset: -2px; }
+.notification-item.read { opacity: 0.72; }
+.notification-rail { border-radius: 999px; background: var(--muted); }
+.notification-item.bad .notification-rail { background: var(--bad-text); }
+.notification-item.warn .notification-rail { background: var(--warn-text); }
+.notification-item.ok .notification-rail { background: var(--ok-text); }
+.notification-copy b { display: block; font-size: 16px; line-height: 1.3; }
+.notification-copy span { display: block; margin-top: 3px; color: var(--muted); font-size: 14px; line-height: 1.4; }
+.notification-copy time { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.toast-region {
+  position: fixed; right: 18px; bottom: 18px; z-index: 180;
+  width: min(380px, calc(100vw - 36px)); pointer-events: none;
+}
+.in-app-toast {
+  display: grid; grid-template-columns: 5px 1fr auto; gap: 12px; align-items: start;
+  padding: 15px 16px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--card); color: var(--text); pointer-events: auto;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+  animation: toast-in 180ms ease-out;
+}
+:root[data-theme="white"] .in-app-toast { box-shadow: 0 14px 38px rgba(30, 26, 16, 0.15); }
+.toast-rail { align-self: stretch; border-radius: 999px; background: var(--bad-text); }
+.in-app-toast.warn .toast-rail { background: var(--warn-text); }
+.in-app-toast.ok .toast-rail { background: var(--ok-text); }
+.toast-copy b { display: block; font-size: 16px; line-height: 1.3; }
+.toast-copy span { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.4; }
+.toast-close {
+  width: 30px; height: 30px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1;
+}
+.toast-close:hover { background: var(--bg); color: var(--text); }
+.toast-close:focus-visible { outline: 2px solid var(--line); outline-offset: 1px; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
 .host-health { display: flex; align-items: stretch; margin-left: auto; border: 1px solid var(--border); border-radius: 11px; overflow: hidden; background: var(--card); font-variant-numeric: tabular-nums; }
 .host-metric { min-width: 62px; padding: 5px 8px 6px; border-left: 1px solid var(--border); }
 .host-metric:first-child { border-left: 0; }
@@ -88,6 +168,12 @@ nav button.active { color: var(--text); border-color: var(--text); }
   nav button { flex: none; }
   .host-health { order: 4; width: 100%; margin-left: 0; }
   .host-metric { flex: 1; text-align: center; }
+  .notification-shell { order: 3; margin-left: auto; }
+  .notification-panel {
+    position: fixed; top: 76px; left: 16px; right: 16px;
+    width: auto; max-height: calc(100dvh - 96px);
+  }
+  .toast-region { left: 16px; right: 16px; bottom: 16px; width: auto; }
 }
 .hidden { display: none; }
 /* Small layout utilities (replace inline style= so the CSP can drop
@@ -607,6 +693,114 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .empty { color: var(--muted); font-size: 18px; }
 .device-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .device-toolbar h3 { margin: 0; }
+.device-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.device-view-switch { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.device-view-btn {
+  border: 0; border-radius: 9px; padding: 8px 13px; background: transparent;
+  color: var(--muted); cursor: pointer; font: 600 15px/1.2 system-ui, sans-serif;
+}
+.device-view-btn:hover { color: var(--text); }
+.device-view-btn.active { background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+.device-view-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+.device-map-breakout {
+  width: min(1120px, calc(100vw - 32px)); margin: 0 0 16px 50%;
+  transform: translateX(-50%);
+}
+.device-map-heading {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  margin-bottom: 10px;
+}
+.device-map-heading h3 { margin: 0; color: var(--text); font-size: 20px; }
+.device-map-heading p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
+.device-map-reset { flex: none; padding: 7px 10px; font-size: 13px; }
+.device-map-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.device-map-layout.has-inspector { grid-template-columns: minmax(0, 1fr) 310px; }
+.device-map-scroll {
+  overflow: hidden; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--card); overscroll-behavior: contain;
+}
+.device-map-stage {
+  position: relative; height: 580px; min-height: 580px; isolation: isolate;
+}
+.topology-links { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.topology-link { fill: none; stroke: var(--border); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.topology-link.up { stroke: var(--ok-text); }
+.topology-link.warn, .topology-link.degraded, .topology-link.error { stroke: var(--warn-text); stroke-dasharray: 7 5; }
+.topology-link.bad, .topology-link.down { stroke: var(--bad-text); stroke-dasharray: 7 5; }
+.topology-link.unknown, .topology-link.disabled { stroke-dasharray: 4 6; }
+.topology-node {
+  position: absolute; z-index: 2; width: 150px; min-width: 0; height: 108px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 7px; border: 0; background: transparent;
+  color: var(--text); text-align: center; transform: translate(-50%, -50%);
+  cursor: grab; touch-action: none; user-select: none;
+}
+.topology-node.dragging { cursor: grabbing; z-index: 3; }
+.topology-node:hover .topology-icon { transform: scale(1.08); }
+.topology-node:focus-visible { outline: none; }
+.topology-node:focus-visible .topology-icon, .topology-node.selected .topology-icon {
+  outline: 2px solid var(--line); outline-offset: 5px; border-radius: 8px;
+}
+.topology-node.disabled { opacity: 0.65; }
+.topology-icon {
+  position: relative; z-index: 2; width: 42px; height: 42px; display: grid;
+  place-items: center; border-radius: 8px; background: var(--card);
+  color: var(--muted); transition: transform 120ms ease;
+}
+.topology-node.up .topology-icon { color: var(--ok-text); }
+.topology-node.warn .topology-icon, .topology-node.degraded .topology-icon, .topology-node.error .topology-icon { color: var(--warn-text); }
+.topology-node.bad .topology-icon, .topology-node.down .topology-icon { color: var(--bad-text); }
+.topology-icon svg { display: block; width: 40px; height: 40px; }
+.topology-icon svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.topology-icon.linkmoth {
+  background: var(--card);
+}
+.topology-icon.linkmoth::before {
+  content: ""; width: 40px; height: 40px; background: currentColor;
+  -webkit-mask: url('/linkmoth-mark-white.svg') center / contain no-repeat;
+  mask: url('/linkmoth-mark-white.svg') center / contain no-repeat;
+}
+.topology-name {
+  position: relative; z-index: 2; max-width: 100%; padding: 0 3px;
+  background: var(--card); white-space: normal; overflow-wrap: break-word;
+  font-size: 14px; line-height: 1.15;
+  font-weight: 700; text-shadow: 0 1px 2px var(--card);
+}
+.topology-empty {
+  position: absolute; z-index: 2; left: 50%; bottom: 20px; transform: translateX(-50%);
+  width: min(360px, calc(100% - 32px)); text-align: center; color: var(--muted);
+}
+.topology-empty p { margin: 0 0 8px; }
+.device-map-inspector {
+  position: sticky; top: 16px; margin: 0; padding: 18px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--card);
+}
+.device-map-inspector.hidden { display: none; }
+.device-inspector-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.device-inspector-head h3 { margin: 0; color: var(--text); font-size: 20px; }
+.device-inspector-close { width: 36px; height: 36px; min-width: 36px; padding: 0; display: grid; place-items: center; border-radius: 9px; font-size: 20px; line-height: 1; }
+.device-inspector-state { display: inline-block; margin-top: 10px; padding: 3px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 700; text-transform: capitalize; }
+.device-inspector-state.up { background: var(--ok-bg); color: var(--ok-text); }
+.device-inspector-state.degraded, .device-inspector-state.error { background: var(--warn-bg); color: var(--warn-text); }
+.device-inspector-state.down { background: var(--bad-bg); color: var(--bad-text); }
+.device-inspector-summary { margin: 12px 0 8px; font-size: 16px; line-height: 1.45; }
+.device-inspector-meta { margin: 5px 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.device-inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+.device-inspector-actions .action-btn { min-width: 0; padding: 10px 8px; font-size: 14px; }
+@media (max-width: 820px) {
+  .device-map-layout.has-inspector { grid-template-columns: 1fr; }
+  .device-map-inspector { position: static; }
+}
+@media (max-width: 700px) {
+  .device-toolbar { flex-direction: column; align-items: stretch; }
+  .device-toolbar-actions { width: 100%; justify-content: space-between; }
+  .device-map-breakout { width: 100%; margin-left: 0; transform: none; }
+  .device-map-stage { height: 520px; min-height: 520px; }
+  .topology-node { width: 104px; height: 94px; padding: 5px; }
+  .topology-icon { width: 36px; height: 36px; }
+  .topology-icon svg { width: 34px; height: 34px; }
+  .topology-name { font-size: 12px; }
+}
 .device-card { position: relative; transition: border-color 150ms ease, box-shadow 150ms ease; }
 .device-spark { margin: 10px 0 6px; }
 .device-card:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
@@ -760,6 +954,20 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
     <img src="linkmoth-mark-white.svg" alt="" width="56" height="33" class="site-logo">
     <h1>Linkmoth</h1>
     <span id="age">loading…</span>
+    <div class="notification-shell">
+      <button type="button" id="notification-toggle" class="notification-toggle"
+              aria-label="Notifications" aria-expanded="false" aria-controls="notification-panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+        <span id="notification-count" class="notification-count hidden"></span>
+      </button>
+      <section id="notification-panel" class="notification-panel hidden" aria-labelledby="notification-heading">
+        <div class="notification-panel-head">
+          <h2 id="notification-heading">Notifications</h2>
+          <button type="button" id="notification-mark-all" class="notification-mark-all">Mark all read</button>
+        </div>
+        <div id="notification-list" class="notification-list"><p class="notification-empty">Loading notifications…</p></div>
+      </section>
+    </div>
     <div id="host-health" class="host-health hidden" aria-label="Linkmoth host health">
       <div id="host-cpu" class="host-metric"><span class="k">CPU</span><span class="v">–</span></div>
       <div id="host-temp" class="host-metric"><span class="k">TEMP</span><span class="v">–</span></div>
@@ -899,7 +1107,13 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
         <div>
           <h3>LAN devices<span class="info-tip" tabindex="0" role="button" aria-label="More information"><span class="info-pop">Watch selected devices without changing Linkmoth network blame.</span></span></h3>
         </div>
-        <button type="button" id="device-add" class="action-btn">Add device</button>
+        <div class="device-toolbar-actions">
+          <div class="device-view-switch" role="group" aria-label="Device view">
+            <button type="button" id="device-view-map" class="device-view-btn" aria-pressed="true">Map</button>
+            <button type="button" id="device-view-list" class="device-view-btn" aria-pressed="false">List</button>
+          </div>
+          <button type="button" id="device-add" class="action-btn">Add device</button>
+        </div>
       </div>
     </section>
 
@@ -959,7 +1173,23 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
       </div>
     </section>
 
-    <div id="device-list">
+    <section id="device-map-panel" class="device-map-breakout">
+      <div class="device-map-heading">
+        <div>
+          <h3>Monitoring map</h3>
+          <p>Drag any icon to arrange the monitoring paths.</p>
+        </div>
+        <button type="button" id="device-map-reset" class="action-btn device-map-reset">Reset layout</button>
+      </div>
+      <div id="device-map-layout" class="device-map-layout">
+        <div class="device-map-scroll">
+          <div id="device-map-stage" class="device-map-stage"><p class="topology-empty">Loading map…</p></div>
+        </div>
+        <aside id="device-map-inspector" class="device-map-inspector hidden" aria-label="Selected device"></aside>
+      </div>
+    </section>
+
+    <div id="device-list" class="hidden">
       <section class="card"><p class="empty">Loading devices…</p></section>
     </div>
   </div>
@@ -1347,6 +1577,8 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
   </footer>
 </main>
 
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
 <div id="history-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="history-modal-title" aria-describedby="history-modal-subtitle">
   <div class="modal-box">
     <div class="modal-head">
@@ -1417,6 +1649,16 @@ let deviceData = [];
 let deviceMeta = null;
 let editingDeviceId = null;
 let devicesLoading = false;
+let deviceView = localStorage.getItem("linkmoth-device-view") === "list" ? "list" : "map";
+let selectedDeviceId = null;
+let mapResizeObserver = null;
+let topologyPositions = loadTopologyPositions();
+let notificationData = [];
+let notificationLoading = false;
+let notificationInitialized = false;
+let lastNotificationId = 0;
+let notificationTimer = null;
+let toastTimer = null;
 let historyLoading = false;
 let reportLoading = false;
 let latestStatus = null;
@@ -2352,6 +2594,164 @@ function authHeaders(extra) {
   return h;
 }
 
+function closeNotificationPanel() {
+  $("notification-panel").classList.add("hidden");
+  $("notification-toggle").setAttribute("aria-expanded", "false");
+}
+
+function renderNotifications(unreadCount) {
+  const badge = $("notification-count");
+  const count = Math.max(0, Number(unreadCount) || 0);
+  badge.textContent = count > 99 ? "99+" : String(count);
+  badge.classList.toggle("hidden", count === 0);
+  $("notification-toggle").setAttribute(
+    "aria-label", count ? `Notifications, ${count} unread` : "Notifications",
+  );
+  $("notification-mark-all").disabled = count === 0;
+  const list = $("notification-list");
+  if (!notificationData.length) {
+    list.innerHTML = '<p class="notification-empty">No notifications yet.</p>';
+    return;
+  }
+  list.innerHTML = notificationData.map((item) => {
+    const severity = ["ok", "warn", "bad"].includes(item.severity)
+      ? item.severity : "unknown";
+    const read = item.read_at != null;
+    return `<button type="button" class="notification-item ${severity}${read ? " read" : ""}"
+      data-notification-id="${Number(item.id)}"
+      data-source-kind="${esc(item.source_kind)}"
+      data-source-id="${esc(item.source_id)}"
+      data-source-ref="${esc(item.source_ref || "")}">
+      <span class="notification-rail" aria-hidden="true"></span>
+      <span class="notification-copy"><b>${esc(item.title)}</b>
+        <span>${esc(item.detail || "")}</span>
+        <time>${esc(fmtTs(item.created))}</time>
+      </span>
+    </button>`;
+  }).join("");
+}
+
+function clearInAppToast() {
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  toastTimer = null;
+  $("toast-region").innerHTML = "";
+}
+
+function armToastTimer() {
+  if (toastTimer !== null) clearTimeout(toastTimer);
+  toastTimer = setTimeout(clearInAppToast, 6000);
+}
+
+function showInAppToast(items) {
+  if (!items.length) return;
+  const newest = items[0];
+  const severity = ["ok", "warn", "bad"].includes(newest.severity)
+    ? newest.severity : "bad";
+  const extra = items.length > 1 ? ` ${items.length - 1} more new notification${items.length === 2 ? "" : "s"}.` : "";
+  const region = $("toast-region");
+  region.innerHTML = `<div class="in-app-toast ${severity}" role="status">
+    <span class="toast-rail" aria-hidden="true"></span>
+    <span class="toast-copy"><b>${esc(newest.title)}</b><span>${esc((newest.detail || "") + extra)}</span></span>
+    <button type="button" class="toast-close" aria-label="Dismiss notification">×</button>
+  </div>`;
+  const toast = region.querySelector(".in-app-toast");
+  region.querySelector(".toast-close").addEventListener("click", clearInAppToast);
+  toast.addEventListener("mouseenter", () => {
+    if (toastTimer !== null) clearTimeout(toastTimer);
+    toastTimer = null;
+  });
+  toast.addEventListener("mouseleave", armToastTimer);
+  armToastTimer();
+}
+
+async function loadNotifications() {
+  if (!authReady || notificationLoading || document.visibilityState !== "visible") return;
+  notificationLoading = true;
+  try {
+    const r = await fetch("/api/notifications?limit=50");
+    if (r.status === 401) return;
+    const out = await r.json();
+    if (!r.ok) throw new Error(out.error || "notification request failed");
+    const next = out.notifications || [];
+    const newestId = next.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
+    if (notificationInitialized && newestId > lastNotificationId) {
+      showInAppToast(next.filter((item) => Number(item.id) > lastNotificationId));
+    }
+    notificationData = next;
+    lastNotificationId = Math.max(lastNotificationId, newestId);
+    notificationInitialized = true;
+    renderNotifications(out.unread_count);
+  } catch (e) {
+    if (!notificationInitialized) {
+      $("notification-list").innerHTML = '<p class="notification-empty">Could not load notifications.</p>';
+    }
+  } finally {
+    notificationLoading = false;
+  }
+}
+
+function startNotificationPolling() {
+  if (notificationTimer !== null) return;
+  loadNotifications();
+  notificationTimer = setInterval(loadNotifications, 10000);
+}
+
+async function markNotificationsRead(ids, allNotifications) {
+  try {
+    const payload = allNotifications ? { all: true } : { ids };
+    const r = await fetch("/api/notifications/read", {
+      method: "POST", headers: authHeaders(), body: JSON.stringify(payload),
+    });
+    if (r.status === 401) { await ensureAuth(); return false; }
+    if (!r.ok) return false;
+    const out = await r.json();
+    const idSet = new Set(ids || []);
+    const stamp = Date.now() / 1000;
+    notificationData.forEach((item) => {
+      if (allNotifications || idSet.has(Number(item.id))) item.read_at = item.read_at || stamp;
+    });
+    renderNotifications(out.unread_count);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+$("notification-toggle").addEventListener("click", () => {
+  const panel = $("notification-panel");
+  const opening = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden", !opening);
+  $("notification-toggle").setAttribute("aria-expanded", opening ? "true" : "false");
+  if (opening) loadNotifications();
+});
+$("notification-mark-all").addEventListener("click", () => markNotificationsRead([], true));
+$("notification-list").addEventListener("click", async (event) => {
+  const item = event.target.closest("[data-notification-id]");
+  if (!item) return;
+  await markNotificationsRead([Number(item.dataset.notificationId)], false);
+  closeNotificationPanel();
+  if (item.dataset.sourceKind === "incident" && item.dataset.sourceRef) {
+    openIncidentByRef(item.dataset.sourceRef);
+  } else if (item.dataset.sourceKind === "device") {
+    selectedDeviceId = item.dataset.sourceId;
+    showTab("devices");
+    setDeviceView("map");
+    if (!deviceData.length) await loadDevices(false);
+    if (deviceData.some(device => device.id === selectedDeviceId)) {
+      selectTopologyDevice(selectedDeviceId, true);
+    }
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".notification-shell")) closeNotificationPanel();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("notification-panel").classList.contains("hidden")) {
+    closeNotificationPanel();
+    $("notification-toggle").focus();
+  }
+});
+
 function syncLocalDnsControls() {
   const address = $("s-local-dns-address").value.trim();
   const configured = localDnsRuntime && localDnsRuntime.configured;
@@ -2832,6 +3232,7 @@ $("update-reload-btn").addEventListener("click", () => {
 // back in, so nothing mid-interaction gets yanked away underneath them.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible" || reloadingForUpdate || !authReady) return;
+  loadNotifications();
   fetch("/api/status")
     .then((r) => (r.ok ? r.json() : null))
     .then((s) => {
@@ -3457,6 +3858,295 @@ function deviceIntervalLabel(seconds) {
   return "Every 60 minutes";
 }
 
+function topologyIcon(kind) {
+  if (kind === "linkmoth") {
+    return '<span class="topology-icon linkmoth" aria-hidden="true"></span>';
+  }
+  const paths = {
+    internet: '<circle cx="16" cy="16" r="12"></circle><path d="M4 16h24M16 4c4 4 6 8 6 12s-2 8-6 12M16 4c-4 4-6 8-6 12s2 8 6 12"></path>',
+    router: '<rect x="4" y="11" width="24" height="14" rx="3"></rect><path d="M9 11 7 5M23 11l2-6M10 19h.01M15 19h.01M20 19h4"></path>',
+    printer: '<path d="M9 11V4h14v7M9 23H6a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3h20a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-3"></path><rect x="9" y="19" width="14" height="9"></rect><path d="M24 15h.01"></path>',
+    web_ui: '<rect x="3" y="5" width="26" height="22" rx="3"></rect><path d="M3 11h26M8 8h.01M12 8h.01"></path>',
+    tcp_service: '<rect x="5" y="4" width="22" height="8" rx="2"></rect><rect x="5" y="20" width="22" height="8" rx="2"></rect><path d="M10 8h.01M10 24h.01M15 8h8M15 24h8"></path>',
+    generic: '<rect x="4" y="5" width="24" height="18" rx="3"></rect><path d="M12 28h8M16 23v5"></path>',
+  };
+  return `<span class="topology-icon"><svg viewBox="0 0 32 32" aria-hidden="true">${paths[kind] || paths.generic}</svg></span>`;
+}
+
+function topologyStateLabel(state) {
+  return ({
+    up: "up", passed: "up", partial: "degraded", degraded: "degraded",
+    warn: "degraded", failed: "down", bad: "down", down: "down",
+    error: "check error", checking: "checking", disabled: "disabled",
+    skipped: "unknown", unknown: "unknown", ok: "up",
+  })[state] || "unknown";
+}
+
+function topologyStateClass(state) {
+  const label = topologyStateLabel(state);
+  if (label === "up") return "up";
+  if (label === "degraded" || label === "check error") return "warn";
+  if (label === "down") return "down";
+  return label;
+}
+
+function topologySystemStates() {
+  const run = latestStatus && latestStatus.last_run;
+  const checks = (run && run.checks) || [];
+  const byId = Object.fromEntries(checks.map((check) => [check.id, checkState(check)]));
+  let internet = "unknown";
+  if (run) internet = run.severity === "ok" ? "up" : run.severity === "warn" ? "warn" : "down";
+  const router = byId.gateway || "unknown";
+  let host = byId.link || "unknown";
+  if (byId.power === "failed") host = "warn";
+  return { internet, router, host };
+}
+
+function topologySystemNode(id, name, kind, state) {
+  const stateClass = topologyStateClass(state);
+  const label = topologyStateLabel(state);
+  return `<button type="button" id="topology-${id}" class="topology-node ${stateClass}"
+    data-topology-key="system:${id}" data-topology-state="${stateClass}"
+    aria-label="${esc(name)}, ${esc(label)}. Drag to reposition" title="${esc(name)} · ${esc(label)}">
+    ${topologyIcon(kind)}<span class="topology-name">${esc(name)}</span>
+  </button>`;
+}
+
+function deviceTopologyState(device) {
+  if (!device.enabled) return "disabled";
+  if (device.running) return "checking";
+  return device.last_state || "unknown";
+}
+
+function loadTopologyPositions() {
+  try {
+    const stored = JSON.parse(localStorage.getItem("linkmoth-topology-layout-v1") || "{}");
+    return stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveTopologyPositions() {
+  localStorage.setItem("linkmoth-topology-layout-v1", JSON.stringify(topologyPositions));
+}
+
+function defaultTopologyPositions(keys) {
+  const positions = { "system:router": { x: 50, y: 50 } };
+  const outer = keys.filter((key) => key !== "system:router");
+  const outerCount = outer.length > 11 ? Math.ceil(outer.length * 0.62) : outer.length;
+  const innerCount = outer.length - outerCount;
+  outer.forEach((key, index) => {
+    const inner = index >= outerCount;
+    const ringIndex = inner ? index - outerCount : index;
+    const ringCount = inner ? innerCount : outerCount;
+    const angle = -Math.PI / 2 + (Math.PI * 2 * ringIndex / Math.max(1, ringCount));
+    const radiusX = inner ? 25 : 41;
+    const radiusY = inner ? 23 : 39;
+    positions[key] = {
+      x: 50 + Math.cos(angle) * radiusX,
+      y: 50 + Math.sin(angle) * radiusY,
+    };
+  });
+  return positions;
+}
+
+function constrainTopologyPosition(node, stageRect, x, y) {
+  const marginX = Math.min(42, (node.offsetWidth / 2 + 8) / stageRect.width * 100);
+  const marginY = Math.min(42, (node.offsetHeight / 2 + 8) / stageRect.height * 100);
+  return {
+    x: Math.max(marginX, Math.min(100 - marginX, Number(x) || 50)),
+    y: Math.max(marginY, Math.min(100 - marginY, Number(y) || 50)),
+  };
+}
+
+function positionTopologyNodes() {
+  const stage = $("device-map-stage");
+  const nodes = Array.from(stage.querySelectorAll("[data-topology-key]"));
+  const defaults = defaultTopologyPositions(nodes.map((node) => node.dataset.topologyKey));
+  const stageRect = stage.getBoundingClientRect();
+  nodes.forEach((node) => {
+    const wanted = topologyPositions[node.dataset.topologyKey] || defaults[node.dataset.topologyKey];
+    const position = constrainTopologyPosition(node, stageRect, wanted.x, wanted.y);
+    node.style.left = `${position.x}%`;
+    node.style.top = `${position.y}%`;
+  });
+}
+
+function bindTopologyDrag(node) {
+  let drag = null;
+  node.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const rect = $("device-map-stage").getBoundingClientRect();
+    drag = { rect, x: event.clientX, y: event.clientY, moved: false };
+    node.dataset.dragged = "false";
+    node.classList.add("dragging");
+    node.setPointerCapture(event.pointerId);
+  });
+  node.addEventListener("pointermove", (event) => {
+    if (!drag || !node.hasPointerCapture(event.pointerId)) return;
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 3) drag.moved = true;
+    if (!drag.moved) return;
+    const position = constrainTopologyPosition(
+      node, drag.rect,
+      (event.clientX - drag.rect.left) / drag.rect.width * 100,
+      (event.clientY - drag.rect.top) / drag.rect.height * 100,
+    );
+    const { x, y } = position;
+    node.style.left = `${x}%`;
+    node.style.top = `${y}%`;
+    topologyPositions[node.dataset.topologyKey] = { x, y };
+    updateTopologyLinks();
+  });
+  const finish = (event) => {
+    if (!drag) return;
+    node.dataset.dragged = drag.moved ? "true" : "false";
+    if (drag.moved) saveTopologyPositions();
+    drag = null;
+    node.classList.remove("dragging");
+    if (node.hasPointerCapture(event.pointerId)) node.releasePointerCapture(event.pointerId);
+  };
+  node.addEventListener("pointerup", finish);
+  node.addEventListener("pointercancel", finish);
+  node.addEventListener("keydown", (event) => {
+    const delta = { ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2] }[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    const position = constrainTopologyPosition(
+      node, $("device-map-stage").getBoundingClientRect(),
+      parseFloat(node.style.left) + delta[0],
+      parseFloat(node.style.top) + delta[1],
+    );
+    const { x, y } = position;
+    node.style.left = `${x}%`;
+    node.style.top = `${y}%`;
+    topologyPositions[node.dataset.topologyKey] = { x, y };
+    saveTopologyPositions();
+    updateTopologyLinks();
+  });
+}
+
+function updateTopologyLinks() {
+  const stage = $("device-map-stage");
+  const svg = $("topology-links");
+  if (!stage || !svg) return;
+  const stageRect = stage.getBoundingClientRect();
+  const point = (element) => {
+    const rect = element.querySelector(".topology-icon").getBoundingClientRect();
+    return [
+      rect.left + rect.width / 2 - stageRect.left,
+      rect.top + rect.height / 2 - stageRect.top,
+    ];
+  };
+  const router = $("topology-router");
+  if (!router) return;
+  const start = point(router);
+  const paths = Array.from(stage.querySelectorAll("[data-topology-key]")).filter(
+    (node) => node !== router,
+  ).map((node) => {
+    const end = point(node);
+    return `<path class="topology-link ${esc(node.dataset.topologyState)}" d="M ${start[0]} ${start[1]} L ${end[0]} ${end[1]}"></path>`;
+  });
+  svg.innerHTML = paths.join("");
+}
+
+function closeDeviceInspector() {
+  selectedDeviceId = null;
+  $("device-map-layout").classList.remove("has-inspector");
+  $("device-map-inspector").classList.add("hidden");
+  $("device-map-inspector").innerHTML = "";
+  $("device-map-stage").querySelectorAll(".topology-node.selected").forEach((node) => node.classList.remove("selected"));
+  requestAnimationFrame(updateTopologyLinks);
+}
+
+function selectTopologyDevice(id, focusInspector) {
+  const device = deviceData.find((item) => item.id === id);
+  if (!device) { closeDeviceInspector(); return; }
+  selectedDeviceId = id;
+  const state = deviceTopologyState(device);
+  const stateClass = topologyStateClass(state);
+  const latest = device.last_run_ts ? `Last checked ${fmtAge(Date.now() / 1000 - device.last_run_ts)}` : "Never checked";
+  const monitor = device.interval_seconds
+    ? `${deviceIntervalLabel(device.interval_seconds)}. Confirmed state: ${topologyStateLabel(device.stable_state || "unknown")}.`
+    : "Automatic checks are off.";
+  const inspector = $("device-map-inspector");
+  inspector.innerHTML = `<div class="device-inspector-head"><h3>${esc(device.name)}</h3>
+    <button type="button" class="action-btn device-inspector-close" aria-label="Close device details">×</button></div>
+    <span class="device-inspector-state ${stateClass}">${esc(topologyStateLabel(state))}</span>
+    <p class="device-inspector-summary">${esc(device.last_summary || "Run a check to see whether this device answers.")}</p>
+    <p class="device-inspector-meta">${esc(device.address)} · ${esc(device.preset)}</p>
+    <p class="device-inspector-meta">${esc(latest)}</p>
+    <p class="device-inspector-meta">${esc(monitor)}</p>
+    <div class="device-inspector-actions">
+      <button type="button" class="action-btn" data-device-action="run" data-device-id="${esc(device.id)}"${!device.enabled || device.running ? " disabled" : ""}>Run now</button>
+      <button type="button" class="action-btn" data-device-action="edit" data-device-id="${esc(device.id)}">Edit</button>
+      <button type="button" class="action-btn" data-device-action="expand-history" data-device-id="${esc(device.id)}">History</button>
+      <button type="button" class="action-btn" data-device-action="delete" data-device-id="${esc(device.id)}"${device.running ? " disabled" : ""}>Delete</button>
+    </div>`;
+  inspector.classList.remove("hidden");
+  $("device-map-layout").classList.add("has-inspector");
+  bindDeviceActionButtons(inspector);
+  inspector.querySelector(".device-inspector-close").addEventListener("click", closeDeviceInspector);
+  $("device-map-stage").querySelectorAll("[data-topology-device]").forEach((node) => {
+    node.classList.toggle("selected", node.dataset.topologyDevice === id);
+  });
+  requestAnimationFrame(updateTopologyLinks);
+  if (focusInspector) inspector.querySelector(".device-inspector-close").focus();
+}
+
+function renderDeviceMap() {
+  const stage = $("device-map-stage");
+  const systems = topologySystemStates();
+  const nodes = deviceData.map((device) => {
+    const rawState = deviceTopologyState(device);
+    const stateClass = topologyStateClass(rawState);
+    const label = topologyStateLabel(rawState);
+    return `<button type="button" class="topology-node ${stateClass}"
+      data-topology-device="${esc(device.id)}" data-topology-key="device:${esc(device.id)}"
+      data-topology-state="${stateClass}" aria-label="${esc(device.name)}, ${esc(label)}. Drag to reposition"
+      title="${esc(device.name)} · ${esc(label)}">
+      ${topologyIcon(device.preset)}<span class="topology-name">${esc(device.name)}</span>
+    </button>`;
+  }).join("");
+  stage.innerHTML = `<svg id="topology-links" class="topology-links" aria-hidden="true"></svg>
+    ${topologySystemNode("internet", "Internet", "internet", systems.internet)}
+    ${topologySystemNode("router", "Router / LAN", "router", systems.router)}
+    ${topologySystemNode("linkmoth", "Linkmoth", "linkmoth", systems.host)}
+    ${nodes}
+    ${nodes ? "" : `<div class="topology-empty"><p>No monitored devices yet.</p><button type="button" class="action-btn" id="device-map-empty-add">Add your first device</button></div>`}`;
+  positionTopologyNodes();
+  stage.querySelectorAll("[data-topology-key]").forEach(bindTopologyDrag);
+  stage.querySelectorAll("[data-topology-device]").forEach((node) => {
+    node.addEventListener("click", () => {
+      if (node.dataset.dragged === "true") { node.dataset.dragged = "false"; return; }
+      selectTopologyDevice(node.dataset.topologyDevice, false);
+    });
+  });
+  if ($("device-map-empty-add")) $("device-map-empty-add").addEventListener("click", () => openDeviceForm(null));
+  if (mapResizeObserver) mapResizeObserver.disconnect();
+  mapResizeObserver = new ResizeObserver(() => requestAnimationFrame(updateTopologyLinks));
+  mapResizeObserver.observe(stage);
+  if (selectedDeviceId && deviceData.some((device) => device.id === selectedDeviceId)) {
+    selectTopologyDevice(selectedDeviceId, false);
+  } else {
+    closeDeviceInspector();
+  }
+  requestAnimationFrame(updateTopologyLinks);
+}
+
+function setDeviceView(view) {
+  deviceView = view === "list" ? "list" : "map";
+  localStorage.setItem("linkmoth-device-view", deviceView);
+  const mapActive = deviceView === "map";
+  $("device-map-panel").classList.toggle("hidden", !mapActive);
+  $("device-list").classList.toggle("hidden", mapActive);
+  $("device-view-map").classList.toggle("active", mapActive);
+  $("device-view-list").classList.toggle("active", !mapActive);
+  $("device-view-map").setAttribute("aria-pressed", mapActive ? "true" : "false");
+  $("device-view-list").setAttribute("aria-pressed", mapActive ? "false" : "true");
+  if (mapActive) renderDeviceMap();
+}
+
 function renderDeviceCard(d) {
   const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   const state = d.last_state || "unknown";
@@ -3538,8 +4228,8 @@ function renderDeviceSparks(devices) {
   }
 }
 
-function bindDeviceCards() {
-  $("device-list").querySelectorAll("[data-device-action]").forEach((button) => {
+function bindDeviceActionButtons(root) {
+  root.querySelectorAll("[data-device-action]").forEach((button) => {
     button.addEventListener("click", () => {
       const id = button.dataset.deviceId;
       if (button.dataset.deviceAction === "run") runDeviceNow(id, button);
@@ -3554,6 +4244,10 @@ function bindDeviceCards() {
       }
     });
   });
+}
+
+function bindDeviceCards() {
+  bindDeviceActionButtons($("device-list"));
   $("device-list").querySelectorAll("[data-device-history]").forEach((details) => {
     details.addEventListener("toggle", () => {
       if (details.open && !details.dataset.loaded) {
@@ -3582,6 +4276,7 @@ async function loadDevices(silent) {
     if (!r.ok) throw new Error(out.error || "device request failed");
     deviceData = out.devices || [];
     deviceMeta = out;
+    renderDeviceMap();
     if (!deviceData.length) {
       $("device-list").innerHTML = `<section class="card">
         <h3>No devices yet</h3>
@@ -3605,11 +4300,12 @@ async function loadDevices(silent) {
     const channels = out.channels || {};
     const unavailable = Object.entries(channels).filter(([, ready]) => !ready).map(([name]) => name);
     $("d-alert-note").textContent = unavailable.length
-      ? `These global integrations are currently unavailable: ${unavailable.join(", ")}. Device choices are saved but send only after the integration is enabled in Settings.`
-      : "Alerts use the notification integrations configured in Settings and are off by default.";
+      ? `In-app notifications are always on for confirmed scheduled state changes. These external integrations are currently unavailable: ${unavailable.join(", ")}. Their device choices are saved but send only after the integration is enabled in Settings.`
+      : "In-app notifications are always on for confirmed scheduled state changes. External alerts use the integrations configured in Settings and are off by default.";
   } catch (e) {
     if (!silent) {
       $("device-list").innerHTML = `<section class="card"><p class="empty">Could not load devices.</p></section>`;
+      $("device-map-stage").innerHTML = '<p class="topology-empty">Could not load the monitoring map.</p>';
     }
   } finally {
     devicesLoading = false;
@@ -3757,6 +4453,15 @@ async function deleteDevice(id) {
 }
 
 $("device-add").addEventListener("click", () => openDeviceForm(null));
+$("device-view-map").addEventListener("click", () => setDeviceView("map"));
+$("device-view-list").addEventListener("click", () => setDeviceView("list"));
+$("device-map-reset").addEventListener("click", () => {
+  topologyPositions = {};
+  localStorage.removeItem("linkmoth-topology-layout-v1");
+  positionTopologyNodes();
+  requestAnimationFrame(updateTopologyLinks);
+});
+setDeviceView(deviceView);
 $("device-cancel").addEventListener("click", closeDeviceForm);
 $("device-save").addEventListener("click", saveDevice);
 $("d-preset").addEventListener("change", syncDeviceForm);
@@ -5754,7 +6459,10 @@ async function tick() {
   }
   if (!authReady) await ensureAuth();
   try {
-    if (authReady) await refresh();
+    if (authReady) {
+      startNotificationPolling();
+      await refresh();
+    }
   } catch (e) {
     console.error("tick failed", e);
   }

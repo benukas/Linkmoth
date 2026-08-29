@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- The Devices tab now opens on a live monitoring map with a central router and
+  draggable, color-coded icons for the Internet, Linkmoth, and every configured
+  device. Selecting a device opens its current result and actions beside the
+  map, and the original card view remains available from the Map/List switch.
+- Confirmed network incidents and scheduled device state changes now create
+  in-app notifications even when Discord, browser push, and outbound webhooks
+  are disabled. The dashboard bell keeps the latest 500 events, shows an unread
+  count, presents new events as dismissible toasts, and links each event back
+  to its incident evidence or device on the map.
+
 ## 0.6.11
 
 ### Fixed
