@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.13
+
 ### Fixed
 
 - The Devices monitoring map now stays inside the dashboard content column and
