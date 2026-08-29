@@ -703,8 +703,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-view-btn.active { background: var(--card); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 .device-view-btn:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
 .device-map-breakout {
-  width: min(1120px, calc(100vw - 32px)); margin: 0 0 16px 50%;
-  transform: translateX(-50%);
+  width: 100%; margin: 0 0 16px;
 }
 .device-map-heading {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
@@ -714,7 +713,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-map-heading p { margin: 3px 0 0; color: var(--muted); font-size: 14px; }
 .device-map-reset { flex: none; padding: 7px 10px; font-size: 13px; }
 .device-map-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
-.device-map-layout.has-inspector { grid-template-columns: minmax(0, 1fr) 310px; }
+.device-map-layout.has-inspector { grid-template-columns: minmax(0, 1fr); }
 .device-map-scroll {
   overflow: hidden; border: 1px solid var(--border); border-radius: 14px;
   background: var(--card); overscroll-behavior: contain;
@@ -772,7 +771,7 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 }
 .topology-empty p { margin: 0 0 8px; }
 .device-map-inspector {
-  position: sticky; top: 16px; margin: 0; padding: 18px;
+  position: static; margin: 0; padding: 18px;
   border: 1px solid var(--border); border-radius: 14px; background: var(--card);
 }
 .device-map-inspector.hidden { display: none; }
@@ -787,14 +786,9 @@ details.inc > summary { cursor: pointer; font-size: 18px; display: flex; gap: 10
 .device-inspector-meta { margin: 5px 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
 .device-inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
 .device-inspector-actions .action-btn { min-width: 0; padding: 10px 8px; font-size: 14px; }
-@media (max-width: 820px) {
-  .device-map-layout.has-inspector { grid-template-columns: 1fr; }
-  .device-map-inspector { position: static; }
-}
 @media (max-width: 700px) {
   .device-toolbar { flex-direction: column; align-items: stretch; }
   .device-toolbar-actions { width: 100%; justify-content: space-between; }
-  .device-map-breakout { width: 100%; margin-left: 0; transform: none; }
   .device-map-stage { height: 520px; min-height: 520px; }
   .topology-node { width: 104px; height: 94px; padding: 5px; }
   .topology-icon { width: 36px; height: 36px; }
@@ -3931,18 +3925,25 @@ function saveTopologyPositions() {
   localStorage.setItem("linkmoth-topology-layout-v1", JSON.stringify(topologyPositions));
 }
 
-function defaultTopologyPositions(keys) {
+function defaultTopologyPositions(nodes, stageRect) {
   const positions = { "system:router": { x: 50, y: 50 } };
+  const keys = nodes.map((node) => node.dataset.topologyKey);
   const outer = keys.filter((key) => key !== "system:router");
   const outerCount = outer.length > 11 ? Math.ceil(outer.length * 0.62) : outer.length;
   const innerCount = outer.length - outerCount;
+  const widestNode = Math.max(0, ...nodes.map((node) => node.offsetWidth));
+  const tallestNode = Math.max(0, ...nodes.map((node) => node.offsetHeight));
+  const availableRadiusX = 50 - ((widestNode / 2 + 8) / Math.max(1, stageRect.width) * 100);
+  const availableRadiusY = 50 - ((tallestNode / 2 + 8) / Math.max(1, stageRect.height) * 100);
+  const outerRadiusX = Math.max(16, Math.min(41, availableRadiusX));
+  const outerRadiusY = Math.max(16, Math.min(39, availableRadiusY));
   outer.forEach((key, index) => {
     const inner = index >= outerCount;
     const ringIndex = inner ? index - outerCount : index;
     const ringCount = inner ? innerCount : outerCount;
     const angle = -Math.PI / 2 + (Math.PI * 2 * ringIndex / Math.max(1, ringCount));
-    const radiusX = inner ? 25 : 41;
-    const radiusY = inner ? 23 : 39;
+    const radiusX = inner ? outerRadiusX * 0.61 : outerRadiusX;
+    const radiusY = inner ? outerRadiusY * 0.59 : outerRadiusY;
     positions[key] = {
       x: 50 + Math.cos(angle) * radiusX,
       y: 50 + Math.sin(angle) * radiusY,
@@ -3963,8 +3964,8 @@ function constrainTopologyPosition(node, stageRect, x, y) {
 function positionTopologyNodes() {
   const stage = $("device-map-stage");
   const nodes = Array.from(stage.querySelectorAll("[data-topology-key]"));
-  const defaults = defaultTopologyPositions(nodes.map((node) => node.dataset.topologyKey));
   const stageRect = stage.getBoundingClientRect();
+  const defaults = defaultTopologyPositions(nodes, stageRect);
   nodes.forEach((node) => {
     const wanted = topologyPositions[node.dataset.topologyKey] || defaults[node.dataset.topologyKey];
     const position = constrainTopologyPosition(node, stageRect, wanted.x, wanted.y);
@@ -4124,7 +4125,10 @@ function renderDeviceMap() {
   });
   if ($("device-map-empty-add")) $("device-map-empty-add").addEventListener("click", () => openDeviceForm(null));
   if (mapResizeObserver) mapResizeObserver.disconnect();
-  mapResizeObserver = new ResizeObserver(() => requestAnimationFrame(updateTopologyLinks));
+  mapResizeObserver = new ResizeObserver(() => requestAnimationFrame(() => {
+    positionTopologyNodes();
+    updateTopologyLinks();
+  }));
   mapResizeObserver.observe(stage);
   if (selectedDeviceId && deviceData.some((device) => device.id === selectedDeviceId)) {
     selectTopologyDevice(selectedDeviceId, false);
