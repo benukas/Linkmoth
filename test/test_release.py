@@ -500,9 +500,9 @@ class PublicReleaseTests(unittest.TestCase):
         dashboard = (ROOT / "dashboard.html").read_text(encoding="utf-8")
         self.assertNotIn("git clone https://github.com/benukas/linkmoth.git", readme)
         self.assertNotIn("cosign verify-blob", readme)
-        self.assertIn('&& sudo bash linkmoth-v0.6.12-bootstrap.sh', readme)
+        self.assertIn('&& sudo bash linkmoth-v0.6.13-bootstrap.sh', readme)
         self.assertIn(
-            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.12/bootstrap.sh",
+            "https://raw.githubusercontent.com/benukas/Linkmoth/v0.6.13/bootstrap.sh",
             readme,
         )
         self.assertIn("Checksum-verified release", readme)
@@ -513,7 +513,8 @@ class PublicReleaseTests(unittest.TestCase):
         self.assertIn("# Changelog\n\n## Unreleased\n", changelog)
         self.assertIn("normal pinned-release installation no longer requires Cosign", changelog)
         self.assertIn("Backup and restore", changelog)
-        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.12\n"))
+        self.assertLess(changelog.index("## Unreleased"), changelog.index("## 0.6.13\n"))
+        self.assertLess(changelog.index("## 0.6.13\n"), changelog.index("## 0.6.12\n"))
         self.assertLess(changelog.index("## 0.6.12\n"), changelog.index("## 0.6.11\n"))
         self.assertLess(changelog.index("## 0.6.11\n"), changelog.index("## 0.6.10\n"))
         self.assertLess(changelog.index("## 0.6.10\n"), changelog.index("## 0.6.9\n"))
@@ -539,7 +540,7 @@ class PublicReleaseTests(unittest.TestCase):
 
     def test_advanced_docs_cover_both_verified_install_modes(self):
         advanced = (ROOT / "ADVANCED.md").read_text(encoding="utf-8")
-        self.assertIn("VERSION=v0.6.12", advanced)
+        self.assertIn("VERSION=v0.6.13", advanced)
         self.assertIn("## Checksum-verified installation", advanced)
         self.assertIn("## Optional Sigstore-verified installation", advanced)
         self.assertIn("cosign verify-blob", advanced)
