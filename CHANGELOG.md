@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.12
+
 ### Added
 
 - The Devices tab now opens on a live monitoring map with a central router and
