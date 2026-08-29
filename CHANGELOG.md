@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- The Devices monitoring map now stays inside the dashboard content column and
+  automatically tightens its radial layout to fit the available width. Opening
+  a device no longer narrows the map because its details appear below it.
+
 ## 0.6.12
 
 ### Added
